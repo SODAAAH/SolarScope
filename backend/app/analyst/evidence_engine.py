@@ -104,3 +104,4 @@ def build_evidence_response(
             "what_to_do": "Maintain solar panel cleanliness and keep battery state-of-charge within the 20% to 100% operational window.",
             "confidence_level": "High (derived from verified electrical telemetry)"
         }
+

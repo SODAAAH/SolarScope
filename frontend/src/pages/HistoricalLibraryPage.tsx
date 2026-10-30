@@ -15,7 +15,8 @@ import {
   AlertTriangle,
   Radio,
   ArrowRight,
-  Wifi
+  Wifi,
+  Key
 } from "lucide-react";
 import {
   api,
@@ -66,6 +67,15 @@ export const HistoricalLibraryPage: React.FC = () => {
   const [deyeSyncing, setDeyeSyncing] = useState(false);
   const [deyeMessage, setDeyeMessage] = useState<string | null>(null);
 
+  const [configStationId, setConfigStationId] = useState("");
+  const [configAppId, setConfigAppId] = useState("");
+  const [configAppSecret, setConfigAppSecret] = useState("");
+  const [configUsername, setConfigUsername] = useState("");
+  const [configPassword, setConfigPassword] = useState("");
+  const [configAutoSync, setConfigAutoSync] = useState(false);
+  const [configInterval, setConfigInterval] = useState(5);
+  const [savingConfig, setSavingConfig] = useState(false);
+
   const [previewFile, setPreviewFile] = useState<File | null>(null);
   const [previewResult, setPreviewResult] = useState<FilePreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -92,10 +102,63 @@ export const HistoricalLibraryPage: React.FC = () => {
     try {
       const data = await api.getDeyeStatus();
       setDeyeStatus(data);
+      if (data) {
+        setConfigStationId(data.station_id || "");
+        setConfigAppId(data.app_id || "");
+        setConfigAutoSync(data.auto_sync || false);
+        setConfigInterval(data.sync_interval_min || 5);
+      }
     } catch (err: any) {
       setDeyeMessage(`Cloud status check: ${err.message}`);
     } finally {
       setDeyeLoading(false);
+    }
+  };
+
+  const handleSaveDeyeConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingConfig(true);
+    try {
+      const res = await api.saveDeyeConfig({
+        station_id: configStationId,
+        app_id: configAppId,
+        app_secret: configAppSecret,
+        username: configUsername,
+        password: configPassword,
+        auto_sync: configAutoSync,
+        sync_interval_min: configInterval
+      });
+      setDeyeStatus(res);
+      setDeyeMessage("Deye Cloud credentials saved successfully.");
+    } catch (err: any) {
+      setDeyeMessage(`Failed to save credentials: ${err.message}`);
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const handleApplyDemoConfig = async () => {
+    setConfigStationId("STATION-2026");
+    setConfigAppId("demo");
+    setConfigAppSecret("demo_secret");
+    setConfigUsername("demo@solarscope.local");
+    setSavingConfig(true);
+    try {
+      const res = await api.saveDeyeConfig({
+        station_id: "STATION-2026",
+        app_id: "demo",
+        app_secret: "demo_secret",
+        username: "demo@solarscope.local",
+        password: "",
+        auto_sync: false,
+        sync_interval_min: 5
+      });
+      setDeyeStatus(res);
+      setDeyeMessage("Demo mode applied: Simulated live Deye Cloud connection enabled.");
+    } catch (err: any) {
+      setDeyeMessage(`Failed to apply demo: ${err.message}`);
+    } finally {
+      setSavingConfig(false);
     }
   };
 
@@ -920,6 +983,114 @@ export const HistoricalLibraryPage: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Key className="w-5 h-5 text-amber-600" />
+                <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                  Deye Cloud / Solarman API Credentials
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                  deyeStatus?.is_configured
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                    : "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-400"
+                }`}>
+                  {deyeStatus?.is_configured ? "Configured & Ready" : "Credentials Required"}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleApplyDemoConfig}
+                  className="px-2.5 py-1 text-xs rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium transition-colors"
+                >
+                  Use Demo Mode
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Direct cloud sync polls telemetry from the Deye Cloud / Solarman Open API. If you do not have an API Developer account, you can click <strong>Use Demo Mode</strong> to simulate live synchronization, or upload Excel/CSV files directly in the Historical Datasets tab.
+            </p>
+
+            <form onSubmit={handleSaveDeyeConfig} className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs pt-1">
+              <div>
+                <label className="block font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Station ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. STATION-2026"
+                  value={configStationId}
+                  onChange={(e) => setConfigStationId(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  App ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="Open API App ID or 'demo'"
+                  value={configAppId}
+                  onChange={(e) => setConfigAppId(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  App Secret
+                </label>
+                <input
+                  type="password"
+                  placeholder="App Secret Key"
+                  value={configAppSecret}
+                  onChange={(e) => setConfigAppSecret(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Account Email / Username (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="user@example.com"
+                  value={configUsername}
+                  onChange={(e) => setConfigUsername(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Account Password (Optional)
+                </label>
+                <input
+                  type="password"
+                  placeholder="Account Password"
+                  value={configPassword}
+                  onChange={(e) => setConfigPassword(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  disabled={savingConfig}
+                  className="w-full px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition-colors shadow-sm disabled:opacity-50"
+                >
+                  {savingConfig ? "Saving..." : "Save Credentials"}
+                </button>
+              </div>
+            </form>
           </div>
 
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">

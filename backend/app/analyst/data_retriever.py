@@ -57,3 +57,4 @@ def extract_system_snapshot(records: List[CanonicalRecord], project_id: str = "d
         "balance": balance,
         "night_load_kwh": round(night_load_kwh, 2)
     }
+

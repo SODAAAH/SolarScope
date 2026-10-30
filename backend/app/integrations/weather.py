@@ -177,3 +177,4 @@ def _generate_synthetic_weather(today_str: str, tomorrow_str: str) -> Dict[str, 
             "temperature_2m": temperatures
         }
     }
+

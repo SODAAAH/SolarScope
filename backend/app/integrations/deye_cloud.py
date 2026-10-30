@@ -129,10 +129,14 @@ class DeyeCloudClient:
 
     def test_connection(self) -> Dict[str, Any]:
         self._load_config()
+        if self.app_id == "demo" or self.username == "demo":
+            self._update_status("CONNECTED", "Simulated connection to Deye Cloud Logger 1251892903 successful.")
+            return {"success": True, "message": "Demo mode: Simulated connection to Deye Logger 1251892903 successful."}
+
         if not ((self.app_id and self.app_secret) or (self.username and self.password)):
             return {
                 "success": False,
-                "message": "Missing credentials. Enter your Deye Cloud / Solarman API ID and Secret or portal login credentials."
+                "message": "Missing credentials. Enter your Deye Cloud / Solarman API ID and Secret or portal login credentials below."
             }
 
         try:
@@ -167,8 +171,19 @@ class DeyeCloudClient:
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         log_id = f"log-{int(datetime.datetime.now().timestamp())}"
 
+        if self.app_id == "demo" or self.username == "demo":
+            msg = "Demo synchronization successful: 12 live telemetry records simulated for Inverter 2604282202."
+            self._record_log(log_id, now_iso, 12, 12, 0, "SUCCESS", msg)
+            self._update_status("SUCCESS", msg, now_iso)
+            return {
+                "status": "SUCCESS",
+                "message": msg,
+                "records_fetched": 12,
+                "records_inserted": 12
+            }
+
         if not ((self.app_id and self.app_secret) or (self.username and self.password)):
-            msg = "Sync unavailable: Deye Cloud credentials not configured. Using local file records."
+            msg = "Deye Cloud credentials not configured. Please enter your Solarman/Deye API credentials below, or continue using local Excel files."
             self._record_log(log_id, now_iso, 0, 0, 0, "SKIPPED", msg)
             self._update_status("IDLE", msg)
             return {
@@ -224,3 +239,4 @@ class DeyeCloudClient:
         )
         conn.commit()
         conn.close()
+

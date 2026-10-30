@@ -7,3 +7,4 @@ __all__ = [
     "analyze_energy_query",
     "get_preset_diagnostic_queries"
 ]
+

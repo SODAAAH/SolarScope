@@ -70,3 +70,4 @@ def get_preset_diagnostic_queries() -> List[Dict[str, str]]:
             "question": "Is my solar and battery system operating at peak efficiency?"
         }
     ]
+

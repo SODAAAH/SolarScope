@@ -133,3 +133,4 @@ def inspect_file_for_preview(filepath: Path, original_filename: str) -> Dict[str
         "quality_score": round(quality_score, 1),
         "potential_issues": issues
     }
+
