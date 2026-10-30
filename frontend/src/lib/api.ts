@@ -262,5 +262,241 @@ export const api = {
       body: JSON.stringify({ report_type: reportType })
     });
   },
-  getDownloadUrl: (reportId: string) => `${API_BASE}/reports/${reportId}/download`
+  getDownloadUrl: (reportId: string) => `${API_BASE}/reports/${reportId}/download`,
+  getBillingOverview: (datasetId?: string) => {
+    const q = datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : "";
+    return fetchJson<BillForecastResponse>(`/billing/overview${q}`);
+  },
+  getBillingProgress: (datasetId?: string) => {
+    const q = datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : "";
+    return fetchJson<BillingProgressResponse>(`/billing/progress${q}`);
+  },
+  getBillingStatement: (mode: "actual" | "expected" | "lower" | "higher" = "expected", datasetId?: string) => {
+    let url = `/billing/statement?mode=${mode}`;
+    if (datasetId) url += `&dataset_id=${encodeURIComponent(datasetId)}`;
+    return fetchJson<StatementOfAccount>(url);
+  },
+  getBillingProfile: () => {
+    return fetchJson<TEIBillingProfile>("/billing/profile");
+  },
+  updateBillingProfile: (profile: TEIBillingProfile) => {
+    return fetchJson<{ status: string; profile: TEIBillingProfile }>("/billing/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(profile)
+    });
+  },
+  getBillingRates: () => {
+    return fetchJson<RateScheduleHistoryItem[]>("/billing/rates");
+  },
+  checkBillingRatesNow: () => {
+    return fetchJson<{ status: string; message: string; checked_at: string; rate_change_alert: any; effective_month: string }>("/billing/rates/check_now", {
+      method: "POST"
+    });
+  },
+  addManualRateSchedule: (payload: { effective_month: string; customer_class?: string; generation_charge: number; generation_vat?: number; distribution_charge?: number; transmission_charge?: number; system_loss_charge?: number }) => {
+    return fetchJson<{ status: string; schedule_id: string }>("/billing/rates/manual", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  },
+  calculateRateSensitivity: (payload: { delta_gen_rate: number; delta_usage_pct: number; custom_kwh?: number }, datasetId?: string) => {
+    let url = "/billing/sensitivity";
+    if (datasetId) url += `?dataset_id=${encodeURIComponent(datasetId)}`;
+    return fetchJson<RateSensitivityResponse>(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  },
+  getHistoricalBills: () => {
+    return fetchJson<HistoricalBillRecord[]>("/billing/history");
+  },
+  addHistoricalBill: (bill: { billing_period_start: string; billing_period_end: string; billed_kwh: number; actual_amount_due: number; predicted_amount_due?: number; notes?: string }) => {
+    return fetchJson<HistoricalBillRecord>("/billing/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(bill)
+    });
+  },
+  deleteHistoricalBill: (billId: string) => {
+    return fetchJson<{ status: string; id: string }>(`/billing/history/${billId}`, {
+      method: "DELETE"
+    });
+  }
 };
+
+export interface TEIBillingProfile {
+  customer_class: string;
+  billing_cycle_day: number;
+  cycle_start_date?: string;
+  cycle_end_date?: string;
+  prev_meter_reading?: number | null;
+  latest_meter_reading?: number | null;
+  meter_reading_date?: string | null;
+  connection_type: string;
+  is_lifeline_eligible: boolean;
+  is_senior_eligible: boolean;
+  is_prompt_payment_eligible: boolean;
+  previous_unpaid_balance: number;
+  payments_received: number;
+  forecast_method: string;
+  updated_at?: string;
+}
+
+export interface BillLineItem {
+  component_id: string;
+  name: string;
+  category: string;
+  rate_applied: number;
+  rate_unit: string;
+  billed_quantity: number;
+  amount: number;
+  vat_amount: number;
+  total_with_vat: number;
+  explanation: string;
+  formula: string;
+  vat_treatment: string;
+}
+
+export interface StatementOfAccount {
+  billing_period_start: string;
+  billing_period_end: string;
+  customer_class: string;
+  effective_rate_schedule_month: string;
+  billed_kwh: number;
+  generation_transmission_charges: number;
+  distribution_charges: number;
+  other_charges: number;
+  subtotal_electricity_charges: number;
+  government_taxes: number;
+  discounts: number;
+  net_metering_credits: number;
+  total_current_charges: number;
+  previous_unpaid_balance: number;
+  payments_received: number;
+  total_amount_due: number;
+  line_items: BillLineItem[];
+  effective_average_rate_per_kwh: number;
+  is_estimate: boolean;
+  disclaimer: string;
+}
+
+export interface BillForecastScenario {
+  name: string;
+  description: string;
+  projected_additional_kwh: number;
+  total_projected_kwh: number;
+  estimated_current_charges: number;
+  estimated_total_amount: number;
+  daily_import_rate_kwh: number;
+  statement: StatementOfAccount;
+}
+
+export interface BillForecastResponse {
+  billing_cycle_start: string;
+  billing_cycle_end: string;
+  next_meter_reading_date: string;
+  days_elapsed: number;
+  days_remaining: number;
+  cycle_total_days: number;
+  actual_imported_kwh: number;
+  actual_exported_kwh: number;
+  active_rate_effective_month: string;
+  active_generation_charge: number;
+  active_generation_vat: number;
+  last_rate_check_timestamp: string;
+  rate_monitor_status: string;
+  rate_change_alert?: {
+    has_changed: boolean;
+    previous_rate: number;
+    new_rate: number;
+    difference_per_kwh: number;
+    effective_month: string;
+    publication_date: string;
+    summary: string;
+  } | null;
+  current_so_far_statement: StatementOfAccount;
+  lower_estimate: BillForecastScenario;
+  expected_estimate: BillForecastScenario;
+  higher_estimate: BillForecastScenario;
+  forecasting_method: string;
+  data_coverage_percent: number;
+  solar_savings: {
+    bill_without_solar: number;
+    bill_with_solar: number;
+    savings_pesos: number;
+    savings_percentage: number;
+    avoided_grid_kwh: number;
+    direct_solar_used_kwh: number;
+    direct_solar_savings_pesos: number;
+    battery_discharged_kwh: number;
+    battery_savings_pesos: number;
+    net_metering_credits_pesos: number;
+    household_total_demand_kwh: number;
+    actual_imported_kwh: number;
+  };
+}
+
+export interface BillingProgressTimelineItem {
+  date: string;
+  day_label: string;
+  is_actual: boolean;
+  is_today: boolean;
+  is_meter_reading: boolean;
+  daily_kwh: number;
+  cumulative_kwh_actual: number | null;
+  cumulative_cost_actual: number | null;
+  cumulative_kwh_expected: number;
+  cumulative_cost_expected: number;
+}
+
+export interface BillingProgressResponse {
+  start_date: string;
+  end_date: string;
+  today_date: string;
+  average_daily_kwh: number;
+  timeline: BillingProgressTimelineItem[];
+}
+
+export interface RateScheduleHistoryItem {
+  id: string;
+  effective_month: string;
+  customer_class: string;
+  publication_date: string;
+  source_url: string;
+  document_hash: string;
+  verification_status: string;
+  is_active: boolean;
+  created_at: string;
+  generation_charge: number;
+  components_count: number;
+}
+
+export interface HistoricalBillRecord {
+  id: string;
+  billing_period_start: string;
+  billing_period_end: string;
+  billed_kwh: number;
+  actual_amount_due: number;
+  predicted_amount_due: number | null;
+  variance_pesos: number | null;
+  variance_percent: number | null;
+  accuracy_percent: number | null;
+  notes: string;
+  created_at: string;
+}
+
+export interface RateSensitivityResponse {
+  baseline_kwh: number;
+  simulated_kwh: number;
+  delta_gen_rate: number;
+  delta_usage_pct: number;
+  baseline_bill: number;
+  simulated_bill: number;
+  difference_pesos: number;
+  difference_percentage: number;
+  baseline_statement: StatementOfAccount;
+  simulated_statement: StatementOfAccount;
+}

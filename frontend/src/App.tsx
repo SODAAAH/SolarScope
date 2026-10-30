@@ -16,6 +16,7 @@ import { AnomaliesPage } from "./pages/AnomaliesPage";
 import { StatisticsPage } from "./pages/StatisticsPage";
 import { ScenariosPage } from "./pages/ScenariosPage";
 import { FinancePage } from "./pages/FinancePage";
+import { BillIntelligencePage } from "./pages/BillIntelligencePage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
@@ -39,6 +40,7 @@ export const App: React.FC = () => {
           <Route path="statistics" element={<StatisticsPage />} />
           <Route path="scenarios" element={<ScenariosPage />} />
           <Route path="finance" element={<FinancePage />} />
+          <Route path="billing" element={<BillIntelligencePage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

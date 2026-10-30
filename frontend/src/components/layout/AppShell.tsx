@@ -20,7 +20,8 @@ import {
   Database,
   Calendar,
   ChevronDown,
-  BookOpen
+  BookOpen,
+  ReceiptText
 } from 'lucide-react';
 import { api, type SourceItem } from '../../lib/api';
 import type { ViewMode } from '../../lib/terminology';
@@ -29,6 +30,7 @@ import { HelpGlossaryModal } from '../ui/HelpGlossaryModal';
 const NAV_ITEMS = [
   { path: '/', label: 'Overview', icon: LayoutDashboard },
   { path: '/library', label: 'Historical Library', icon: Database },
+  { path: '/billing', label: 'Bill Intelligence', icon: ReceiptText },
   { path: '/import', label: 'Import Data', icon: UploadCloud },
   { path: '/history', label: 'Daily Summaries', icon: Calendar },
   { path: '/compare', label: 'Compare Periods', icon: Scale },

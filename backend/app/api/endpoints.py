@@ -49,10 +49,62 @@ from backend.app.aggregation.comparisons import (
     compare_periods,
     compare_weekdays_vs_weekends
 )
+from backend.app.billing import (
+    TEIRateComponent,
+    TEIRateSchedule,
+    TEIBillingProfile,
+    BillLineItem,
+    StatementOfAccount,
+    BillForecastScenario,
+    BillForecastResponse,
+    calculate_statement_of_account,
+    get_active_rate_schedule,
+    save_rate_schedule,
+    get_rate_history,
+    check_official_tei_rates,
+    get_billing_profile,
+    save_billing_profile,
+    forecast_tei_bill,
+    calculate_billing_progress_series,
+    calculate_solar_bill_savings,
+    simulate_rate_sensitivity,
+    get_historical_bills_summary,
+    insert_historical_bill,
+    remove_historical_bill
+)
 
 router = APIRouter()
 
 dataset_cache: Dict[str, List[CanonicalRecord]] = {}
+
+last_rate_check_cache: Dict[str, Any] = {
+    "status": "verified_current",
+    "message": "Using verified October 2026 schedule",
+    "checked_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "rate_change_alert": None
+}
+
+class SensitivityRequest(BaseModel):
+    delta_gen_rate: float = 0.0
+    delta_usage_pct: float = 0.0
+    custom_kwh: Optional[float] = None
+
+class AddHistoricalBillRequest(BaseModel):
+    billing_period_start: str
+    billing_period_end: str
+    billed_kwh: float
+    actual_amount_due: float
+    predicted_amount_due: Optional[float] = None
+    notes: Optional[str] = ""
+
+class ManualRateScheduleRequest(BaseModel):
+    effective_month: str
+    customer_class: str = "Residential"
+    generation_charge: float
+    generation_vat: float = 0.71120
+    distribution_charge: float = 1.45200
+    transmission_charge: float = 0.85240
+    system_loss_charge: float = 0.54120
 
 class SystemSettingsModel(BaseModel):
     pv_capacity_kwp: float = 5.0
@@ -947,3 +999,170 @@ def download_report(report_id: str):
         filename=path.name,
         media_type="application/octet-stream"
     )
+
+@router.get("/billing/overview")
+def get_billing_overview(dataset_id: Optional[str] = None):
+    conn = get_connection()
+    sched = get_active_rate_schedule(conn)
+    profile = get_billing_profile(conn)
+    conn.close()
+    records = _get_records(dataset_id or "all")
+    return forecast_tei_bill(records, sched, profile, last_rate_check_cache)
+
+@router.get("/billing/progress")
+def get_billing_progress(dataset_id: Optional[str] = None):
+    conn = get_connection()
+    sched = get_active_rate_schedule(conn)
+    profile = get_billing_profile(conn)
+    conn.close()
+    records = _get_records(dataset_id or "all")
+    return calculate_billing_progress_series(records, sched, profile)
+
+@router.get("/billing/statement")
+def get_billing_statement(mode: str = "expected", dataset_id: Optional[str] = None):
+    conn = get_connection()
+    sched = get_active_rate_schedule(conn)
+    profile = get_billing_profile(conn)
+    conn.close()
+    records = _get_records(dataset_id or "all")
+    forecast = forecast_tei_bill(records, sched, profile, last_rate_check_cache)
+    if mode == "actual":
+        return forecast.current_so_far_statement
+    elif mode == "lower":
+        return forecast.lower_estimate.statement
+    elif mode == "higher":
+        return forecast.higher_estimate.statement
+    return forecast.expected_estimate.statement
+
+@router.get("/billing/profile")
+def get_billing_profile_endpoint():
+    conn = get_connection()
+    prof = get_billing_profile(conn)
+    conn.close()
+    return prof.model_dump()
+
+@router.put("/billing/profile")
+def update_billing_profile_endpoint(profile: TEIBillingProfile):
+    conn = get_connection()
+    save_billing_profile(profile, conn)
+    conn.commit()
+    conn.close()
+    return {"status": "updated", "profile": profile.model_dump()}
+
+@router.get("/billing/rates")
+def get_billing_rates():
+    conn = get_connection()
+    rates = get_rate_history(conn)
+    conn.close()
+    return rates
+
+@router.post("/billing/rates/check_now")
+def check_billing_rates_now():
+    global last_rate_check_cache
+    conn = get_connection()
+    res = check_official_tei_rates(conn, force_fetch=True)
+    conn.commit()
+    conn.close()
+    last_rate_check_cache = res
+    return {
+        "status": res["status"],
+        "message": res["message"],
+        "checked_at": res["checked_at"],
+        "rate_change_alert": res["rate_change_alert"],
+        "effective_month": res["active_schedule"].effective_month if res.get("active_schedule") else "2026-10"
+    }
+
+@router.post("/billing/rates/manual")
+def add_manual_billing_rate(payload: ManualRateScheduleRequest):
+    global last_rate_check_cache
+    import hashlib
+    conn = get_connection()
+    active_sched = get_active_rate_schedule(conn)
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    new_comps = []
+    for comp in active_sched.components:
+        c_copy = comp.model_copy()
+        if c_copy.component_id == "gen_charge":
+            c_copy.rate_per_kwh = payload.generation_charge
+            c_copy.vat_rate_per_kwh = payload.generation_vat
+        elif c_copy.component_id == "dist_charge":
+            c_copy.rate_per_kwh = payload.distribution_charge
+        elif c_copy.component_id == "trans_charge":
+            c_copy.rate_per_kwh = payload.transmission_charge
+        elif c_copy.component_id == "system_loss_charge":
+            c_copy.rate_per_kwh = payload.system_loss_charge
+        new_comps.append(c_copy)
+    new_sched = TEIRateSchedule(
+        id=f"tei-rate-{payload.effective_month}-{payload.customer_class.lower()}-manual",
+        effective_month=payload.effective_month,
+        customer_class=payload.customer_class,
+        publication_date=datetime.datetime.now().strftime("%Y-%m-%d"),
+        source_url="Manual User Entry",
+        document_hash=hashlib.sha256(f"{payload.effective_month}-{payload.generation_charge}".encode()).hexdigest(),
+        verification_status="manual",
+        components=new_comps,
+        created_at=now_iso
+    )
+    save_rate_schedule(new_sched, conn)
+    conn.commit()
+    conn.close()
+    last_rate_check_cache = {
+        "status": "manual_applied",
+        "message": f"Manual rate schedule for {payload.effective_month} activated.",
+        "checked_at": now_iso,
+        "rate_change_alert": None
+    }
+    return {"status": "created", "schedule_id": new_sched.id}
+
+@router.post("/billing/sensitivity")
+def calculate_sensitivity_endpoint(payload: SensitivityRequest, dataset_id: Optional[str] = None):
+    conn = get_connection()
+    sched = get_active_rate_schedule(conn)
+    profile = get_billing_profile(conn)
+    conn.close()
+    records = _get_records(dataset_id or "all")
+    forecast = forecast_tei_bill(records, sched, profile, last_rate_check_cache)
+    base_kwh = forecast.expected_estimate.total_projected_kwh
+    return simulate_rate_sensitivity(
+        base_kwh=base_kwh,
+        schedule=sched,
+        profile=profile,
+        billing_start=forecast.billing_cycle_start,
+        billing_end=forecast.billing_cycle_end,
+        delta_gen_rate=payload.delta_gen_rate,
+        delta_usage_pct=payload.delta_usage_pct,
+        custom_kwh=payload.custom_kwh
+    )
+
+@router.get("/billing/history")
+def get_historical_bills_endpoint():
+    conn = get_connection()
+    bills = get_historical_bills_summary(conn)
+    conn.close()
+    return bills
+
+@router.post("/billing/history")
+def add_historical_bill_endpoint(payload: AddHistoricalBillRequest):
+    conn = get_connection()
+    res = insert_historical_bill(
+        billing_period_start=payload.billing_period_start,
+        billing_period_end=payload.billing_period_end,
+        billed_kwh=payload.billed_kwh,
+        actual_amount_due=payload.actual_amount_due,
+        predicted_amount_due=payload.predicted_amount_due,
+        notes=payload.notes or "",
+        conn=conn
+    )
+    conn.commit()
+    conn.close()
+    return res
+
+@router.delete("/billing/history/{bill_id}")
+def delete_historical_bill_endpoint(bill_id: str):
+    conn = get_connection()
+    success = remove_historical_bill(bill_id, conn)
+    conn.commit()
+    conn.close()
+    if not success:
+        raise HTTPException(status_code=404, detail="Historical bill not found")
+    return {"status": "deleted", "id": bill_id}

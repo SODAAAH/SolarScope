@@ -106,6 +106,58 @@ def init_db():
     );
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tei_rate_schedules (
+        id TEXT PRIMARY KEY,
+        effective_month TEXT NOT NULL,
+        customer_class TEXT NOT NULL DEFAULT 'Residential',
+        publication_date TEXT,
+        source_url TEXT,
+        document_hash TEXT,
+        verification_status TEXT DEFAULT 'verified',
+        is_active INTEGER DEFAULT 1,
+        schedule_data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tei_billing_profiles (
+        id TEXT PRIMARY KEY,
+        project_id TEXT UNIQUE NOT NULL,
+        customer_class TEXT DEFAULT 'Residential',
+        billing_cycle_day INTEGER DEFAULT 18,
+        cycle_start_date TEXT,
+        cycle_end_date TEXT,
+        prev_meter_reading REAL,
+        latest_meter_reading REAL,
+        meter_reading_date TEXT,
+        connection_type TEXT DEFAULT 'behind_meter',
+        is_lifeline_eligible INTEGER DEFAULT 0,
+        is_senior_eligible INTEGER DEFAULT 0,
+        is_prompt_payment_eligible INTEGER DEFAULT 0,
+        previous_unpaid_balance REAL DEFAULT 0.0,
+        payments_received REAL DEFAULT 0.0,
+        forecast_method TEXT DEFAULT '7day',
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tei_historical_bills (
+        id TEXT PRIMARY KEY,
+        project_id TEXT DEFAULT 'default',
+        billing_period_start TEXT NOT NULL,
+        billing_period_end TEXT NOT NULL,
+        billed_kwh REAL NOT NULL,
+        actual_amount_due REAL NOT NULL,
+        predicted_amount_due REAL,
+        notes TEXT,
+        created_at TEXT NOT NULL
+    );
+    """)
+
     cursor.execute("PRAGMA table_info(datasets)")
     cols = [row["name"] for row in cursor.fetchall()]
     if "file_hash" not in cols:
@@ -141,6 +193,41 @@ def init_db():
                 11.25, 25.0, 3.0, 3.0,
                 0.95, 11.50, 0.0, "PHP", "Asia/Manila", now
             )
+        )
+
+    cursor.execute("SELECT id FROM tei_rate_schedules WHERE is_active = 1")
+    if not cursor.fetchone():
+        from backend.app.billing.tariff_defaults import get_default_october_2026_schedule
+        default_sched = get_default_october_2026_schedule()
+        comps_json = json.dumps([c.model_dump() for c in default_sched.components])
+        cursor.execute(
+            """INSERT INTO tei_rate_schedules
+               (id, effective_month, customer_class, publication_date, source_url, document_hash, verification_status, is_active, schedule_data_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+            (
+                default_sched.id,
+                default_sched.effective_month,
+                default_sched.customer_class,
+                default_sched.publication_date,
+                default_sched.source_url,
+                default_sched.document_hash,
+                default_sched.verification_status,
+                comps_json,
+                default_sched.created_at
+            )
+        )
+
+    cursor.execute("SELECT id FROM tei_billing_profiles WHERE project_id = 'default'")
+    if not cursor.fetchone():
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        cursor.execute(
+            """INSERT INTO tei_billing_profiles
+               (id, project_id, customer_class, billing_cycle_day, cycle_start_date, cycle_end_date, connection_type,
+                is_lifeline_eligible, is_senior_eligible, is_prompt_payment_eligible, previous_unpaid_balance,
+                payments_received, forecast_method, updated_at)
+               VALUES ('profile-default', 'default', 'Residential', 18, '2026-10-18', '2026-11-18', 'behind_meter',
+                       0, 0, 0, 0.0, 0.0, '7day', ?)""",
+            (now_iso,)
         )
 
     conn.commit()
