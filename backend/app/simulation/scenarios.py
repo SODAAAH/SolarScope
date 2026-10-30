@@ -4,13 +4,17 @@ from backend.app.ingestion.models import CanonicalRecord
 
 def simulate_system_scenarios(
     records: List[CanonicalRecord],
-    baseline_battery_kwh: float = 15.0,
+    baseline_battery_kwh: float = 16.08,
     add_battery_kwh: float = 5.0,
-    baseline_pv_kwp: float = 5.0,
-    add_pv_kwp: float = 2.0,
+    baseline_pv_kwp: float = 6.2,
+    add_pv_kwp: float = 1.24,
     new_reserve_soc: float = 20.0,
     shift_load_kwh: float = 2.0,
-    tariff_rate: float = 11.50
+    tariff_rate: float = 11.50,
+    inverter_rated_kw: float = 6.0,
+    inverter_max_current_a: float = 135.0,
+    bms_max_current_a: float = 100.0,
+    battery_voltage: float = 51.2
 ) -> Dict[str, Any]:
     if not records:
         return {}
@@ -19,6 +23,17 @@ def simulate_system_scenarios(
     total_baseline_pv_kwh = 0.0
     total_baseline_load_kwh = 0.0
 
+    try:
+        t0_all = datetime.datetime.strptime(records[0].timestamp, "%Y-%m-%d %H:%M:%S")
+        t1_all = datetime.datetime.strptime(records[-1].timestamp, "%Y-%m-%d %H:%M:%S")
+        span_days = max(1.0, (t1_all - t0_all).total_seconds() / 86400.0)
+    except Exception:
+        span_days = 1.0
+
+    clipped_energy_kwh = 0.0
+    effective_bms_current_a = min(inverter_max_current_a, bms_max_current_a)
+    max_battery_charge_kw = round((effective_bms_current_a * battery_voltage) / 1000.0, 2)
+
     for i in range(len(records) - 1):
         try:
             t0 = datetime.datetime.strptime(records[i].timestamp, "%Y-%m-%d %H:%M:%S")
@@ -26,46 +41,113 @@ def simulate_system_scenarios(
             dt_h = (t1 - t0).total_seconds() / 3600.0
         except Exception:
             dt_h = 5.0 / 60.0
+
         p_grid = 0.5 * (max(0.0, records[i].grid_power_kw) + max(0.0, records[i + 1].grid_power_kw))
         p_pv = 0.5 * (records[i].pv_power_kw + records[i + 1].pv_power_kw)
         p_load = 0.5 * (records[i].load_power_kw + records[i + 1].load_power_kw)
+
         total_baseline_grid_kwh += p_grid * dt_h
         total_baseline_pv_kwh += p_pv * dt_h
         total_baseline_load_kwh += p_load * dt_h
 
-    pv_scale_factor = (baseline_pv_kwp + add_pv_kwp) / baseline_pv_kwp if baseline_pv_kwp > 0 else 1.0
-    modeled_pv_kwh = round(total_baseline_pv_kwh * pv_scale_factor, 3)
+        scaled_pv = p_pv * ((baseline_pv_kwp + add_pv_kwp) / baseline_pv_kwp) if baseline_pv_kwp > 0 else p_pv
+        if scaled_pv > inverter_rated_kw:
+            clipped_energy_kwh += (scaled_pv - inverter_rated_kw) * dt_h
 
-    extra_pv_generated_kwh = modeled_pv_kwh - total_baseline_pv_kwh
-    extra_solar_absorbed_kwh = min(extra_pv_generated_kwh * 0.70, add_battery_kwh)
+    daily_grid_kwh = total_baseline_grid_kwh / span_days
+    daily_pv_kwh = total_baseline_pv_kwh / span_days
+    daily_load_kwh = total_baseline_load_kwh / span_days
+    daily_clipped_kwh = clipped_energy_kwh / span_days
 
-    current_reserve_soc = 25.0
-    reserve_delta_pct = max(0.0, current_reserve_soc - new_reserve_soc)
-    usable_reserve_discharge_kwh = (reserve_delta_pct / 100.0) * baseline_battery_kwh
+    pv_scale = (baseline_pv_kwp + add_pv_kwp) / baseline_pv_kwp if baseline_pv_kwp > 0 else 1.0
+    unconstrained_new_pv_kwh = daily_pv_kwh * pv_scale
+    effective_new_pv_kwh = max(0.0, unconstrained_new_pv_kwh - daily_clipped_kwh)
+    net_extra_pv_kwh = max(0.0, effective_new_pv_kwh - daily_pv_kwh)
 
-    total_simulated_battery_kwh = baseline_battery_kwh + add_battery_kwh
-    expanded_battery_absorption_kwh = min(total_baseline_grid_kwh * 0.45, add_battery_kwh * 0.85)
+    max_daily_battery_absorption = add_battery_kwh * 0.90
+    battery_absorption_kwh = min(max_daily_battery_absorption, net_extra_pv_kwh + (daily_grid_kwh * 0.35))
 
-    modeled_grid_reduction_kwh = min(
-        total_baseline_grid_kwh,
-        expanded_battery_absorption_kwh + usable_reserve_discharge_kwh + (shift_load_kwh * 0.80)
+    reserve_delta_pct = max(0.0, 25.0 - new_reserve_soc)
+    reserve_energy_released_kwh = (reserve_delta_pct / 100.0) * baseline_battery_kwh
+
+    achievable_grid_reduction = min(
+        daily_grid_kwh,
+        battery_absorption_kwh + reserve_energy_released_kwh + (shift_load_kwh * 0.85)
     )
 
-    modeled_grid_kwh = max(0.0, round(total_baseline_grid_kwh - modeled_grid_reduction_kwh, 3))
-    
-    baseline_daily_cost = round(total_baseline_grid_kwh * tariff_rate, 2)
-    modeled_daily_cost = round(modeled_grid_kwh * tariff_rate, 2)
-    daily_incremental_savings = round(baseline_daily_cost - modeled_daily_cost, 2)
-    annual_incremental_savings = round(daily_incremental_savings * 365.0, 2)
+    modeled_daily_grid_kwh = max(0.0, round(daily_grid_kwh - achievable_grid_reduction, 3))
+    grid_reduction_pct = round((achievable_grid_reduction / daily_grid_kwh) * 100.0, 1) if daily_grid_kwh > 0 else 0.0
 
-    battery_est_cost = add_battery_kwh * 25000.0
-    pv_est_cost = add_pv_kwp * 35000.0
-    total_upgrade_cost = battery_est_cost + pv_est_cost
-    upgrade_payback_years = round(total_upgrade_cost / annual_incremental_savings, 2) if annual_incremental_savings > 0 else 99.0
+    daily_savings_php = round(achievable_grid_reduction * tariff_rate, 2)
+    monthly_savings_php = round(daily_savings_php * 30.5, 2)
+    annual_savings_php = round(daily_savings_php * 365.25, 2)
+
+    battery_cost_est = add_battery_kwh * 22000.0
+    pv_cost_est = add_pv_kwp * 28000.0
+    total_est_cost = battery_cost_est + pv_cost_est
+    payback_years = round(total_est_cost / annual_savings_php, 2) if annual_savings_php > 0 else 99.0
+
+    discount_rate = 0.06
+    degradation = 0.005
+    inflation = 0.035
+    cum_cash_flow = -total_est_cost
+    for yr in range(1, 11):
+        adj_sav = annual_savings_php * ((1.0 - degradation) ** (yr - 1)) * ((1.0 + inflation) ** (yr - 1))
+        disc_val = adj_sav / ((1.0 + discount_rate) ** yr)
+        cum_cash_flow += disc_val
+    npv_10yr = round(cum_cash_flow, 2)
+
+    avg_night_power = (daily_load_kwh * 0.45) / 12.0 if daily_load_kwh > 0 else 0.8
+    added_autonomy_hours = round(battery_absorption_kwh / avg_night_power, 1) if avg_night_power > 0 else 0.0
+    autonomy_formatted = f"+{int(added_autonomy_hours)}h {int(round((added_autonomy_hours - int(added_autonomy_hours)) * 60))}m"
+
+    electrical_limits_report = {
+        "inverter_rated_continuous_kw": inverter_rated_kw,
+        "inverter_peak_apparent_va": 6600.0,
+        "inverter_max_battery_current_a": inverter_max_current_a,
+        "bms_configured_limit_a": bms_max_current_a,
+        "effective_battery_current_limit_a": effective_bms_current_a,
+        "max_battery_charge_power_kw": max_battery_charge_kw,
+        "pv_mppt_operating_range_v": "150V - 425V DC",
+        "pv_max_voltage_v": "500V DC",
+        "daily_inverter_clipped_kwh": round(daily_clipped_kwh, 3),
+        "is_clipping_observed": daily_clipped_kwh > 0.1
+    }
+
+    def build_option(name: str, batt_kwh: float, pv_kwp: float, desc: str):
+        b_cost = batt_kwh * 22000.0
+        p_cost = pv_kwp * 28000.0
+        tot_cost = b_cost + p_cost
+        red_kwh = min(daily_grid_kwh, (batt_kwh * 0.80) + (pv_kwp * 2.2))
+        d_sav = red_kwh * tariff_rate
+        a_sav = d_sav * 365.25
+        pb = round(tot_cost / a_sav, 2) if a_sav > 0 else 99.0
+        c_npv = -tot_cost
+        for y in range(1, 11):
+            s = a_sav * ((1.0 - degradation) ** (y - 1)) * ((1.0 + inflation) ** (y - 1))
+            c_npv += s / ((1.0 + discount_rate) ** y)
+        return {
+            "name": name,
+            "description": desc,
+            "added_battery_kwh": batt_kwh,
+            "added_pv_kwp": pv_kwp,
+            "estimated_cost_php": tot_cost,
+            "daily_grid_reduction_kwh": round(red_kwh, 2),
+            "monthly_savings_php": round(d_sav * 30.5, 2),
+            "payback_years": pb,
+            "ten_year_npv_php": round(c_npv, 2)
+        }
+
+    comparison_options = [
+        build_option("Option A: Storage Expansion", 5.0, 0.0, "Add 5 kWh battery storage to absorb excess daytime solar for nighttime loads."),
+        build_option("Option B: Panel Expansion", 0.0, 1.24, "Add 2 x 620W Canadian Solar panels (1.24 kWp) to boost morning and afternoon generation."),
+        build_option("Option C: Balanced Storage & PV", 5.0, 1.24, "Add 5 kWh battery and 2 x 620W panels for maximum grid independence."),
+        build_option("Option D: Full Storage Expansion", 16.08, 0.0, "Double your storage capacity (+16.08 kWh) for multi-day autonomy.")
+    ]
 
     return {
-        "status": "MODELED_SIMULATION",
-        "assumptions": {
+        "status": "HARDWARE_CONSTRAINED_SIMULATION",
+        "inputs": {
             "baseline_battery_kwh": baseline_battery_kwh,
             "added_battery_kwh": add_battery_kwh,
             "baseline_pv_kwp": baseline_pv_kwp,
@@ -74,14 +156,25 @@ def simulate_system_scenarios(
             "shifted_load_kwh": shift_load_kwh,
             "tariff_rate": tariff_rate
         },
-        "baseline_grid_kwh": round(total_baseline_grid_kwh, 3),
-        "modeled_grid_kwh": modeled_grid_kwh,
-        "grid_reduction_kwh": round(modeled_grid_reduction_kwh, 3),
-        "grid_reduction_percent": round((modeled_grid_reduction_kwh / total_baseline_grid_kwh) * 100.0, 1) if total_baseline_grid_kwh > 0 else 0.0,
-        "baseline_daily_cost": baseline_daily_cost,
-        "modeled_daily_cost": modeled_daily_cost,
-        "daily_incremental_savings": daily_incremental_savings,
-        "annual_incremental_savings": annual_incremental_savings,
-        "total_upgrade_cost": total_upgrade_cost,
-        "upgrade_payback_years": upgrade_payback_years
+        "baseline": {
+            "daily_grid_import_kwh": round(daily_grid_kwh, 2),
+            "daily_solar_yield_kwh": round(daily_pv_kwh, 2),
+            "daily_household_load_kwh": round(daily_load_kwh, 2),
+            "span_days": round(span_days, 1)
+        },
+        "modeled_result": {
+            "modeled_daily_grid_kwh": modeled_daily_grid_kwh,
+            "daily_grid_reduction_kwh": round(achievable_grid_reduction, 2),
+            "grid_reduction_percentage": grid_reduction_pct,
+            "added_night_autonomy_hours": added_autonomy_hours,
+            "added_night_autonomy_formatted": autonomy_formatted,
+            "daily_savings_php": daily_savings_php,
+            "monthly_savings_php": monthly_savings_php,
+            "annual_savings_php": annual_savings_php,
+            "estimated_investment_cost_php": total_est_cost,
+            "simple_payback_years": payback_years,
+            "ten_year_npv_php": npv_10yr
+        },
+        "electrical_limits": electrical_limits_report,
+        "comparison_options": comparison_options
     }

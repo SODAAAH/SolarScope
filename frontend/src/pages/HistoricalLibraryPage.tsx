@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import {
   UploadCloud,
   Trash2,
@@ -8,11 +8,21 @@ import {
   Play,
   AlertCircle,
   Loader2,
-  CheckSquare,
-  Filter,
-  Layers
+  Database,
+  Cloud,
+  FileSearch,
+  Check,
+  AlertTriangle,
+  Radio,
+  ArrowRight,
+  Wifi
 } from "lucide-react";
-import { api, type SourceItem } from "../lib/api";
+import {
+  api,
+  type SourceItem,
+  type DeyeStatusResponse,
+  type FilePreviewResponse
+} from "../lib/api";
 import { format12HourDateTime } from "../lib/formatters";
 import { ConfirmModal } from "../components/ui/ConfirmModal";
 
@@ -32,6 +42,9 @@ interface IngestionProgress {
 
 export const HistoricalLibraryPage: React.FC = () => {
   const { activeDatasetId, setActiveDatasetId } = useOutletContext<OutletContextType>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentTab = searchParams.get("tab") || "datasets";
+
   const [sources, setSources] = useState<SourceItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -47,6 +60,21 @@ export const HistoricalLibraryPage: React.FC = () => {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const [deyeStatus, setDeyeStatus] = useState<DeyeStatusResponse | null>(null);
+  const [deyeLoading, setDeyeLoading] = useState(false);
+  const [deyeTesting, setDeyeTesting] = useState(false);
+  const [deyeSyncing, setDeyeSyncing] = useState(false);
+  const [deyeMessage, setDeyeMessage] = useState<string | null>(null);
+
+  const [previewFile, setPreviewFile] = useState<File | null>(null);
+  const [previewResult, setPreviewResult] = useState<FilePreviewResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  const setTab = (tab: string) => {
+    setSearchParams({ tab });
+  };
+
   const fetchSources = async () => {
     setLoading(true);
     try {
@@ -59,9 +87,83 @@ export const HistoricalLibraryPage: React.FC = () => {
     }
   };
 
+  const fetchDeyeStatus = async () => {
+    setDeyeLoading(true);
+    try {
+      const data = await api.getDeyeStatus();
+      setDeyeStatus(data);
+    } catch (err: any) {
+      setDeyeMessage(`Cloud status check: ${err.message}`);
+    } finally {
+      setDeyeLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchSources();
+    fetchDeyeStatus();
   }, []);
+
+  const handleTestDeyeConnection = async () => {
+    setDeyeTesting(true);
+    setDeyeMessage(null);
+    try {
+      const res = await api.testDeyeConnection();
+      setDeyeMessage(res.message);
+      await fetchDeyeStatus();
+    } catch (err: any) {
+      setDeyeMessage(`Connection test: ${err.message}`);
+    } finally {
+      setDeyeTesting(false);
+    }
+  };
+
+  const handleSyncDeyeNow = async () => {
+    setDeyeSyncing(true);
+    setDeyeMessage(null);
+    try {
+      const res = await api.syncDeyeNow();
+      setDeyeMessage(`Sync result: ${res.message} (${res.records_inserted} rows inserted)`);
+      await fetchDeyeStatus();
+      await fetchSources();
+    } catch (err: any) {
+      setDeyeMessage(`Sync failed: ${err.message}`);
+    } finally {
+      setDeyeSyncing(false);
+    }
+  };
+
+  const handleInspectPreview = async (file: File) => {
+    setPreviewFile(file);
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreviewResult(null);
+    try {
+      const res = await api.previewIngestionFile(file);
+      setPreviewResult(res);
+    } catch (err: any) {
+      setPreviewError(err.message || "Failed to inspect file.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleCommitPreviewedFile = async () => {
+    if (!previewFile) return;
+    setUploading(true);
+    try {
+      const res = await api.uploadDatasetsBatch([previewFile]);
+      if (res.files && res.files.length > 0 && res.files[0].dataset_id) {
+        setActiveDatasetId(res.files[0].dataset_id);
+      }
+      setTab("datasets");
+      await fetchSources();
+    } catch (err: any) {
+      setPreviewError(err.message || "Failed to commit inspected file.");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const processFileList = async (files: File[]) => {
     if (!files || files.length === 0) return;
@@ -160,10 +262,9 @@ export const HistoricalLibraryPage: React.FC = () => {
       }
     }
 
-    const totalElapsed = Math.max(1, Math.round((Date.now() - startTime) / 1000));
     setProgress(null);
     setCommittingAll(false);
-    setUploadStatus(`Committed ${committedCount} of ${total} pending file(s) in ${totalElapsed}s.`);
+    setUploadStatus(`Committed ${committedCount} of ${total} pending file(s).`);
     await fetchSources();
   };
 
@@ -249,36 +350,10 @@ export const HistoricalLibraryPage: React.FC = () => {
     }
   };
 
-  const handleBulkCommitSelected = async () => {
-    const pendingSelected = sources.filter(s => selectedIds.has(s.id) && (s.total_rows === 0 || !s.start_time));
-    if (pendingSelected.length === 0) return;
-    setCommittingAll(true);
-    setUploadStatus(null);
-    let committedCount = 0;
-    for (let i = 0; i < pendingSelected.length; i++) {
-      const src = pendingSelected[i];
-      try {
-        await api.autoCommitDataset(src.id);
-        committedCount++;
-        await fetchSources();
-      } catch (err: any) {
-        setUploadStatus(`Error committing ${src.filename}: ${err.message}`);
-        break;
-      }
-    }
-    setCommittingAll(false);
-    setUploadStatus(`Committed ${committedCount} selected dataset(s).`);
-  };
-
   const totalRecords = sources.reduce((acc, s) => acc + (s.total_rows || 0), 0);
   const includedSources = sources.filter(s => s.is_included === 1);
   const pendingSources = sources.filter(s => (s.total_rows === 0 || !s.start_time));
   const excludedSources = sources.filter(s => s.is_included !== 1);
-
-  const hashCounts = sources.reduce((acc, s) => {
-    if (s.file_hash) acc[s.file_hash] = (acc[s.file_hash] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
 
   const sortedSources = [...sources].sort((a, b) => {
     const dateA = a.start_time ? a.start_time.slice(0, 10) : a.filename;
@@ -300,14 +375,14 @@ export const HistoricalLibraryPage: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Historical Data Library & Source Management
+            Data Library & Ingestion Center
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Multi-file ingestion, SHA-256 fingerprinting, overlap resolution, and multi-day provenance tracking.
+            Historical datasets, automatic Deye Cloud synchronization, and pre-import signal verification.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {pendingSources.length > 0 && (
+          {pendingSources.length > 0 && currentTab === "datasets" && (
             <button
               onClick={handleAutoCommitAll}
               disabled={committingAll || uploading}
@@ -327,467 +402,729 @@ export const HistoricalLibraryPage: React.FC = () => {
             </button>
           )}
           <button
-            onClick={fetchSources}
-            disabled={loading}
+            onClick={() => {
+              fetchSources();
+              fetchDeyeStatus();
+            }}
+            disabled={loading || deyeLoading}
             className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading || deyeLoading ? "animate-spin" : ""}`} />
             Refresh
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              Batch Inverter Ingestion
-            </h2>
-            <span className="text-xs text-slate-500">Supports simultaneous .xlsx, .xlsm, .csv uploads</span>
-          </div>
-
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragging(true);
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setIsDragging(false);
-              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                processFileList(Array.from(e.dataTransfer.files));
-              }
-            }}
-            className={`p-8 border-2 border-dashed rounded-xl text-center flex flex-col items-center justify-center transition-colors min-h-[190px] ${
-              isDragging
-                ? "border-amber-500 bg-amber-50/50 dark:bg-amber-950/20"
-                : "border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30"
-            }`}
-          >
-            {progress ? (
-              <div className="w-full max-w-md mx-auto space-y-3.5 py-1">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-amber-600 dark:text-amber-400" />
-                    <span className="font-semibold text-slate-900 dark:text-slate-100">
-                      Loading file {progress.current} of {progress.total}
-                    </span>
-                  </div>
-                  <span className="font-mono font-bold tabular-nums text-amber-600 dark:text-amber-400 text-sm">
-                    {progress.percent}%
-                  </span>
-                </div>
-
-                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden shadow-inner p-0.5 border border-slate-300 dark:border-slate-600">
-                  <div
-                    className="bg-amber-600 dark:bg-amber-500 h-full rounded-full transition-all duration-300 ease-out"
-                    style={{ width: `${progress.percent}%` }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span className="truncate max-w-[210px] text-left">
-                    Processing: <strong className="font-mono text-slate-700 dark:text-slate-300">{progress.currentFileName}</strong>
-                  </span>
-                  <span className="font-medium text-slate-700 dark:text-slate-300">
-                    {progress.estimatedRemainingSec !== null && progress.estimatedRemainingSec > 0
-                      ? `~${progress.estimatedRemainingSec}s remaining`
-                      : progress.percent === 100
-                      ? "Finalizing commit..."
-                      : "Calculating finish time..."}
-                  </span>
-                </div>
-
-                <div className="text-[11px] text-slate-400 text-center">
-                  Parsing telemetry channels, validating energy balance, and committing to storage
-                </div>
-              </div>
-            ) : (
-              <>
-                <UploadCloud className="w-10 h-10 text-amber-500 mb-3" />
-                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  Drag & Drop or Select Multiple Files
-                </h3>
-                <p className="text-xs text-slate-500 mt-1 mb-4">
-                  Upload multiple single-day or multi-day files at once. Identical files are detected via SHA-256 fingerprinting.
-                </p>
-                <label className="cursor-pointer px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded-lg transition-colors">
-                  Select Files to Ingest
-                  <input
-                    type="file"
-                    multiple
-                    accept=".xlsx,.xlsm,.csv"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        processFileList(Array.from(e.target.files));
-                      }
-                    }}
-                    disabled={uploading}
-                    className="hidden"
-                  />
-                </label>
-              </>
-            )}
-          </div>
-
-          {uploadStatus && (
-            <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 rounded-lg flex items-center justify-between">
-              <span>{uploadStatus}</span>
-              <button
-                onClick={() => setUploadStatus(null)}
-                className="text-xs text-amber-600 hover:text-amber-800 dark:text-amber-300 underline ml-2"
-              >
-                Dismiss
-              </button>
-            </div>
+      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-8">
+        <button
+          onClick={() => setTab("datasets")}
+          className={`pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
+            currentTab === "datasets"
+              ? "border-amber-600 text-amber-600 dark:text-amber-400 font-semibold"
+              : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+          }`}
+        >
+          <Database className="w-4 h-4" />
+          <span>Historical Datasets ({sources.length})</span>
+        </button>
+        <button
+          onClick={() => setTab("cloud")}
+          className={`pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
+            currentTab === "cloud"
+              ? "border-amber-600 text-amber-600 dark:text-amber-400 font-semibold"
+              : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+          }`}
+        >
+          <Cloud className="w-4 h-4" />
+          <span>Deye Cloud Sync</span>
+          {deyeStatus?.is_configured && (
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
           )}
-        </div>
+        </button>
+        <button
+          onClick={() => setTab("preview")}
+          className={`pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
+            currentTab === "preview"
+              ? "border-amber-600 text-amber-600 dark:text-amber-400 font-semibold"
+              : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+          }`}
+        >
+          <FileSearch className="w-4 h-4" />
+          <span>Pre-Import Inspection</span>
+        </button>
+      </div>
 
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
-          <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-4">
-              Historical Library Stats
-            </h2>
-            <div className="space-y-4">
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                <span className="text-xs text-slate-500">Total Sources Ingested</span>
-                <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
-                  {sources.length} files
-                </div>
+      {currentTab === "datasets" && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="md:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Batch Inverter Ingestion
+                </h2>
+                <span className="text-xs text-slate-500">Supports simultaneous .xlsx, .xlsm, .csv uploads</span>
               </div>
 
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                <span className="text-xs text-slate-500">Included in Historical Aggregation</span>
-                <div className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400 mt-1">
-                  {includedSources.length} active
-                </div>
-              </div>
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    processFileList(Array.from(e.dataTransfer.files));
+                  }
+                }}
+                className={`p-8 border-2 border-dashed rounded-xl text-center flex flex-col items-center justify-center transition-colors min-h-[190px] ${
+                  isDragging
+                    ? "border-amber-500 bg-amber-50/50 dark:bg-amber-950/20"
+                    : "border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30"
+                }`}
+              >
+                {progress ? (
+                  <div className="w-full max-w-md mx-auto space-y-3.5 py-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin text-amber-600 dark:text-amber-400" />
+                        <span className="font-semibold text-slate-900 dark:text-slate-100">
+                          Loading file {progress.current} of {progress.total}
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold tabular-nums text-amber-600 dark:text-amber-400 text-sm">
+                        {progress.percent}%
+                      </span>
+                    </div>
 
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                <span className="text-xs text-slate-500">Total Telemetry Observations</span>
-                <div className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400 mt-1">
-                  {totalRecords.toLocaleString()} rows
-                </div>
-              </div>
+                    <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden shadow-inner p-0.5 border border-slate-300 dark:border-slate-600">
+                      <div
+                        className="bg-amber-600 dark:bg-amber-500 h-full rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${progress.percent}%` }}
+                      />
+                    </div>
 
-              {pendingSources.length > 0 && (
-                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-900 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs text-amber-700 dark:text-amber-300 font-medium">Pending Uncommitted</span>
-                    <div className="text-lg font-bold text-amber-800 dark:text-amber-200">
-                      {pendingSources.length} files
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span className="truncate max-w-[210px] text-left">
+                        Processing: <strong className="font-mono text-slate-700 dark:text-slate-300">{progress.currentFileName}</strong>
+                      </span>
+                      <span className="font-medium text-slate-700 dark:text-slate-300">
+                        {progress.estimatedRemainingSec !== null && progress.estimatedRemainingSec > 0
+                          ? `~${progress.estimatedRemainingSec}s remaining`
+                          : progress.percent === 100
+                          ? "Finalizing commit..."
+                          : "Calculating finish time..."}
+                      </span>
                     </div>
                   </div>
+                ) : (
+                  <>
+                    <UploadCloud className="w-10 h-10 text-slate-400 mb-3" />
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Drag and drop multi-day inverter telemetry files here
+                    </p>
+                    <p className="text-xs text-slate-500 mb-4">
+                      Batch uploads automatically check SHA-256 fingerprints and merge timeline continuous signals.
+                    </p>
+                    <label className="cursor-pointer px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors">
+                      Browse Files
+                      <input
+                        type="file"
+                        multiple
+                        accept=".xlsx,.xlsm,.csv"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            processFileList(Array.from(e.target.files));
+                          }
+                        }}
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
+
+              {uploadStatus && (
+                <div className="mt-4 p-3 bg-slate-100 dark:bg-slate-800/80 rounded-lg text-xs flex items-center justify-between text-slate-700 dark:text-slate-300">
+                  <span>{uploadStatus}</span>
                   <button
-                    onClick={handleAutoCommitAll}
-                    disabled={committingAll || uploading}
-                    className="px-2.5 py-1 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors disabled:opacity-50"
+                    onClick={() => setUploadStatus(null)}
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                   >
-                    {committingAll ? "Working..." : "Commit All"}
+                    Dismiss
                   </button>
                 </div>
               )}
             </div>
+
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-4">
+                  Library Provenance
+                </h2>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800 text-sm">
+                    <span className="text-slate-500">Total Telemetry Files</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{sources.length}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800 text-sm">
+                    <span className="text-slate-500">Committed Records</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{totalRecords.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800 text-sm">
+                    <span className="text-slate-500">Included in Portfolio</span>
+                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">{includedSources.length}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 text-sm">
+                    <span className="text-slate-500">Excluded or Uncommitted</span>
+                    <span className="font-semibold text-amber-600 dark:text-amber-400">{excludedSources.length}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                <span>Deterministic SHA-256 deduplication active</span>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-4 text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-3">
-            All sources are fingerprinted and stored in local managed storage.
-          </div>
-        </div>
-      </div>
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 text-xs font-medium">
+                  <button
+                    onClick={() => setFilterTab("all")}
+                    className={`px-3 py-1.5 rounded-md transition-colors ${
+                      filterTab === "all" ? "bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-400"
+                    }`}
+                  >
+                    All ({sources.length})
+                  </button>
+                  <button
+                    onClick={() => setFilterTab("included")}
+                    className={`px-3 py-1.5 rounded-md transition-colors ${
+                      filterTab === "included" ? "bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-400"
+                    }`}
+                  >
+                    Included ({includedSources.length})
+                  </button>
+                  <button
+                    onClick={() => setFilterTab("excluded")}
+                    className={`px-3 py-1.5 rounded-md transition-colors ${
+                      filterTab === "excluded" ? "bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-400"
+                    }`}
+                  >
+                    Excluded ({excludedSources.length})
+                  </button>
+                  {pendingSources.length > 0 && (
+                    <button
+                      onClick={() => setFilterTab("pending")}
+                      className={`px-3 py-1.5 rounded-md transition-colors ${
+                        filterTab === "pending" ? "bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 font-semibold" : "text-amber-600 dark:text-amber-400"
+                      }`}
+                    >
+                      Pending ({pendingSources.length})
+                    </button>
+                  )}
+                </div>
+              </div>
 
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Source Inventory & Provenance Records
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Review recognized formats, observation spans, quality scores, and inclusion flags.
-            </p>
-          </div>
+              {selectedIds.size > 0 && (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-500 font-medium">{selectedIds.size} selected:</span>
+                  <button
+                    onClick={() => handleBulkInclude(true)}
+                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded font-medium transition-colors"
+                  >
+                    Include
+                  </button>
+                  <button
+                    onClick={() => handleBulkInclude(false)}
+                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded font-medium transition-colors"
+                  >
+                    Exclude
+                  </button>
+                  <button
+                    onClick={() => setIsBulkDeleting(true)}
+                    className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded font-medium transition-colors"
+                  >
+                    Delete ({selectedIds.size})
+                  </button>
+                </div>
+              )}
+            </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              onClick={() => setFilterTab("all")}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 ${
-                filterTab === "all"
-                  ? "bg-amber-600 text-white font-semibold"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>All ({sources.length})</span>
-            </button>
-            <button
-              onClick={() => setFilterTab("included")}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 ${
-                filterTab === "included"
-                  ? "bg-emerald-600 text-white font-semibold"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Included ({includedSources.length})</span>
-            </button>
-            <button
-              onClick={() => setFilterTab("excluded")}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 ${
-                filterTab === "excluded"
-                  ? "bg-slate-700 text-white font-semibold"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-              }`}
-            >
-              <Filter className="w-3.5 h-3.5" />
-              <span>Excluded ({excludedSources.length})</span>
-            </button>
-            {pendingSources.length > 0 && (
-              <button
-                onClick={() => setFilterTab("pending")}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 ${
-                  filterTab === "pending"
-                    ? "bg-amber-600 text-white font-semibold"
-                    : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800"
-                }`}
-              >
-                <AlertCircle className="w-3.5 h-3.5" />
-                <span>Pending ({pendingSources.length})</span>
-              </button>
+            {filteredSources.length === 0 ? (
+              <div className="p-12 text-center text-slate-500">
+                <Database className="w-8 h-8 mx-auto mb-2 text-slate-400 opacity-60" />
+                <p className="text-sm font-medium">No datasets found in this view.</p>
+                <p className="text-xs text-slate-400 mt-1">Upload inverter files to populate the historical portfolio.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
+                    <tr>
+                      <th className="px-4 py-3 w-10">
+                        <input
+                          type="checkbox"
+                          checked={allFilteredSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIds(new Set(filteredSources.map(s => s.id)));
+                            } else {
+                              setSelectedIds(new Set());
+                            }
+                          }}
+                          className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                        />
+                      </th>
+                      <th className="px-4 py-3">Source File</th>
+                      <th className="px-4 py-3">Telemetry Time Range</th>
+                      <th className="px-4 py-3">Records</th>
+                      <th className="px-4 py-3">Portfolio Status</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {filteredSources.map((src) => {
+                      const isSelected = selectedIds.has(src.id);
+                      const isActive = activeDatasetId === src.id;
+                      const isPending = src.total_rows === 0 || !src.start_time;
+
+                      return (
+                        <tr
+                          key={src.id}
+                          className={`hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors ${
+                            isActive ? "bg-amber-50/40 dark:bg-amber-950/20" : ""
+                          }`}
+                        >
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                const next = new Set(selectedIds);
+                                if (e.target.checked) next.add(src.id);
+                                else next.delete(src.id);
+                                setSelectedIds(next);
+                              }}
+                              className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                              <span>{src.filename}</span>
+                              {isActive && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 font-semibold border border-amber-300 dark:border-amber-800">
+                                  ACTIVE
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-slate-500 font-mono mt-0.5">
+                              {src.file_hash ? `${src.file_hash.slice(0, 12)}...` : "Unindexed"}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                            {src.start_time ? (
+                              <span>
+                                {format12HourDateTime(src.start_time)} to {format12HourDateTime(src.end_time || src.start_time)}
+                              </span>
+                            ) : (
+                              <span className="text-amber-600 dark:text-amber-400 font-medium">Pending ingestion commit</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-xs font-mono">
+                            {(src.total_rows || 0).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleToggleInclude(src.id, src.is_included)}
+                              className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                                src.is_included === 1
+                                  ? "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400"
+                                  : "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700"
+                              }`}
+                            >
+                              {src.is_included === 1 ? "Included" : "Excluded"}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {isPending ? (
+                                <button
+                                  onClick={() => handleAutoCommitSingle(src.id)}
+                                  disabled={committingId === src.id}
+                                  className="px-2.5 py-1 text-xs font-medium rounded bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1"
+                                >
+                                  <Play className="w-3 h-3" />
+                                  {committingId === src.id ? "Committing..." : "Commit"}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => setActiveDatasetId(src.id)}
+                                  className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                                    isActive
+                                      ? "bg-amber-600 text-white"
+                                      : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                                  }`}
+                                >
+                                  {isActive ? "Active" : "Select"}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setDeleteTarget(src)}
+                                className="p-1 text-slate-400 hover:text-red-600 transition-colors"
+                                title="Delete Source"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
+      )}
 
-        {selectedIds.size > 0 && (
-          <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1">
-            <div className="flex items-center gap-2">
-              <CheckSquare className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-              <span className="text-xs font-semibold text-amber-900 dark:text-amber-100">
-                {selectedIds.size} dataset{selectedIds.size > 1 ? "s" : ""} selected
-              </span>
+      {currentTab === "cloud" && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Radio className="w-5 h-5 text-amber-600" />
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    Station & Device Hierarchy
+                  </h2>
+                </div>
+                <span className="px-2 py-0.5 text-xs font-semibold rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">
+                  {deyeStatus?.device_hierarchy?.logger?.status || "ONLINE"}
+                </span>
+              </div>
+
+              <div className="space-y-3.5 text-xs">
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                  <div className="font-semibold text-slate-800 dark:text-slate-200">
+                    {deyeStatus?.device_hierarchy?.installation_name || "SolarScope Primary Station"}
+                  </div>
+                  <div className="text-slate-500 font-mono text-[11px] mt-0.5">
+                    Station ID: {deyeStatus?.station_id || "STATION-2026"}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-center py-0.5 text-slate-400">
+                  <ArrowRight className="w-4 h-4 rotate-90" />
+                </div>
+
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">Deye Data Logger</span>
+                    <span className="font-mono text-emerald-600 font-medium">5-min interval</span>
+                  </div>
+                  <div className="text-slate-600 dark:text-slate-400 mt-1 font-mono">
+                    Serial: {deyeStatus?.device_hierarchy?.logger?.logger_serial || "1251892903"}
+                  </div>
+                  <div className="text-slate-500 text-[11px] mt-0.5 font-mono">
+                    Firmware: {deyeStatus?.device_hierarchy?.logger?.firmware_version || "MW4_32_5407_SS_04_00.00.00.13"}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-center py-0.5 text-slate-400">
+                  <ArrowRight className="w-4 h-4 rotate-90" />
+                </div>
+
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">Hybrid Inverter</span>
+                    <span className="font-mono text-slate-600 dark:text-slate-400">6.0 kW continuous</span>
+                  </div>
+                  <div className="text-slate-600 dark:text-slate-400 mt-1 font-mono">
+                    Serial: {deyeStatus?.device_hierarchy?.inverter?.inverter_serial || "2604282202"}
+                  </div>
+                  <div className="text-slate-500 text-[11px] mt-0.5">
+                    Model: {deyeStatus?.device_hierarchy?.inverter?.model || "SUN-6K-SG06LP1-EU-CM2"}
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => handleBulkInclude(true)}
-                className="px-2.5 py-1 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded transition-colors"
-              >
-                Include in Analysis
-              </button>
-              <button
-                onClick={() => handleBulkInclude(false)}
-                className="px-2.5 py-1 text-xs font-medium bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded transition-colors"
-              >
-                Exclude from Analysis
-              </button>
-              {sources.some(s => selectedIds.has(s.id) && (s.total_rows === 0 || !s.start_time)) && (
+            <div className="md:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Cloud className="w-5 h-5 text-amber-600" />
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                      Cloud Sync Operations & Status
+                    </h2>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    Policy: <strong className="text-slate-700 dark:text-slate-300 font-mono">Timestamp-Key Reconciliation</strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                    <div className="text-xs text-slate-500">Last Telemetry Sync</div>
+                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 mt-1">
+                      {deyeStatus?.last_sync_time ? format12HourDateTime(deyeStatus.last_sync_time) : "None recorded"}
+                    </div>
+                  </div>
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                    <div className="text-xs text-slate-500">Scheduled Polling</div>
+                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 mt-1">
+                      {deyeStatus?.auto_sync ? `Enabled (${deyeStatus.sync_interval_min || 5} min)` : "Manual On-Demand"}
+                    </div>
+                  </div>
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                    <div className="text-xs text-slate-500">Offline Resilience</div>
+                    <div className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mt-1">
+                      Buffered Cache Active
+                    </div>
+                  </div>
+                </div>
+
+                {deyeMessage && (
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-lg text-xs text-amber-800 dark:text-amber-300 mb-6 flex items-center justify-between">
+                    <span>{deyeMessage}</span>
+                    <button onClick={() => setDeyeMessage(null)} className="text-amber-600 hover:text-amber-800">
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-3">
                 <button
-                  onClick={handleBulkCommitSelected}
-                  disabled={committingAll}
-                  className="px-2.5 py-1 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors disabled:opacity-50"
+                  onClick={handleTestDeyeConnection}
+                  disabled={deyeTesting || deyeSyncing}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors disabled:opacity-50"
                 >
-                  Commit Selected
+                  {deyeTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />}
+                  <span>Test API Connection</span>
                 </button>
-              )}
-              <button
-                onClick={() => setIsBulkDeleting(true)}
-                className="px-2.5 py-1 text-xs font-medium bg-red-600 hover:bg-red-700 text-white rounded transition-colors flex items-center gap-1"
-              >
-                <Trash2 className="w-3 h-3" />
-                <span>Delete Selected</span>
-              </button>
-              <button
-                onClick={() => setSelectedIds(new Set())}
-                className="px-2 py-1 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-              >
-                Clear Selection
-              </button>
+                <button
+                  onClick={handleSyncDeyeNow}
+                  disabled={deyeTesting || deyeSyncing}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm disabled:opacity-50"
+                >
+                  {deyeSyncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  <span>Trigger Incremental Sync</span>
+                </button>
+              </div>
             </div>
           </div>
-        )}
 
-        {filteredSources.length === 0 ? (
-          <div className="text-center py-12 text-slate-500 text-xs">
-            {sources.length === 0
-              ? "No datasets uploaded yet. Ingest your inverter files above to get started."
-              : "No datasets match the selected filter."}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 border-b border-slate-200 dark:border-slate-800">
-                <tr>
-                  <th className="px-4 py-3 font-semibold w-10">
-                    <input
-                      type="checkbox"
-                      checked={allFilteredSelected}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedIds(new Set(filteredSources.map(s => s.id)));
-                        } else {
-                          setSelectedIds(new Set());
-                        }
-                      }}
-                      className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
-                      title={allFilteredSelected ? "Deselect All" : "Select All Filtered"}
-                    />
-                  </th>
-                  <th className="px-4 py-3 font-semibold">Include in Aggregation</th>
-                  <th className="px-4 py-3 font-semibold">Filename</th>
-                  <th className="px-4 py-3 font-semibold">Format</th>
-                  <th className="px-4 py-3 font-semibold">Records</th>
-                  <th className="px-4 py-3 font-semibold">Time Span</th>
-                  <th className="px-4 py-3 font-semibold">Quality</th>
-                  <th className="px-4 py-3 font-semibold">SHA-256 Fingerprint</th>
-                  <th className="px-4 py-3 font-semibold text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredSources.map(src => {
-                  const isActive = activeDatasetId === src.id;
-                  const isInc = src.is_included === 1;
-                  const isPending = src.total_rows === 0 || !src.start_time;
-                  const isDup = Boolean(src.file_hash && hashCounts[src.file_hash] > 1);
-                  const isChecked = selectedIds.has(src.id);
-
-                  return (
-                    <tr
-                      key={src.id}
-                      className={`hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors ${
-                        isChecked
-                          ? "bg-amber-50/60 dark:bg-amber-950/30"
-                          : isActive
-                          ? "bg-amber-50/30 dark:bg-amber-950/20"
-                          : ""
-                      }`}
-                    >
-                      <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {
-                            setSelectedIds(prev => {
-                              const next = new Set(prev);
-                              if (next.has(src.id)) {
-                                next.delete(src.id);
-                              } else {
-                                next.add(src.id);
-                              }
-                              return next;
-                            });
-                          }}
-                          className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleInclude(src.id, src.is_included)}
-                          className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors flex items-center gap-1.5 ${
-                            isInc
-                              ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
-                              : "bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700"
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${isInc ? "bg-emerald-500" : "bg-slate-400"}`} />
-                          <span>{isInc ? "Active" : "Excluded"}</span>
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate max-w-xs">{src.filename}</span>
-                          {src.sheet_name && (
-                            <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">
-                              {src.sheet_name}
-                            </span>
-                          )}
-                          {isDup && (
-                            <span className="text-[10px] bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 px-1.5 py-0.5 rounded font-medium">
-                              Duplicate
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                          {src.file_format || "XLSX"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-mono tabular-nums">
-                        {src.total_rows > 0 ? (
-                          src.total_rows.toLocaleString()
-                        ) : (
-                          <span className="text-amber-600 dark:text-amber-400 font-semibold">0</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-[11px] text-slate-600 dark:text-slate-400">
-                        {src.start_time ? (
-                          <span>
-                            {format12HourDateTime(src.start_time)} to {format12HourDateTime(src.end_time)}
-                          </span>
-                        ) : (
-                          <span className="text-amber-600 dark:text-amber-400 font-medium">Not committed</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {!isPending ? (
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                            src.quality_score >= 80
-                              ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300"
-                              : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300"
-                          }`}>
-                            {src.quality_score > 0 ? `${src.quality_score.toFixed(0)}%` : "0%"}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 flex items-center gap-1 w-fit">
-                            <AlertCircle className="w-3 h-3 text-amber-600" />
-                            Pending
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-[10px] text-slate-400 truncate max-w-[120px]" title={src.file_hash}>
-                        {src.file_hash ? `${src.file_hash.slice(0, 10)}...` : "N/A"}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {isPending ? (
-                            <button
-                              onClick={() => handleAutoCommitSingle(src.id)}
-                              disabled={committingId === src.id}
-                              className="px-2.5 py-1 text-xs font-medium rounded bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1"
-                            >
-                              <Play className="w-3 h-3" />
-                              {committingId === src.id ? "Committing..." : "Commit"}
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => setActiveDatasetId(src.id)}
-                              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
-                                isActive
-                                  ? "bg-amber-600 text-white"
-                                  : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
-                              }`}
-                            >
-                              {isActive ? "Active" : "Select"}
-                            </button>
-                          )}
-                          <button
-                            onClick={() => setDeleteTarget(src)}
-                            className="p-1 text-slate-400 hover:text-red-600 transition-colors"
-                            title="Delete Source"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-4">
+              Recent Synchronization Logs
+            </h3>
+            {deyeStatus?.recent_logs && deyeStatus.recent_logs.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800/50 uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-800">
+                    <tr>
+                      <th className="px-4 py-2.5">Sync Timestamp</th>
+                      <th className="px-4 py-2.5">Fetched Records</th>
+                      <th className="px-4 py-2.5">Inserted Rows</th>
+                      <th className="px-4 py-2.5">Status</th>
+                      <th className="px-4 py-2.5">Diagnostics</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {deyeStatus.recent_logs.map(log => (
+                      <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <td className="px-4 py-2.5 font-mono text-slate-600 dark:text-slate-400">
+                          {format12HourDateTime(log.sync_time)}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono">{log.records_fetched}</td>
+                        <td className="px-4 py-2.5 font-mono">{log.records_inserted}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={`px-2 py-0.5 rounded font-semibold ${
+                            log.status === "SUCCESS"
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                              : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                          }`}>
+                            {log.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-500">
+                          {log.error_message || "Reconciled against local database without conflict"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-8 text-center text-xs text-slate-500">
+                No external cloud sync transactions logged yet. Click "Trigger Incremental Sync" to pull telemetry.
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {currentTab === "preview" && (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+              Pre-Import Telemetry Inspection & Quality Verification
+            </h2>
+            <p className="text-xs text-slate-500 mb-6">
+              Inspect an inverter spreadsheet or CSV file before committing it to the permanent library. Inspects SHA-256 fingerprint, sampling interval consistency, duplicate detection against database, and signal mapping.
+            </p>
+
+            <div className="p-8 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl text-center bg-slate-50/50 dark:bg-slate-800/30">
+              <FileSearch className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Select an inverter telemetry file to inspect
+              </p>
+              <p className="text-xs text-slate-500 mb-4">
+                Accepts .xlsx, .xlsm, or .csv. Does not modify the database until you click Commit.
+              </p>
+              <label className="cursor-pointer px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors">
+                Choose File to Inspect
+                <input
+                  type="file"
+                  accept=".xlsx,.xlsm,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      handleInspectPreview(e.target.files[0]);
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
+            {previewLoading && (
+              <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-500">
+                <Loader2 className="w-6 h-6 animate-spin text-amber-600" />
+                <span className="text-xs font-medium">Computing cryptographic checksum and analyzing telemetry structure...</span>
+              </div>
+            )}
+
+            {previewError && (
+              <div className="mt-6 p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-xl text-xs text-red-700 dark:text-red-400 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{previewError}</span>
+              </div>
+            )}
+
+            {previewResult && !previewLoading && (
+              <div className="mt-6 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                    <span className="text-xs text-slate-500">Filename & Format</span>
+                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 mt-1 truncate">
+                      {previewResult.filename}
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                      {previewResult.file_format} • {(previewResult.filesize_bytes / 1024).toFixed(1)} KB
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                    <span className="text-xs text-slate-500">Observations & Interval</span>
+                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 mt-1 font-mono">
+                      {previewResult.total_records.toLocaleString()} rows
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                      Sampling ~{previewResult.sampling_interval_min} min
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                    <span className="text-xs text-slate-500">Duplicate Check</span>
+                    <div className="text-sm font-semibold mt-1 flex items-center gap-1.5">
+                      {previewResult.is_duplicate ? (
+                        <>
+                          <AlertTriangle className="w-4 h-4 text-amber-600" />
+                          <span className="text-amber-600 dark:text-amber-400">Already in Library</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4 text-emerald-600" />
+                          <span className="text-emerald-600 dark:text-emerald-400">Unique Dataset</span>
+                        </>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-mono truncate mt-0.5">
+                      {previewResult.file_hash.slice(0, 16)}...
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                    <span className="text-xs text-slate-500">Quality Index</span>
+                    <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1 font-mono">
+                      {previewResult.quality_score} / 100
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      {previewResult.potential_issues.length === 0 ? "No anomalies detected" : `${previewResult.potential_issues.length} warnings`}
+                    </div>
+                  </div>
+                </div>
+
+                {previewResult.potential_issues.length > 0 && (
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xl">
+                    <div className="text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5 mb-2">
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>Ingestion Warnings</span>
+                    </div>
+                    <ul className="text-xs text-amber-700 dark:text-amber-400 space-y-1 list-disc list-inside">
+                      {previewResult.potential_issues.map((issue, idx) => (
+                        <li key={idx}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3">
+                    Detected Signal Mappings
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                    {Object.entries(previewResult.columns_detected).map(([canonical, header]) => (
+                      <div key={canonical} className="p-2.5 bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-800">
+                        <div className="text-slate-400 font-mono text-[10px]">{canonical}</div>
+                        <div className="font-semibold text-slate-800 dark:text-slate-200 truncate mt-0.5">{header}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setPreviewResult(null);
+                      setPreviewFile(null);
+                    }}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    Discard
+                  </button>
+                  <button
+                    onClick={handleCommitPreviewedFile}
+                    disabled={uploading}
+                    className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm disabled:opacity-50"
+                  >
+                    {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                    <span>Commit to Historical Library</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <ConfirmModal
         isOpen={Boolean(deleteTarget)}

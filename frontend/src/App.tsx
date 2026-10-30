@@ -2,22 +2,14 @@ import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { OverviewPage } from "./pages/OverviewPage";
-import { HistoricalLibraryPage } from "./pages/HistoricalLibraryPage";
-import { ImportPage } from "./pages/ImportPage";
-import { DailySummariesPage } from "./pages/DailySummariesPage";
-import { ComparePage } from "./pages/ComparePage";
-import { TimelinePage } from "./pages/TimelinePage";
 import { SolarPage } from "./pages/SolarPage";
-import { BatteryPage } from "./pages/BatteryPage";
-import { GridPage } from "./pages/GridPage";
-import { ConsumptionPage } from "./pages/ConsumptionPage";
-import { BalancePage } from "./pages/BalancePage";
-import { AnomaliesPage } from "./pages/AnomaliesPage";
-import { StatisticsPage } from "./pages/StatisticsPage";
-import { ScenariosPage } from "./pages/ScenariosPage";
-import { FinancePage } from "./pages/FinancePage";
+import { EnergyPage } from "./pages/EnergyPage";
 import { BillIntelligencePage } from "./pages/BillIntelligencePage";
-import { ReportsPage } from "./pages/ReportsPage";
+import { TrendsPage } from "./pages/TrendsPage";
+import { DiagnosticsPage } from "./pages/DiagnosticsPage";
+import { ScenariosPage } from "./pages/ScenariosPage";
+import { AnalystPage } from "./pages/AnalystPage";
+import { HistoricalLibraryPage } from "./pages/HistoricalLibraryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 export const App: React.FC = () => {
@@ -26,23 +18,29 @@ export const App: React.FC = () => {
       <Routes>
         <Route path="/" element={<AppShell />}>
           <Route index element={<OverviewPage />} />
-          <Route path="library" element={<HistoricalLibraryPage />} />
-          <Route path="import" element={<ImportPage />} />
-          <Route path="history" element={<DailySummariesPage />} />
-          <Route path="compare" element={<ComparePage />} />
-          <Route path="timeline" element={<TimelinePage />} />
           <Route path="solar" element={<SolarPage />} />
-          <Route path="battery" element={<BatteryPage />} />
-          <Route path="grid" element={<GridPage />} />
-          <Route path="consumption" element={<ConsumptionPage />} />
-          <Route path="balance" element={<BalancePage />} />
-          <Route path="anomalies" element={<AnomaliesPage />} />
-          <Route path="statistics" element={<StatisticsPage />} />
-          <Route path="scenarios" element={<ScenariosPage />} />
-          <Route path="finance" element={<FinancePage />} />
+          <Route path="energy" element={<EnergyPage />} />
           <Route path="billing" element={<BillIntelligencePage />} />
-          <Route path="reports" element={<ReportsPage />} />
+          <Route path="trends" element={<TrendsPage />} />
+          <Route path="diagnostics" element={<DiagnosticsPage />} />
+          <Route path="scenarios" element={<ScenariosPage />} />
+          <Route path="analyst" element={<AnalystPage />} />
+          <Route path="library" element={<HistoricalLibraryPage />} />
           <Route path="settings" element={<SettingsPage />} />
+
+          <Route path="battery" element={<Navigate to="/energy?tab=battery" replace />} />
+          <Route path="grid" element={<Navigate to="/energy?tab=grid" replace />} />
+          <Route path="consumption" element={<Navigate to="/energy?tab=consumption" replace />} />
+          <Route path="timeline" element={<Navigate to="/energy?tab=timeline" replace />} />
+          <Route path="history" element={<Navigate to="/trends?tab=summaries" replace />} />
+          <Route path="compare" element={<Navigate to="/trends?tab=compare" replace />} />
+          <Route path="statistics" element={<Navigate to="/trends?tab=statistics" replace />} />
+          <Route path="balance" element={<Navigate to="/diagnostics?tab=balance" replace />} />
+          <Route path="anomalies" element={<Navigate to="/diagnostics?tab=anomalies" replace />} />
+          <Route path="finance" element={<Navigate to="/scenarios?tab=payback" replace />} />
+          <Route path="import" element={<Navigate to="/library?tab=preview" replace />} />
+          <Route path="reports" element={<Navigate to="/trends?tab=summaries" replace />} />
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

@@ -72,6 +72,13 @@ from backend.app.billing import (
     insert_historical_bill,
     remove_historical_bill
 )
+from backend.app.integrations.deye_cloud import DeyeCloudClient
+from backend.app.integrations.weather import get_weather_intelligence
+from backend.app.ingestion.multi_preview import inspect_file_for_preview
+from backend.app.analyst.analyst_service import (
+    analyze_energy_query,
+    get_preset_diagnostic_queries
+)
 
 router = APIRouter()
 
@@ -1167,3 +1174,111 @@ def delete_historical_bill_endpoint(bill_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="Historical bill not found")
     return {"status": "deleted", "id": bill_id}
+
+class DeyeConfigPayload(BaseModel):
+    station_id: Optional[str] = ""
+    app_id: Optional[str] = ""
+    app_secret: Optional[str] = ""
+    username: Optional[str] = ""
+    password: Optional[str] = ""
+    auto_sync: Optional[bool] = False
+    sync_interval_min: Optional[int] = 5
+    reconciliation_policy: Optional[str] = "MERGE"
+
+@router.get("/deye/status")
+def get_deye_status_endpoint():
+    client = DeyeCloudClient()
+    return client.get_status()
+
+@router.post("/deye/config")
+def save_deye_config_endpoint(payload: DeyeConfigPayload):
+    client = DeyeCloudClient()
+    client.save_config(payload.model_dump())
+    return client.get_status()
+
+@router.post("/deye/test")
+def test_deye_connection_endpoint():
+    client = DeyeCloudClient()
+    return client.test_connection()
+
+@router.post("/deye/sync")
+def sync_deye_endpoint():
+    client = DeyeCloudClient()
+    return client.sync_now()
+
+@router.get("/weather/intelligence")
+def get_weather_endpoint():
+    conn = get_connection()
+    sys_row = conn.execute("SELECT pv_capacity_kwp, battery_capacity_kwh, reserve_soc FROM system_settings WHERE project_id = 'default'").fetchone()
+    conn.close()
+    kwp = sys_row["pv_capacity_kwp"] if sys_row else 6.2
+    batt = sys_row["battery_capacity_kwh"] if sys_row else 16.08
+    res_soc = sys_row["reserve_soc"] if sys_row else 20.0
+    return get_weather_intelligence(installed_kwp=kwp, battery_capacity_kwh=batt, reserve_soc=res_soc)
+
+@router.post("/ingestion/preview")
+async def preview_uploaded_files(file: UploadFile = File(...)):
+    temp_dir = Path("backend/temp_uploads")
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_path = temp_dir / f"preview_{uuid.uuid4().hex}_{file.filename}"
+    content = await file.read()
+    temp_path.write_bytes(content)
+    try:
+        preview = inspect_file_for_preview(temp_path, file.filename)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+    return preview
+
+@router.get("/datasets/{dataset_id}/grid_classification")
+def get_grid_classification_endpoint(dataset_id: str):
+    records = _get_records(dataset_id)
+    settings_dict = get_settings()
+    return calculate_grid_metrics(
+        records,
+        reserve_soc=settings_dict["reserve_soc"],
+        inverter_power_kw=settings_dict["inverter_power_kw"],
+        import_tariff=settings_dict["import_tariff"]
+    )
+
+class UpgradeSimulationRequest(BaseModel):
+    add_battery_kwh: float = 5.0
+    add_pv_kwp: float = 1.24
+    new_reserve_soc: float = 20.0
+    shift_load_kwh: float = 2.0
+
+@router.post("/datasets/{dataset_id}/simulation_upgrade")
+def simulate_upgrade_endpoint(dataset_id: str, payload: UpgradeSimulationRequest):
+    records = _get_records(dataset_id)
+    settings_dict = get_settings()
+    return simulate_system_scenarios(
+        records,
+        baseline_battery_kwh=settings_dict["battery_capacity_kwh"],
+        add_battery_kwh=payload.add_battery_kwh,
+        baseline_pv_kwp=settings_dict["pv_capacity_kwp"],
+        add_pv_kwp=payload.add_pv_kwp,
+        new_reserve_soc=payload.new_reserve_soc,
+        shift_load_kwh=payload.shift_load_kwh,
+        tariff_rate=settings_dict["import_tariff"],
+        inverter_rated_kw=settings_dict["inverter_power_kw"],
+        inverter_max_current_a=settings_dict.get("inverter_max_battery_current_a", 135.0),
+        bms_max_current_a=settings_dict.get("bms_max_charge_a", 100.0),
+        battery_voltage=settings_dict.get("battery_voltage", 51.2)
+    )
+
+class AnalystQueryRequest(BaseModel):
+    query_key: str
+    query_text: Optional[str] = ""
+
+@router.get("/analyst/presets")
+def get_analyst_presets_endpoint():
+    return get_preset_diagnostic_queries()
+
+@router.post("/datasets/{dataset_id}/analyst/query")
+def run_analyst_query_endpoint(dataset_id: str, payload: AnalystQueryRequest):
+    records = _get_records(dataset_id)
+    return analyze_energy_query(
+        records,
+        query_key=payload.query_key,
+        query_text=payload.query_text or ""
+    )

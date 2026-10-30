@@ -2,26 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
-  UploadCloud,
-  Activity,
   Sun,
-  BatteryCharging,
   Zap,
-  Home,
-  Scale,
-  AlertTriangle,
+  ReceiptText,
   BarChart3,
+  Activity,
   Sliders,
-  DollarSign,
-  FileText,
+  BookOpen,
+  Database,
   Settings,
   SunMedium,
   Moon,
-  Database,
   Calendar,
-  ChevronDown,
-  BookOpen,
-  ReceiptText
+  ChevronDown
 } from 'lucide-react';
 import { api, type SourceItem } from '../../lib/api';
 import type { ViewMode } from '../../lib/terminology';
@@ -29,22 +22,14 @@ import { HelpGlossaryModal } from '../ui/HelpGlossaryModal';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Overview', icon: LayoutDashboard },
-  { path: '/library', label: 'Historical Library', icon: Database },
+  { path: '/solar', label: 'Solar Intelligence', icon: Sun },
+  { path: '/energy', label: 'Energy & Demand', icon: Zap },
   { path: '/billing', label: 'Bill Intelligence', icon: ReceiptText },
-  { path: '/import', label: 'Import Data', icon: UploadCloud },
-  { path: '/history', label: 'Daily Summaries', icon: Calendar },
-  { path: '/compare', label: 'Compare Periods', icon: Scale },
-  { path: '/timeline', label: 'Power Timeline', icon: Activity },
-  { path: '/solar', label: 'Solar Production', icon: Sun },
-  { path: '/battery', label: 'Battery Performance', icon: BatteryCharging },
-  { path: '/grid', label: 'Electricity from TEI', icon: Zap },
-  { path: '/consumption', label: 'Home Electricity Use', icon: Home },
-  { path: '/balance', label: 'Energy Flow Check', icon: Scale },
-  { path: '/anomalies', label: 'Unusual Events', icon: AlertTriangle },
-  { path: '/statistics', label: 'Averages & Trends', icon: BarChart3 },
-  { path: '/scenarios', label: 'What If? Simulator', icon: Sliders },
-  { path: '/finance', label: 'Bills & Savings', icon: DollarSign },
-  { path: '/reports', label: 'Reports & Exports', icon: FileText },
+  { path: '/trends', label: 'Trends & History', icon: BarChart3 },
+  { path: '/diagnostics', label: 'Diagnostics', icon: Activity },
+  { path: '/scenarios', label: 'What-If & Upgrades', icon: Sliders },
+  { path: '/analyst', label: 'Energy Analyst', icon: BookOpen },
+  { path: '/library', label: 'Data Library & Cloud', icon: Database },
   { path: '/settings', label: 'System Settings', icon: Settings }
 ];
 
@@ -105,18 +90,18 @@ export const AppShell: React.FC = () => {
       <aside className="w-60 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col shrink-0 z-20">
         <div className="h-14 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-md bg-solar-600 flex items-center justify-center text-white">
+            <div className="h-7 w-7 rounded-md bg-amber-600 flex items-center justify-center text-white">
               <Sun className="h-4 w-4" />
             </div>
             <span className="font-semibold text-sm tracking-tight">SolarScope</span>
           </div>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">v1.0</span>
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">v1.2</span>
         </div>
 
         <div className="p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500 font-medium flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-solar-600" />
+              <Calendar className="w-3.5 h-3.5 text-amber-600" />
               <span>Analysis Scope</span>
             </span>
           </div>
@@ -176,7 +161,7 @@ export const AppShell: React.FC = () => {
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
-                <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-solar-600' : 'text-slate-400'}`} />
+                <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-amber-600' : 'text-slate-400'}`} />
                 <span className="truncate">{item.label}</span>
               </NavLink>
             );
@@ -198,7 +183,7 @@ export const AppShell: React.FC = () => {
         <header className="h-14 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between px-6 shrink-0 z-10">
           <div className="flex items-center gap-2 text-xs">
             <span className="font-semibold text-slate-800 dark:text-slate-200">
-              {NAV_ITEMS.find(n => n.path === location.pathname)?.label || 'Analytics'}
+              {NAV_ITEMS.find(n => n.path === location.pathname)?.label || 'Energy Intelligence'}
             </span>
             <span className="text-slate-300 dark:text-slate-700">/</span>
             <span className="text-slate-500">Local-First Energy Telemetry</span>
@@ -238,7 +223,7 @@ export const AppShell: React.FC = () => {
             </button>
 
             <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
-              <Calendar className="w-3.5 h-3.5 text-solar-600 shrink-0" />
+              <Calendar className="w-3.5 h-3.5 text-amber-600 shrink-0" />
               <span className="text-xs text-slate-500 font-medium hidden sm:inline">Scope:</span>
               <select
                 value={activeDatasetId || 'all'}
@@ -264,8 +249,8 @@ export const AppShell: React.FC = () => {
             </div>
 
             <button
-              onClick={() => navigate('/import')}
-              className="text-xs bg-solar-600 hover:bg-solar-700 text-white font-medium px-3 py-1.5 rounded-md transition-colors"
+              onClick={() => navigate('/library?tab=preview')}
+              className="text-xs bg-amber-600 hover:bg-amber-700 text-white font-medium px-3 py-1.5 rounded-md transition-colors shadow-sm"
             >
               Import Data
             </button>

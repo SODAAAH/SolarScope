@@ -1,20 +1,37 @@
 import React, { useEffect, useState } from "react";
-import { Save, CheckCircle2, Sliders, Battery, Sun, BookOpen } from "lucide-react";
+import { Save, CheckCircle2, Sliders, Battery, Sun, Cpu } from "lucide-react";
 import { api, type SystemSettings } from "../lib/api";
 
 export const SettingsPage: React.FC = () => {
   const [settings, setSettings] = useState<SystemSettings>({
-    pv_capacity_kwp: 5.0,
+    pv_capacity_kwp: 6.2,
     num_modules: 10,
-    module_wattage: 500,
-    inverter_power_kw: 5.0,
+    module_wattage: 620,
+    panel_model: "Canadian Solar",
+    panel_tech: "N-Type TOPCon bifacial",
+    inverter_model: "SUN-6K-SG06LP1-EU-CM2",
+    inverter_power_kw: 6.0,
+    inverter_serial: "2604282202",
+    inverter_max_apparent_va: 6600.0,
+    inverter_max_battery_current_a: 135.0,
+    mppt_voltage_min_v: 150.0,
+    mppt_voltage_max_v: 425.0,
+    pv_voltage_max_v: 500.0,
+    mppt_max_current_a: 18.0,
+    logger_serial: "1251892903",
+    logger_firmware: "MW4_32_5407_SS_04_00.00.00.13",
+    logger_interval_min: 5,
+    battery_model: "MENRED ESS",
     battery_chemistry: "LFP",
     battery_voltage: 51.2,
-    battery_capacity_kwh: 15.0,
-    usable_capacity_kwh: 11.25,
-    reserve_soc: 25.0,
-    max_charge_kw: 3.0,
-    max_discharge_kw: 3.0,
+    battery_ah: 314.0,
+    battery_capacity_kwh: 16.08,
+    usable_capacity_kwh: 12.86,
+    reserve_soc: 20.0,
+    bms_max_charge_a: 100.0,
+    bms_max_discharge_a: 100.0,
+    max_charge_kw: 5.12,
+    max_discharge_kw: 5.12,
     battery_efficiency: 0.95,
     import_tariff: 11.50,
     export_tariff: 0.0,
@@ -27,7 +44,7 @@ export const SettingsPage: React.FC = () => {
 
   useEffect(() => {
     api.getSettings()
-      .then(res => setSettings(res))
+      .then(res => setSettings(prev => ({ ...prev, ...res })))
       .catch(err => console.error(err));
   }, []);
 
@@ -55,10 +72,10 @@ export const SettingsPage: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            System Settings & Mathematical Reference
+            System Settings & Verified Hardware Profile
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Physical hardware nameplates, inverter operating thresholds, and transparent analytical formulas.
+            Physical hardware nameplates, inverter electrical limits, battery BMS thresholds, and tariff defaults.
           </p>
         </div>
       </div>
@@ -69,7 +86,7 @@ export const SettingsPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <Sun className="w-5 h-5 text-amber-500" />
               <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                Photovoltaic Array & Inverter Specifications
+                Photovoltaic Array Specifications
               </h2>
             </div>
             {savedSuccess && (
@@ -83,51 +100,110 @@ export const SettingsPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                PV Capacity (kWp)
+                Panel Manufacturer
+              </label>
+              <input
+                type="text"
+                value={settings.panel_model || "Canadian Solar"}
+                onChange={(e) => handleChange("panel_model", e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                Cell Technology
+              </label>
+              <input
+                type="text"
+                value={settings.panel_tech || "N-Type TOPCon bifacial"}
+                onChange={(e) => handleChange("panel_tech", e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                Module Count
+              </label>
+              <input
+                type="number"
+                value={settings.num_modules}
+                onChange={(e) => handleChange("num_modules", parseInt(e.target.value, 10))}
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                Total Installed PV (kWp)
               </label>
               <input
                 type="number"
                 step="0.1"
                 value={settings.pv_capacity_kwp}
                 onChange={(e) => handleChange("pv_capacity_kwp", parseFloat(e.target.value))}
-                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
               />
             </div>
+          </div>
+        </div>
 
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+            <Cpu className="w-5 h-5 text-blue-500" />
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Hybrid Inverter & Cloud Logger Hardware
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Number of Modules
+                Inverter Model
               </label>
               <input
-                type="number"
-                value={settings.num_modules}
-                onChange={(e) => handleChange("num_modules", parseInt(e.target.value, 10))}
-                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                type="text"
+                value={settings.inverter_model || "SUN-6K-SG06LP1-EU-CM2"}
+                onChange={(e) => handleChange("inverter_model", e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
               />
             </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Module Wattage (W)
+                Inverter Serial
               </label>
               <input
-                type="number"
-                value={settings.module_wattage}
-                onChange={(e) => handleChange("module_wattage", parseFloat(e.target.value))}
-                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                type="text"
+                value={settings.inverter_serial || "2604282202"}
+                onChange={(e) => handleChange("inverter_serial", e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono"
               />
             </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Inverter Rating (kW)
+                Rated AC Power (kW)
               </label>
               <input
                 type="number"
                 step="0.1"
                 value={settings.inverter_power_kw}
                 onChange={(e) => handleChange("inverter_power_kw", parseFloat(e.target.value))}
-                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                Logger Serial
+              </label>
+              <input
+                type="text"
+                value={settings.logger_serial || "1251892903"}
+                onChange={(e) => handleChange("logger_serial", e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono"
               />
             </div>
           </div>
@@ -137,60 +213,59 @@ export const SettingsPage: React.FC = () => {
           <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
             <Battery className="w-5 h-5 text-teal-600" />
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Battery Storage & Cutoff Parameters
+              Battery Storage & BMS Current Thresholds
             </h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Nominal Capacity (kWh)
+                Battery Manufacturer / Model
               </label>
               <input
-                type="number"
-                step="0.1"
-                value={settings.battery_capacity_kwh}
-                onChange={(e) => handleChange("battery_capacity_kwh", parseFloat(e.target.value))}
-                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                type="text"
+                value={settings.battery_model || "MENRED ESS LiFePO4"}
+                onChange={(e) => handleChange("battery_model", e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
               />
             </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Reserve Cutoff SOC (%)
+                Nominal Capacity (kWh)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                value={settings.battery_capacity_kwh}
+                onChange={(e) => handleChange("battery_capacity_kwh", parseFloat(e.target.value))}
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                Reserve Safety SOC (%)
               </label>
               <input
                 type="number"
                 step="1"
                 value={settings.reserve_soc}
                 onChange={(e) => handleChange("reserve_soc", parseFloat(e.target.value))}
-                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
               />
             </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Max Discharge Power (kW)
+                BMS Discharge Limit (A)
               </label>
               <input
                 type="number"
-                step="0.1"
-                value={settings.max_discharge_kw}
-                onChange={(e) => handleChange("max_discharge_kw", parseFloat(e.target.value))}
-                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Max Charge Power (kW)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                value={settings.max_charge_kw}
-                onChange={(e) => handleChange("max_charge_kw", parseFloat(e.target.value))}
-                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                step="1"
+                value={settings.bms_max_discharge_a || 100.0}
+                onChange={(e) => handleChange("bms_max_discharge_a", parseFloat(e.target.value))}
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
               />
             </div>
           </div>
@@ -200,7 +275,7 @@ export const SettingsPage: React.FC = () => {
           <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
             <Sliders className="w-5 h-5 text-slate-600" />
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Regional & Financial Defaults
+              Utility & Regional Defaults
             </h2>
           </div>
 
@@ -213,7 +288,7 @@ export const SettingsPage: React.FC = () => {
                 type="text"
                 value={settings.currency}
                 onChange={(e) => handleChange("currency", e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
               />
             </div>
 
@@ -225,33 +300,33 @@ export const SettingsPage: React.FC = () => {
                 type="text"
                 value={settings.timezone}
                 onChange={(e) => handleChange("timezone", e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
               />
             </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Grid Import Rate
+                Baseline Tariff (PHP/kWh)
               </label>
               <input
                 type="number"
-                step="0.1"
+                step="0.01"
                 value={settings.import_tariff}
                 onChange={(e) => handleChange("import_tariff", parseFloat(e.target.value))}
-                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
               />
             </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Grid Export / Feed-in Rate
+                Feed-in / Export Rate
               </label>
               <input
                 type="number"
-                step="0.1"
+                step="0.01"
                 value={settings.export_tariff}
                 onChange={(e) => handleChange("export_tariff", parseFloat(e.target.value))}
-                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
               />
             </div>
           </div>
@@ -261,90 +336,13 @@ export const SettingsPage: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-medium text-sm rounded-lg transition-colors flex items-center gap-2 shadow-sm"
+            className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
-            {loading ? "Saving Configuration..." : "Save Configuration"}
+            <span>{loading ? "Saving..." : "Save System Settings"}</span>
           </button>
         </div>
       </form>
-
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-        <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <BookOpen className="w-5 h-5 text-slate-700 dark:text-slate-300" />
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-            Mathematical Methodology & Analytical Reference
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-          <div className="space-y-3">
-            <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-100 dark:border-slate-800">
-              <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-1">
-                Trapezoidal Numerical Integration
-              </h3>
-              <p>
-                Calculates cumulative energy (kWh) over irregular observation intervals dt = t_next - t_curr:
-              </p>
-              <div className="bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] my-1 text-slate-900 dark:text-slate-100">
-                E = ∑ [ (P_i + P_i+1) / 2 ] * (Δt_i / 3600)
-              </div>
-              <p>
-                Handles sampling variance (5m, 10m, 15m) without assuming equidistant time steps.
-              </p>
-            </div>
-
-            <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-100 dark:border-slate-800">
-              <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-1">
-                Instantaneous Energy Balance Reconciliation
-              </h3>
-              <p>
-                Evaluates physical conservation of energy across the inverter bus:
-              </p>
-              <div className="bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] my-1 text-slate-900 dark:text-slate-100">
-                R(t) = P_PV(t) + P_Batt(t) + P_Grid(t) - P_Load(t)
-              </div>
-              <p>
-                Residual $R(t) &gt; 0$ represents continuous inverter tare consumption (~70W), conversion thermal dissipation, and sensor calibration margins.
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-100 dark:border-slate-800">
-              <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-1">
-                Self-Consumption & Self-Sufficiency
-              </h3>
-              <p>
-                Quantifies on-site solar utilization and degree of independence from utility infrastructure:
-              </p>
-              <div className="bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] my-1 text-slate-900 dark:text-slate-100">
-                Self-Consumption = (E_PV - E_Export) / E_PV
-                <br />
-                Self-Sufficiency = (E_Load - E_Import) / E_Load
-              </div>
-              <p>
-                In zero-export setups, self-consumption is 100%, and self-sufficiency reflects total non-grid autonomy.
-              </p>
-            </div>
-
-            <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-100 dark:border-slate-800">
-              <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm mb-1">
-                Base Load Floor Estimation
-              </h3>
-              <p>
-                Estimates continuous non-deferrable background consumption (refrigerators, standby devices, network gear) using the 5th percentile of observed load:
-              </p>
-              <div className="bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] my-1 text-slate-900 dark:text-slate-100">
-                Base Load = Percentile_5(P_Load)
-              </div>
-              <p>
-                Immune to temporary zero readings and intermittent spikes.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

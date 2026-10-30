@@ -21,12 +21,29 @@ export interface SystemSettings {
   pv_capacity_kwp: number;
   num_modules: number;
   module_wattage: number;
+  panel_model?: string;
+  panel_tech?: string;
+  inverter_model?: string;
   inverter_power_kw: number;
+  inverter_serial?: string;
+  inverter_max_apparent_va?: number;
+  inverter_max_battery_current_a?: number;
+  mppt_voltage_min_v?: number;
+  mppt_voltage_max_v?: number;
+  pv_voltage_max_v?: number;
+  mppt_max_current_a?: number;
+  logger_serial?: string;
+  logger_firmware?: string;
+  logger_interval_min?: number;
+  battery_model?: string;
   battery_chemistry: string;
   battery_voltage: number;
+  battery_ah?: number;
   battery_capacity_kwh: number;
   usable_capacity_kwh: number;
   reserve_soc: number;
+  bms_max_charge_a?: number;
+  bms_max_discharge_a?: number;
   max_charge_kw: number;
   max_discharge_kw: number;
   battery_efficiency: number;
@@ -325,6 +342,57 @@ export const api = {
     return fetchJson<{ status: string; id: string }>(`/billing/history/${billId}`, {
       method: "DELETE"
     });
+  },
+  getDeyeStatus: () => {
+    return fetchJson<DeyeStatusResponse>("/deye/status");
+  },
+  saveDeyeConfig: (payload: DeyeConfigPayload) => {
+    return fetchJson<DeyeStatusResponse>("/deye/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  },
+  testDeyeConnection: () => {
+    return fetchJson<{ success: boolean; message: string }>("/deye/test", {
+      method: "POST"
+    });
+  },
+  syncDeyeNow: () => {
+    return fetchJson<{ status: string; message: string; records_fetched: number; records_inserted: number }>("/deye/sync", {
+      method: "POST"
+    });
+  },
+  getWeatherIntelligence: () => {
+    return fetchJson<WeatherIntelligenceResponse>("/weather/intelligence");
+  },
+  previewIngestionFile: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return fetchJson<FilePreviewResponse>("/ingestion/preview", {
+      method: "POST",
+      body: formData
+    });
+  },
+  getGridClassification: (datasetId: string) => {
+    return fetchJson<any>(`/datasets/${datasetId}/grid_classification`);
+  },
+  simulateHardwareUpgrade: (datasetId: string, payload: { add_battery_kwh: number; add_pv_kwp: number; new_reserve_soc: number; shift_load_kwh: number }) => {
+    return fetchJson<UpgradeSimulationResponse>(`/datasets/${datasetId}/simulation_upgrade`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  },
+  getAnalystPresets: () => {
+    return fetchJson<AnalystPresetQuery[]>("/analyst/presets");
+  },
+  queryAnalyst: (datasetId: string, queryKey: string, queryText?: string) => {
+    return fetchJson<AnalystResponse>(`/datasets/${datasetId}/analyst/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query_key: queryKey, query_text: queryText || "" })
+    });
   }
 };
 
@@ -500,4 +568,160 @@ export interface RateSensitivityResponse {
   difference_percentage: number;
   baseline_statement: StatementOfAccount;
   simulated_statement: StatementOfAccount;
+}
+
+export interface DeyeConfigPayload {
+  station_id?: string;
+  app_id?: string;
+  app_secret?: string;
+  username?: string;
+  password?: string;
+  auto_sync?: boolean;
+  sync_interval_min?: number;
+  reconciliation_policy?: string;
+}
+
+export interface DeyeStatusResponse {
+  is_configured: boolean;
+  station_id: string;
+  app_id: string;
+  auto_sync: boolean;
+  sync_interval_min: number;
+  last_sync_time: string | null;
+  sync_status: string;
+  sync_message: string;
+  reconciliation_policy: string;
+  device_hierarchy: {
+    installation_name: string;
+    station: { station_id: string; status: string };
+    logger: { logger_serial: string; firmware_version: string; reporting_interval_min: number; status: string };
+    inverter: { inverter_serial: string; model: string; rated_power_kw: number; status: string };
+  };
+  recent_logs: Array<{
+    id: string;
+    sync_time: string;
+    records_fetched: number;
+    records_inserted: number;
+    status: string;
+    error_message: string | null;
+  }>;
+}
+
+export interface WeatherIntelligenceResponse {
+  location: string;
+  latitude: number;
+  longitude: number;
+  timezone: string;
+  current_conditions: {
+    cloud_cover_percent: number;
+    solar_radiation_wm2: number;
+    temperature_c: number;
+  };
+  tomorrow_forecast: {
+    date: string;
+    average_cloud_cover_percent: number;
+    expected_solar_kwh: number;
+    conservative_solar_kwh: number;
+    optimistic_solar_kwh: number;
+    probability_full_charge_percent: number;
+    projected_sunset_soc_percent: number;
+    projected_night_autonomy_hours: number;
+    projected_night_autonomy_formatted: string;
+  };
+  hourly_forecast: Array<{
+    time: string;
+    hour: number;
+    solar_radiation_wm2: number;
+    cloud_cover_percent: number;
+    temperature_c: number;
+    estimated_pv_power_kw: number;
+  }>;
+}
+
+export interface FilePreviewResponse {
+  filename: string;
+  file_format: string;
+  filesize_bytes: number;
+  file_hash: string;
+  total_records: number;
+  start_time: string | null;
+  end_time: string | null;
+  sampling_interval_min: number;
+  columns_detected: Record<string, string>;
+  is_duplicate: boolean;
+  existing_dataset_id: string | null;
+  quality_score: number;
+  potential_issues: string[];
+}
+
+export interface UpgradeSimulationResponse {
+  status: string;
+  inputs: {
+    baseline_battery_kwh: number;
+    added_battery_kwh: number;
+    baseline_pv_kwp: number;
+    added_pv_kwp: number;
+    new_reserve_soc: number;
+    shifted_load_kwh: number;
+    tariff_rate: number;
+  };
+  baseline: {
+    daily_grid_import_kwh: number;
+    daily_solar_yield_kwh: number;
+    daily_household_load_kwh: number;
+    span_days: number;
+  };
+  modeled_result: {
+    modeled_daily_grid_kwh: number;
+    daily_grid_reduction_kwh: number;
+    grid_reduction_percentage: number;
+    added_night_autonomy_hours: number;
+    added_night_autonomy_formatted: string;
+    daily_savings_php: number;
+    monthly_savings_php: number;
+    annual_savings_php: number;
+    estimated_investment_cost_php: number;
+    simple_payback_years: number;
+    ten_year_npv_php: number;
+  };
+  electrical_limits: {
+    inverter_rated_continuous_kw: number;
+    inverter_peak_apparent_va: number;
+    inverter_max_battery_current_a: number;
+    bms_configured_limit_a: number;
+    effective_battery_current_limit_a: number;
+    max_battery_charge_power_kw: number;
+    pv_mppt_operating_range_v: string;
+    pv_max_voltage_v: string;
+    daily_inverter_clipped_kwh: number;
+    is_clipping_observed: boolean;
+  };
+  comparison_options: Array<{
+    name: string;
+    description: string;
+    added_battery_kwh: number;
+    added_pv_kwp: number;
+    estimated_cost_php: number;
+    daily_grid_reduction_kwh: number;
+    monthly_savings_php: number;
+    payback_years: number;
+    ten_year_npv_php: number;
+  }>;
+}
+
+export interface AnalystPresetQuery {
+  id: string;
+  category: string;
+  question: string;
+}
+
+export interface AnalystResponse {
+  query_key: string;
+  title: string;
+  what_happened: string;
+  what_data_shows: string;
+  why_it_happened: string;
+  energy_or_money_impact: string;
+  what_to_do: string;
+  confidence_level: string;
 }

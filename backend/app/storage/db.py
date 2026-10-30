@@ -74,17 +74,34 @@ def init_db():
     CREATE TABLE IF NOT EXISTS system_settings (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL UNIQUE,
-        pv_capacity_kwp REAL DEFAULT 5.0,
+        pv_capacity_kwp REAL DEFAULT 6.2,
         num_modules INTEGER DEFAULT 10,
-        module_wattage REAL DEFAULT 500.0,
-        inverter_power_kw REAL DEFAULT 5.0,
+        module_wattage REAL DEFAULT 620.0,
+        panel_model TEXT DEFAULT 'Canadian Solar',
+        panel_tech TEXT DEFAULT 'N-Type TOPCon bifacial',
+        inverter_model TEXT DEFAULT 'SUN-6K-SG06LP1-EU-CM2',
+        inverter_power_kw REAL DEFAULT 6.0,
+        inverter_serial TEXT DEFAULT '2604282202',
+        inverter_max_apparent_va REAL DEFAULT 6600.0,
+        inverter_max_battery_current_a REAL DEFAULT 135.0,
+        mppt_voltage_min_v REAL DEFAULT 150.0,
+        mppt_voltage_max_v REAL DEFAULT 425.0,
+        pv_voltage_max_v REAL DEFAULT 500.0,
+        mppt_max_current_a REAL DEFAULT 18.0,
+        logger_serial TEXT DEFAULT '1251892903',
+        logger_firmware TEXT DEFAULT 'MW4_32_5407_SS_04_00.00.00.13',
+        logger_interval_min INTEGER DEFAULT 5,
+        battery_model TEXT DEFAULT 'MENRED ESS',
         battery_chemistry TEXT DEFAULT 'LFP',
         battery_voltage REAL DEFAULT 51.2,
-        battery_capacity_kwh REAL DEFAULT 15.0,
-        usable_capacity_kwh REAL DEFAULT 11.25,
-        reserve_soc REAL DEFAULT 25.0,
-        max_charge_kw REAL DEFAULT 3.0,
-        max_discharge_kw REAL DEFAULT 3.0,
+        battery_ah REAL DEFAULT 314.0,
+        battery_capacity_kwh REAL DEFAULT 16.08,
+        usable_capacity_kwh REAL DEFAULT 12.86,
+        reserve_soc REAL DEFAULT 20.0,
+        bms_max_charge_a REAL DEFAULT 100.0,
+        bms_max_discharge_a REAL DEFAULT 100.0,
+        max_charge_kw REAL DEFAULT 5.12,
+        max_discharge_kw REAL DEFAULT 5.12,
         battery_efficiency REAL DEFAULT 0.95,
         import_tariff REAL DEFAULT 11.50,
         export_tariff REAL DEFAULT 0.0,
@@ -158,6 +175,60 @@ def init_db():
     );
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS deye_cloud_configs (
+        id TEXT PRIMARY KEY,
+        project_id TEXT UNIQUE NOT NULL,
+        station_id TEXT DEFAULT '',
+        app_id TEXT DEFAULT '',
+        app_secret TEXT DEFAULT '',
+        username TEXT DEFAULT '',
+        password_encrypted TEXT DEFAULT '',
+        auto_sync INTEGER DEFAULT 0,
+        sync_interval_min INTEGER DEFAULT 5,
+        last_sync_time TEXT,
+        sync_status TEXT DEFAULT 'IDLE',
+        sync_message TEXT,
+        reconciliation_policy TEXT DEFAULT 'MERGE',
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS deye_sync_logs (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        sync_time TEXT NOT NULL,
+        records_fetched INTEGER DEFAULT 0,
+        records_inserted INTEGER DEFAULT 0,
+        records_skipped INTEGER DEFAULT 0,
+        status TEXT NOT NULL,
+        error_message TEXT
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS weather_cache (
+        id TEXT PRIMARY KEY,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        date_str TEXT NOT NULL,
+        hourly_data_json TEXT NOT NULL,
+        fetched_at TEXT NOT NULL
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS analyst_cache (
+        id TEXT PRIMARY KEY,
+        query_hash TEXT UNIQUE NOT NULL,
+        query_text TEXT NOT NULL,
+        response_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    """)
+
     cursor.execute("PRAGMA table_info(datasets)")
     cols = [row["name"] for row in cursor.fetchall()]
     if "file_hash" not in cols:
@@ -173,6 +244,31 @@ def init_db():
     if "is_included" not in cols:
         cursor.execute("ALTER TABLE datasets ADD COLUMN is_included INTEGER DEFAULT 1")
 
+    cursor.execute("PRAGMA table_info(system_settings)")
+    sys_cols = [row["name"] for row in cursor.fetchall()]
+    add_sys_cols = {
+        "panel_model": "TEXT DEFAULT 'Canadian Solar'",
+        "panel_tech": "TEXT DEFAULT 'N-Type TOPCon bifacial'",
+        "inverter_model": "TEXT DEFAULT 'SUN-6K-SG06LP1-EU-CM2'",
+        "inverter_serial": "TEXT DEFAULT '2604282202'",
+        "inverter_max_apparent_va": "REAL DEFAULT 6600.0",
+        "inverter_max_battery_current_a": "REAL DEFAULT 135.0",
+        "mppt_voltage_min_v": "REAL DEFAULT 150.0",
+        "mppt_voltage_max_v": "REAL DEFAULT 425.0",
+        "pv_voltage_max_v": "REAL DEFAULT 500.0",
+        "mppt_max_current_a": "REAL DEFAULT 18.0",
+        "logger_serial": "TEXT DEFAULT '1251892903'",
+        "logger_firmware": "TEXT DEFAULT 'MW4_32_5407_SS_04_00.00.00.13'",
+        "logger_interval_min": "INTEGER DEFAULT 5",
+        "battery_model": "TEXT DEFAULT 'MENRED ESS'",
+        "battery_ah": "REAL DEFAULT 314.0",
+        "bms_max_charge_a": "REAL DEFAULT 100.0",
+        "bms_max_discharge_a": "REAL DEFAULT 100.0"
+    }
+    for col_name, col_def in add_sys_cols.items():
+        if col_name not in sys_cols:
+            cursor.execute(f"ALTER TABLE system_settings ADD COLUMN {col_name} {col_def}")
+
     cursor.execute("SELECT id FROM projects WHERE id = 'default'")
     if not cursor.fetchone():
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -183,15 +279,68 @@ def init_db():
         cursor.execute(
             """INSERT INTO system_settings (
                 id, project_id, pv_capacity_kwp, num_modules, module_wattage,
-                inverter_power_kw, battery_chemistry, battery_voltage, battery_capacity_kwh,
-                usable_capacity_kwh, reserve_soc, max_charge_kw, max_discharge_kw,
+                panel_model, panel_tech, inverter_model, inverter_power_kw, inverter_serial,
+                inverter_max_apparent_va, inverter_max_battery_current_a, mppt_voltage_min_v, mppt_voltage_max_v,
+                pv_voltage_max_v, mppt_max_current_a, logger_serial, logger_firmware, logger_interval_min,
+                battery_model, battery_chemistry, battery_voltage, battery_ah, battery_capacity_kwh,
+                usable_capacity_kwh, reserve_soc, bms_max_charge_a, bms_max_discharge_a, max_charge_kw, max_discharge_kw,
                 battery_efficiency, import_tariff, export_tariff, currency, timezone, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                "settings-default", "default", 5.0, 10, 500.0,
-                5.0, "LFP", 51.2, 15.0,
-                11.25, 25.0, 3.0, 3.0,
+                "settings-default", "default", 6.2, 10, 620.0,
+                "Canadian Solar", "N-Type TOPCon bifacial", "SUN-6K-SG06LP1-EU-CM2", 6.0, "2604282202",
+                6600.0, 135.0, 150.0, 425.0,
+                500.0, 18.0, "1251892903", "MW4_32_5407_SS_04_00.00.00.13", 5,
+                "MENRED ESS", "LFP", 51.2, 314.0, 16.08,
+                12.86, 20.0, 100.0, 100.0, 5.12, 5.12,
                 0.95, 11.50, 0.0, "PHP", "Asia/Manila", now
+            )
+        )
+    else:
+        cursor.execute("""
+            UPDATE system_settings SET
+                pv_capacity_kwp = 6.2,
+                num_modules = 10,
+                module_wattage = 620.0,
+                panel_model = 'Canadian Solar',
+                panel_tech = 'N-Type TOPCon bifacial',
+                inverter_model = 'SUN-6K-SG06LP1-EU-CM2',
+                inverter_power_kw = 6.0,
+                inverter_serial = '2604282202',
+                inverter_max_apparent_va = 6600.0,
+                inverter_max_battery_current_a = 135.0,
+                mppt_voltage_min_v = 150.0,
+                mppt_voltage_max_v = 425.0,
+                pv_voltage_max_v = 500.0,
+                mppt_max_current_a = 18.0,
+                logger_serial = '1251892903',
+                logger_firmware = 'MW4_32_5407_SS_04_00.00.00.13',
+                logger_interval_min = 5,
+                battery_model = 'MENRED ESS',
+                battery_chemistry = 'LFP',
+                battery_voltage = 51.2,
+                battery_ah = 314.0,
+                battery_capacity_kwh = 16.08,
+                usable_capacity_kwh = 12.86,
+                reserve_soc = 20.0,
+                bms_max_charge_a = 100.0,
+                bms_max_discharge_a = 100.0,
+                max_charge_kw = 5.12,
+                max_discharge_kw = 5.12
+            WHERE project_id = 'default'
+        """)
+
+    cursor.execute("SELECT id FROM deye_cloud_configs WHERE project_id = 'default'")
+    if not cursor.fetchone():
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        cursor.execute(
+            """INSERT INTO deye_cloud_configs (
+                id, project_id, station_id, app_id, app_secret, username, password_encrypted,
+                auto_sync, sync_interval_min, sync_status, sync_message, reconciliation_policy, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "deye-default", "default", "", "", "", "", "",
+                0, 5, "IDLE", "Not connected", "MERGE", now_iso
             )
         )
 
