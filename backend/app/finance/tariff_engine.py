@@ -97,5 +97,7 @@ def calculate_grid_cost(
         "off_peak_cost": round(off_peak_cost, 2),
         "currency": config.currency,
         "tariff_type": config.tariff_type,
+        "total_imported_kwh": round(total_imported_kwh, 2),
+        "total_exported_kwh": round(total_exported_kwh, 2),
         "effective_rate_per_kwh": round(total_import_cost / total_imported_kwh, 2) if total_imported_kwh > 0 else config.flat_rate
     }

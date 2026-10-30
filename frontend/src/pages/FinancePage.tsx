@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { useOutletContext } from "react-router-dom";
-import { DollarSign, PiggyBank, Receipt, ArrowUpRight, Percent } from "lucide-react";
+import { Link, useOutletContext } from "react-router-dom";
+import { DollarSign, PiggyBank, Receipt, ArrowUpRight, Percent, ReceiptText } from "lucide-react";
 import { api } from "../lib/api";
 import { EChartComponent } from "../components/charts/EChartComponent";
 import { theme } from "../lib/theme";
@@ -17,11 +17,11 @@ export const FinancePage: React.FC = () => {
   const [systemCapex, setSystemCapex] = useState<number>(250000);
   const [financeData, setFinanceData] = useState<any>(null);
 
-  const loadFinance = async (type = tariffType, rate = flatRate) => {
+  const loadFinance = async (type = tariffType, rate = flatRate, capex = systemCapex) => {
     if (!activeDatasetId) return;
     setLoading(true);
     try {
-      const data = await api.getFinance(activeDatasetId, type, rate);
+      const data = await api.getFinance(activeDatasetId, type, rate, capex);
       setFinanceData(data);
     } catch (err) {
       console.error(err);
@@ -45,9 +45,11 @@ export const FinancePage: React.FC = () => {
   }
 
   const currency = financeData?.currency || "PHP";
-  const dailyCost = financeData?.daily_cost || 0;
-  const baselineCost = financeData?.counterfactual_daily_cost || 0;
-  const dailySavings = financeData?.daily_savings || 0;
+  const dailyCost = financeData?.daily_cost ?? financeData?.daily_grid_cost ?? 0;
+  const baselineCost = financeData?.counterfactual_daily_cost ?? financeData?.hypothetical_full_grid_cost ?? 0;
+  const dailySavings = financeData?.daily_savings ?? financeData?.daily_avoided_cost ?? 0;
+  const observedDailyImport = financeData?.observed_daily_import_kwh ?? 0;
+  const baselineDemand = financeData?.baseline_demand_kwh ?? 0;
   const savingsPct = baselineCost > 0 ? (dailySavings / baselineCost) * 100 : 0;
   const monthlyCost = dailyCost * 30.5;
   const monthlySavings = dailySavings * 30.5;
@@ -158,9 +160,16 @@ export const FinancePage: React.FC = () => {
             Financial Modeling & Tariff Analysis
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Deterministic energy cost accounting, counterfactual bill reduction, and 10-year discounted cash flow performance.
+            General tariff comparison and 10-year solar investment return (ROI / payback) analysis.
           </p>
         </div>
+        <Link
+          to="/billing"
+          className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition-colors"
+        >
+          <ReceiptText className="w-4 h-4" />
+          <span>View TEI Statement of Account</span>
+        </Link>
       </div>
 
       <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
@@ -211,7 +220,7 @@ export const FinancePage: React.FC = () => {
 
           <div>
             <button
-              onClick={() => loadFinance(tariffType, flatRate)}
+              onClick={() => loadFinance(tariffType, flatRate, systemCapex)}
               disabled={loading}
               className="w-full px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium text-sm rounded-lg transition-colors flex items-center justify-center gap-2"
             >
@@ -318,11 +327,11 @@ export const FinancePage: React.FC = () => {
           <div className="mt-3 grid grid-cols-2 gap-4 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg">
             <div>
               <span className="font-medium text-slate-800 dark:text-slate-200">Observed Daily Import:</span>
-              <span className="ml-1 tabular-nums font-semibold">12.38 kWh</span>
+              <span className="ml-1 tabular-nums font-semibold">{observedDailyImport.toFixed(2)} kWh</span>
             </div>
             <div>
               <span className="font-medium text-slate-800 dark:text-slate-200">Baseline Demand:</span>
-              <span className="ml-1 tabular-nums font-semibold">33.51 kWh</span>
+              <span className="ml-1 tabular-nums font-semibold">{baselineDemand.toFixed(2)} kWh</span>
             </div>
           </div>
         </div>

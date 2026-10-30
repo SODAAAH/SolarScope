@@ -216,9 +216,10 @@ export const api = {
       body: JSON.stringify(payload)
     });
   },
-  getFinance: (datasetId: string, tariffType = "flat", flatRate?: number) => {
+  getFinance: (datasetId: string, tariffType = "flat", flatRate?: number, systemCapex?: number) => {
     let url = `/datasets/${datasetId}/finance?tariff_type=${tariffType}`;
     if (flatRate !== undefined) url += `&flat_rate=${flatRate}`;
+    if (systemCapex !== undefined) url += `&system_capex=${systemCapex}`;
     return fetchJson<any>(url);
   },
   getHistoricalDaily: (datasetId?: string) => {

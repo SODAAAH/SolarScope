@@ -796,7 +796,8 @@ def get_finance_analysis(
     tariff_type: str = "flat",
     flat_rate: Optional[float] = None,
     peak_rate: float = 14.50,
-    off_peak_rate: float = 9.00
+    off_peak_rate: float = 9.00,
+    system_capex: float = 250000.0
 ):
     records = _get_records(dataset_id)
     settings_dict = get_settings()
@@ -809,7 +810,7 @@ def get_finance_analysis(
         export_rate=settings_dict["export_tariff"],
         currency=settings_dict["currency"]
     )
-    return calculate_financial_performance(records, conf)
+    return calculate_financial_performance(records, conf, system_capex=system_capex)
 
 @router.get("/historical/daily")
 def get_historical_daily(dataset_id: Optional[str] = None):

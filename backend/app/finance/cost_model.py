@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Dict, Any
 from backend.app.ingestion.models import CanonicalRecord
 from backend.app.finance.tariff_engine import TariffConfig, calculate_grid_cost
@@ -6,7 +7,7 @@ from backend.app.energy_balance.reconciliation import reconcile_energy_balance
 def calculate_financial_performance(
     records: List[CanonicalRecord],
     config: TariffConfig,
-    system_capex: float = 350000.0,
+    system_capex: float = 250000.0,
     annual_degradation: float = 0.008,
     discount_rate: float = 0.06
 ) -> Dict[str, Any]:
@@ -16,17 +17,31 @@ def calculate_financial_performance(
     grid_cost = calculate_grid_cost(records, config)
     balance = reconcile_energy_balance(records)
 
-    demand_kwh = balance["household_demand_kwh"]
-    solar_supplied_kwh = balance["direct_solar_used_kwh"] + balance["battery_discharged_kwh"]
+    total_demand_kwh = balance.get("household_demand_kwh", 0.0)
+    total_imported_kwh = grid_cost.get("total_imported_kwh", 0.0)
+
+    try:
+        t0 = datetime.strptime(records[0].timestamp, "%Y-%m-%d %H:%M:%S")
+        t1 = datetime.strptime(records[-1].timestamp, "%Y-%m-%d %H:%M:%S")
+        span_days = max(1.0, (t1 - t0).total_seconds() / 86400.0)
+    except Exception:
+        span_days = 1.0
+
+    daily_imported_kwh = round(total_imported_kwh / span_days, 2)
+    daily_demand_kwh = round(total_demand_kwh / span_days, 2)
 
     effective_tariff = grid_cost.get("effective_rate_per_kwh", config.flat_rate)
     
-    daily_grid_cost = grid_cost["net_daily_bill"]
-    hypothetical_full_grid_cost = round((demand_kwh * effective_tariff) + grid_cost["fixed_daily_charge"], 2)
+    daily_import_cost = grid_cost["total_import_cost"] / span_days
+    daily_export_credit = grid_cost["total_export_credit"] / span_days
+    daily_fixed_charge = grid_cost["fixed_daily_charge"]
+    
+    daily_grid_cost = round(daily_import_cost + daily_fixed_charge - daily_export_credit, 2)
+    hypothetical_full_grid_cost = round((daily_demand_kwh * effective_tariff) + daily_fixed_charge, 2)
     daily_avoided_cost = max(0.0, round(hypothetical_full_grid_cost - daily_grid_cost, 2))
 
-    monthly_savings = round(daily_avoided_cost * 30.0, 2)
-    annual_savings = round(daily_avoided_cost * 365.0, 2)
+    monthly_savings = round(daily_avoided_cost * 30.5, 2)
+    annual_savings = round(daily_avoided_cost * 365.25, 2)
 
     simple_payback_years = round(system_capex / annual_savings, 2) if annual_savings > 0 else 99.0
 
@@ -44,8 +59,11 @@ def calculate_financial_performance(
         })
 
     return {
+        "daily_cost": daily_grid_cost,
         "daily_grid_cost": daily_grid_cost,
+        "counterfactual_daily_cost": hypothetical_full_grid_cost,
         "hypothetical_full_grid_cost": hypothetical_full_grid_cost,
+        "daily_savings": daily_avoided_cost,
         "daily_avoided_cost": daily_avoided_cost,
         "monthly_savings": monthly_savings,
         "annual_savings": annual_savings,
@@ -53,5 +71,10 @@ def calculate_financial_performance(
         "simple_payback_years": simple_payback_years,
         "ten_year_npv": round(npv, 2),
         "currency": config.currency,
-        "cash_flows": cash_flows
+        "cash_flows": cash_flows,
+        "observed_daily_import_kwh": daily_imported_kwh,
+        "baseline_demand_kwh": daily_demand_kwh,
+        "span_days": round(span_days, 1),
+        "total_imported_kwh": round(total_imported_kwh, 2),
+        "total_demand_kwh": round(total_demand_kwh, 2)
     }
