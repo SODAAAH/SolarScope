@@ -139,9 +139,22 @@ async def upload_dataset(file: UploadFile = File(...)):
     file_format = "CSV" if filename.lower().endswith(".csv") else ("XLSM" if filename.lower().endswith(".xlsm") else "XLSX")
 
     conn = get_connection()
-    existing = conn.execute("SELECT id FROM datasets WHERE file_hash = ?", (file_hash,)).fetchone()
-    is_duplicate = existing is not None
-    duplicate_of = existing["id"] if existing else None
+    existing_rows = conn.execute("SELECT id, filepath FROM datasets WHERE file_hash = ? OR filename = ?", (file_hash, filename)).fetchall()
+    is_duplicate = len(existing_rows) > 0
+    duplicate_of = existing_rows[0]["id"] if is_duplicate else None
+
+    for row in existing_rows:
+        if row["filepath"]:
+            p = Path(row["filepath"])
+            if p.exists():
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
+        conn.execute("DELETE FROM column_mappings WHERE dataset_id = ?", (row["id"],))
+        conn.execute("DELETE FROM datasets WHERE id = ?", (row["id"],))
+        if row["id"] in dataset_cache:
+            del dataset_cache[row["id"]]
 
     file_id, target_path = save_uploaded_file(filename, contents)
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -264,6 +277,7 @@ async def upload_datasets_batch(files: List[UploadFile] = File(...)):
     results = []
     conn = get_connection()
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    seen_hashes = set()
 
     for file in files:
         filename = file.filename or "upload.xlsx"
@@ -271,38 +285,23 @@ async def upload_datasets_batch(files: List[UploadFile] = File(...)):
         file_hash = compute_file_hash(contents)
         file_format = "CSV" if filename.lower().endswith(".csv") else ("XLSM" if filename.lower().endswith(".xlsm") else "XLSX")
 
-        existing = conn.execute("SELECT id, total_rows FROM datasets WHERE file_hash = ?", (file_hash,)).fetchone()
-        if existing and existing["total_rows"] and existing["total_rows"] > 0:
-            results.append({
-                "dataset_id": existing["id"],
-                "filename": filename,
-                "file_hash": file_hash,
-                "file_format": file_format,
-                "is_duplicate": True,
-                "duplicate_of": existing["id"],
-                "status": "already_committed"
-            })
+        if file_hash in seen_hashes:
             continue
+        seen_hashes.add(file_hash)
 
-        if existing and (not existing["total_rows"] or existing["total_rows"] == 0):
-            try:
-                commit_info = _auto_commit_dataset_core(existing["id"], conn)
-                results.append({
-                    "dataset_id": existing["id"],
-                    "filename": filename,
-                    "file_hash": file_hash,
-                    "file_format": file_format,
-                    "is_duplicate": False,
-                    "duplicate_of": None,
-                    "status": "committed",
-                    "total_records": commit_info["total_records"],
-                    "quality_score": commit_info["quality_score"],
-                    "start_time_12h": commit_info["start_time_12h"],
-                    "end_time_12h": commit_info["end_time_12h"]
-                })
-                continue
-            except Exception:
-                pass
+        existing_rows = conn.execute("SELECT id, filepath FROM datasets WHERE file_hash = ? OR filename = ?", (file_hash, filename)).fetchall()
+        for row in existing_rows:
+            if row["filepath"]:
+                p = Path(row["filepath"])
+                if p.exists():
+                    try:
+                        p.unlink()
+                    except Exception:
+                        pass
+            conn.execute("DELETE FROM column_mappings WHERE dataset_id = ?", (row["id"],))
+            conn.execute("DELETE FROM datasets WHERE id = ?", (row["id"],))
+            if row["id"] in dataset_cache:
+                del dataset_cache[row["id"]]
 
         file_id, target_path = save_uploaded_file(filename, contents)
         sheets: List[str] = []
@@ -322,8 +321,8 @@ async def upload_datasets_batch(files: List[UploadFile] = File(...)):
                 "filename": filename,
                 "file_hash": file_hash,
                 "file_format": file_format,
-                "is_duplicate": False,
-                "duplicate_of": None,
+                "is_duplicate": len(existing_rows) > 0,
+                "duplicate_of": existing_rows[0]["id"] if existing_rows else None,
                 "status": "committed",
                 "total_records": commit_info["total_records"],
                 "quality_score": commit_info["quality_score"],
@@ -336,8 +335,8 @@ async def upload_datasets_batch(files: List[UploadFile] = File(...)):
                 "filename": filename,
                 "file_hash": file_hash,
                 "file_format": file_format,
-                "is_duplicate": False,
-                "duplicate_of": None,
+                "is_duplicate": len(existing_rows) > 0,
+                "duplicate_of": existing_rows[0]["id"] if existing_rows else None,
                 "status": "pending",
                 "error": str(e)
             })
@@ -349,7 +348,7 @@ async def upload_datasets_batch(files: List[UploadFile] = File(...)):
 @router.get("/sources")
 def list_sources():
     conn = get_connection()
-    rows = conn.execute("SELECT * FROM datasets ORDER BY created_at DESC").fetchall()
+    rows = conn.execute("SELECT * FROM datasets ORDER BY COALESCE(start_time, created_at) ASC, filename ASC").fetchall()
     conn.close()
 
     items = []
@@ -448,11 +447,34 @@ def preview_dataset(dataset_id: str, sheet_name: Optional[str] = None):
         row = conn.execute("SELECT * FROM datasets ORDER BY created_at DESC LIMIT 1").fetchone()
     conn.close()
     if not row:
-        raise HTTPException(status_code=404, detail="No datasets available for preview. Please upload a file first.")
+        return {
+            "dataset_id": "",
+            "filename": "",
+            "available_sheets": [],
+            "selected_sheet": "",
+            "total_rows": 0,
+            "columns": [],
+            "preview_rows": [],
+            "detected_start_time_12h": None,
+            "detected_end_time_12h": None
+        }
 
     filepath = Path(row["filepath"])
     filename = row["filename"]
     actual_id = row["id"]
+
+    if not filepath.exists():
+        return {
+            "dataset_id": actual_id,
+            "filename": filename,
+            "available_sheets": [],
+            "selected_sheet": "",
+            "total_rows": 0,
+            "columns": [],
+            "preview_rows": [],
+            "detected_start_time_12h": None,
+            "detected_end_time_12h": None
+        }
     
     if filename.lower().endswith((".xlsx", ".xlsm")):
         sheets = list_excel_sheets(filepath)
