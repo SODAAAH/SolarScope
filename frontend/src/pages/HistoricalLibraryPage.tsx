@@ -103,8 +103,9 @@ export const HistoricalLibraryPage: React.FC = () => {
       const data = await api.getDeyeStatus();
       setDeyeStatus(data);
       if (data) {
-        setConfigStationId(data.station_id || "");
+        setConfigStationId(data.station_id || "62805884");
         setConfigAppId(data.app_id || "");
+        setConfigUsername(data.username || "dy_YyWnmwcU");
         setConfigAutoSync(data.auto_sync || false);
         setConfigInterval(data.sync_interval_min || 5);
       }

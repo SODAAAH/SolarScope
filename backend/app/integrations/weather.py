@@ -5,8 +5,8 @@ import urllib.error
 from typing import Dict, Any, List, Optional
 from backend.app.storage.db import get_connection
 
-DEFAULT_LAT = 15.48
-DEFAULT_LON = 120.60
+DEFAULT_LAT = 15.49076
+DEFAULT_LON = 120.56191
 DEFAULT_TZ = "Asia/Manila"
 
 def get_weather_intelligence(

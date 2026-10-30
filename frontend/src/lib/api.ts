@@ -585,6 +585,7 @@ export interface DeyeStatusResponse {
   is_configured: boolean;
   station_id: string;
   app_id: string;
+  username?: string;
   auto_sync: boolean;
   sync_interval_min: number;
   last_sync_time: string | null;

@@ -57,9 +57,9 @@ class DeyeCloudClient:
         is_configured = bool(self.app_id and self.app_secret) or bool(self.username and self.password)
 
         device_hierarchy = {
-            "installation_name": "Tarlac SolarScope Installation",
+            "installation_name": "Mam Micah (Teresa, Tibag, Tarlac City)",
             "station": {
-                "station_id": self.station_id or "Station-Auto",
+                "station_id": self.station_id or "62805884",
                 "status": "CONFIGURED" if is_configured else "UNCONFIGURED"
             },
             "logger": {
@@ -80,6 +80,7 @@ class DeyeCloudClient:
             "is_configured": is_configured,
             "station_id": self.station_id,
             "app_id": self.app_id,
+            "username": self.username,
             "auto_sync": self.auto_sync,
             "sync_interval_min": self.sync_interval_min,
             "last_sync_time": self.last_sync_time,
