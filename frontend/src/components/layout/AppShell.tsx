@@ -17,10 +17,8 @@ import {
   Settings,
   SunMedium,
   Moon,
-  FolderOpen,
   Database,
   Calendar,
-  X,
   ChevronDown,
   BookOpen
 } from 'lucide-react';
@@ -59,8 +57,6 @@ export const AppShell: React.FC = () => {
   const [isDark, setIsDark] = useState<boolean>(() => {
     return localStorage.getItem('solarscope_theme') === 'dark';
   });
-  const [isLoadingSample, setIsLoadingSample] = useState(false);
-  const [sampleError, setSampleError] = useState<string | null>(null);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -96,19 +92,11 @@ export const AppShell: React.FC = () => {
     localStorage.setItem('solarscope_view_mode', viewMode);
   }, [viewMode]);
 
-  const handleLoadSample = async () => {
-    try {
-      setIsLoadingSample(true);
-      setSampleError(null);
-      const res = await api.loadSampleDataset();
-      setActiveDatasetId(res.dataset_id);
-      navigate(`/import?dataset_id=${res.dataset_id}`);
-    } catch (err: any) {
-      setSampleError(err.message || String(err));
-    } finally {
-      setIsLoadingSample(false);
-    }
-  };
+  const sortedSources = [...sources].sort((a, b) => {
+    const dateA = a.start_time ? a.start_time.slice(0, 10) : a.filename;
+    const dateB = b.start_time ? b.start_time.slice(0, 10) : b.filename;
+    return dateA.localeCompare(dateB);
+  });
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
@@ -129,14 +117,6 @@ export const AppShell: React.FC = () => {
               <Calendar className="w-3.5 h-3.5 text-solar-600" />
               <span>Analysis Scope</span>
             </span>
-            <button
-              onClick={handleLoadSample}
-              disabled={isLoadingSample}
-              className="text-[11px] text-solar-700 dark:text-solar-500 hover:underline flex items-center gap-1 font-medium disabled:opacity-50"
-            >
-              <FolderOpen className="h-3 w-3" />
-              {isLoadingSample ? 'Loading...' : 'Sample'}
-            </button>
           </div>
 
           <div className="relative">
@@ -146,11 +126,11 @@ export const AppShell: React.FC = () => {
               className="w-full text-xs bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 pl-2.5 pr-7 py-2 rounded-lg border border-slate-300 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium cursor-pointer truncate shadow-sm appearance-none"
             >
               <option value="all">
-                All Dates ({sources.filter((s) => s.is_included === 1).length} days combined)
+                All Dates ({sortedSources.filter((s) => s.is_included === 1).length} days combined)
               </option>
-              {sources.length > 0 && (
+              {sortedSources.length > 0 && (
                 <optgroup label="Individual Observation Days">
-                  {sources.map((s) => {
+                  {sortedSources.map((s) => {
                     const dateLabel = s.start_time ? s.start_time.slice(0, 10) : s.filename;
                     return (
                       <option key={s.id} value={s.id}>
@@ -166,7 +146,7 @@ export const AppShell: React.FC = () => {
 
           <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
             <span>{(!activeDatasetId || activeDatasetId === 'all') ? 'Full Portfolio Applied' : 'Single Day Active'}</span>
-            <span className="font-mono">{sources.reduce((sum, s) => sum + (s.total_rows || 0), 0).toLocaleString()} rows</span>
+            <span className="font-mono">{sortedSources.reduce((sum, s) => sum + (s.total_rows || 0), 0).toLocaleString()} rows</span>
           </div>
         </div>
 
@@ -298,22 +278,6 @@ export const AppShell: React.FC = () => {
           isOpen={isHelpModalOpen}
           onClose={() => setIsHelpModalOpen(false)}
         />
-
-        {sampleError && (
-          <div className="fixed bottom-4 right-4 z-50 max-w-sm bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900 text-slate-900 dark:text-slate-100 p-4 rounded-xl shadow-xl flex items-start gap-3 animate-in fade-in slide-in-from-bottom-2">
-            <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-            <div className="flex-1 text-xs">
-              <div className="font-semibold text-red-600 dark:text-red-400">Error Loading Sample</div>
-              <div className="text-slate-600 dark:text-slate-400 mt-1">{sampleError}</div>
-            </div>
-            <button
-              onClick={() => setSampleError(null)}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

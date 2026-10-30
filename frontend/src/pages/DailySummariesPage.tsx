@@ -89,7 +89,7 @@ export const DailySummariesPage: React.FC = () => {
             Multi-Day Historical Intelligence & Daily Summaries
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Traceable calendar day summaries, ISO-week rollups, monthly totals, and 12-hour clock hour intelligence.
+            Traceable calendar day summaries, ISO-week rollups, and monthly totals.
           </p>
         </div>
 
@@ -170,10 +170,10 @@ export const DailySummariesPage: React.FC = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Clock Hour-of-Day Profile (12-Hour Format)
+              Clock Hour-of-Day Profile
             </h2>
             <p className="text-xs text-slate-500">
-              Mean observed power across all qualifying days by 12-hour clock hour
+              Mean observed power across all qualifying days by hour of day
             </p>
           </div>
         </div>
@@ -186,7 +186,6 @@ export const DailySummariesPage: React.FC = () => {
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
               Daily Operating Summaries ({dailyData.length} Days)
             </h2>
-            <span className="text-xs text-slate-500">All peak timestamps formatted in 12-hour format</span>
           </div>
 
           <div className="overflow-x-auto">

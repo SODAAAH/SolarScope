@@ -37,6 +37,10 @@ export const ImportPage: React.FC = () => {
     setError(null);
     api.getPreview(id, sheet)
       .then((data) => {
+        if (!data || !data.columns || data.columns.length === 0) {
+          setPreview(null);
+          return;
+        }
         setPreview(data);
         if (data.dataset_id && data.dataset_id !== id) {
           setDatasetId(data.dataset_id);
@@ -61,17 +65,15 @@ export const ImportPage: React.FC = () => {
       })
       .catch(() => {
         localStorage.removeItem('solarscope_dataset_id');
+        setDatasetId('');
+        setError(null);
+        setPreview(null);
         api.listSources().then((sources) => {
           if (sources && sources.length > 0) {
             setDatasetId(sources[0].id);
             setActiveDatasetId(sources[0].id);
-          } else {
-            setError(null);
-            setPreview(null);
           }
-        }).catch(() => {
-          setError(null);
-        });
+        }).catch(() => {});
       })
       .finally(() => {
         setLoading(false);
@@ -129,7 +131,7 @@ export const ImportPage: React.FC = () => {
         <p className="text-xs text-slate-500">Upload raw solar inverter exports (.xlsx, .xlsm, .csv), review signal mapping, and audit sampling intervals.</p>
       </div>
 
-      {error && (
+      {error && !error.includes("404") && (
         <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 rounded text-xs">
           {error}
         </div>
@@ -187,7 +189,7 @@ export const ImportPage: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-slate-500">No file uploaded yet. Use the upload box or click "Load Sample" in the sidebar.</p>
+              <p className="text-xs text-slate-500">No file uploaded yet. Select an inverter export file above to begin.</p>
             )}
           </div>
 

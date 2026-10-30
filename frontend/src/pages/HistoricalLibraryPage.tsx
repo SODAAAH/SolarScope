@@ -280,7 +280,13 @@ export const HistoricalLibraryPage: React.FC = () => {
     return acc;
   }, {} as Record<string, number>);
 
-  const filteredSources = sources.filter(s => {
+  const sortedSources = [...sources].sort((a, b) => {
+    const dateA = a.start_time ? a.start_time.slice(0, 10) : a.filename;
+    const dateB = b.start_time ? b.start_time.slice(0, 10) : b.filename;
+    return dateA.localeCompare(dateB);
+  });
+
+  const filteredSources = sortedSources.filter(s => {
     if (filterTab === "included") return s.is_included === 1 && s.total_rows > 0;
     if (filterTab === "excluded") return s.is_included !== 1;
     if (filterTab === "pending") return s.total_rows === 0 || !s.start_time;
@@ -498,7 +504,7 @@ export const HistoricalLibraryPage: React.FC = () => {
               Source Inventory & Provenance Records
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Review recognized formats, 12-hour observation spans, quality scores, and inclusion flags.
+              Review recognized formats, observation spans, quality scores, and inclusion flags.
             </p>
           </div>
 
@@ -603,7 +609,7 @@ export const HistoricalLibraryPage: React.FC = () => {
         {filteredSources.length === 0 ? (
           <div className="text-center py-12 text-slate-500 text-xs">
             {sources.length === 0
-              ? "No datasets uploaded yet. Ingest files above or load the sample workbook."
+              ? "No datasets uploaded yet. Ingest your inverter files above to get started."
               : "No datasets match the selected filter."}
           </div>
         ) : (
@@ -630,7 +636,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                   <th className="px-4 py-3 font-semibold">Filename</th>
                   <th className="px-4 py-3 font-semibold">Format</th>
                   <th className="px-4 py-3 font-semibold">Records</th>
-                  <th className="px-4 py-3 font-semibold">12-Hour Time Span</th>
+                  <th className="px-4 py-3 font-semibold">Time Span</th>
                   <th className="px-4 py-3 font-semibold">Quality</th>
                   <th className="px-4 py-3 font-semibold">SHA-256 Fingerprint</th>
                   <th className="px-4 py-3 font-semibold text-right">Actions</th>

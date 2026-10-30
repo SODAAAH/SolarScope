@@ -121,7 +121,7 @@ export const GridPage: React.FC = () => {
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-3">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-            {viewMode === 'simple' ? 'When Did Your Home Buy Electricity from TEI? (12-Hour Clock)' : 'Hourly Utility Import Histogram (12-Hour Format)'}
+            {viewMode === 'simple' ? 'When Did Your Home Buy Electricity from TEI?' : 'Hourly Utility Import Histogram'}
           </h2>
           <span className="text-[11px] font-mono text-slate-400">12 AM to 11 PM</span>
         </div>

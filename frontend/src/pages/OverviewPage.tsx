@@ -43,7 +43,7 @@ export const OverviewPage: React.FC = () => {
     return (
       <div className="max-w-xl mx-auto mt-20 p-8 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-center">
         <h2 className="text-base font-semibold mb-2">No Active Dataset</h2>
-        <p className="text-xs text-slate-500 mb-6">Import your inverter export file or load the sample dataset to inspect energy analytics.</p>
+        <p className="text-xs text-slate-500 mb-6">Import your inverter export files in the Historical Library or Import Wizard to inspect energy analytics.</p>
         <button
           onClick={() => navigate('/import')}
           className="bg-solar-600 hover:bg-solar-700 text-white text-xs font-medium px-4 py-2 rounded-md transition-colors"
@@ -229,7 +229,7 @@ export const OverviewPage: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
           <div>
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              {viewMode === 'simple' ? 'Electricity Production & Usage Timeline (12-Hour Clock)' : 'Instantaneous Power Flow Quadrature (kW)'}
+              {viewMode === 'simple' ? 'Electricity Production & Usage Timeline' : 'Instantaneous Power Flow Quadrature (kW)'}
             </h2>
             <p className="text-xs text-slate-500">
               {viewMode === 'simple'
@@ -237,7 +237,6 @@ export const OverviewPage: React.FC = () => {
                 : 'Trapezoidal time-differenced power measurements across solar, load, battery, and utility grid channels.'}
             </p>
           </div>
-          <span className="text-[11px] font-mono text-slate-400">12-Hour Format: 12 AM to 11 PM</span>
         </div>
         {timelineOption && <EChartComponent option={timelineOption} height={340} />}
       </div>

@@ -262,7 +262,7 @@ export const ComparePage: React.FC = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Weekday vs Weekend Demand Profile (12-Hour Clock)
+              Weekday vs Weekend Demand Profile
             </h2>
             <p className="text-xs text-slate-500">
               Comparing average household electrical demand profiles between workdays and weekends
