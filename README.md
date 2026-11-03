@@ -9,24 +9,19 @@
 [![Local-First](https://img.shields.io/badge/Architecture-Local--First-success.svg)](#architecture--technology-stack)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-SolarScope is an offline, local-first solar energy analytics platform with integrated live Deye Cloud telemetry. It transforms raw Excel (`.xlsx`, `.xlsm`) and CSV exports from residential and commercial solar inverters into accurate, explainable energy intelligence.
-
-Designed with an intuitive, clean interface, SolarScope presents verified physical metrics in clear, accessible language while retaining rigorous engineering formulas, mathematical proofs, and sensor channels underneath.
+SolarScope is an offline, local-first solar energy analytics and telemetry platform. It bridges live Deye Cloud inverter monitoring with historical multi-file telemetry ingestion to deliver rigorous physical loss accounting, utility tariff intelligence, and empirical hardware simulation.
 
 ---
 
-## Key Features
+## Core Engineering Features
 
-- **Live Telemetry & Diurnal Power Profile**: Real-time animated power flow diagrams, 24-hour diurnal load/solar profiles with day-by-day navigation (`<` and `>` buttons alongside a date selector in `MM/DD/YYYY`), and solar self-consumption utilization breakdowns.
-- **Standardized Date & Time Conventions**: Consistent `MM/DD/YYYY` date representation and strict 12-hour `hh:mm AM/PM` timestamps across all timelines, hourly histograms, tooltips, cards, and anomaly logs.
-- **10 Focused Operational Hubs**: Streamlined navigation organizing energy management into 10 core engineering hubs: Overview, Solar Intelligence, Energy & Demand, Bill Intelligence, Trends & History, Diagnostics, What-If & Upgrades, Energy Analyst, Data Library & Cloud, and System Settings.
-- **Clean Simplicity**: Clear, accessible labels (*"Solar electricity produced"*, *"Electricity your home used"*, *"Electricity bought from TEI"*, *"Battery charge level"*) without confusing presets—all parameters are manually configurable.
-- **Multi-File Batch Ingestion**: Upload multiple single-day or multi-day inverter export files simultaneously. SHA-256 fingerprinting prevents duplicate counting, while automated conflict policies resolve overlapping observation intervals.
-- **Deye Cloud OpenAPI & MCP Integration**: Secure local integration for real-time live telemetry, inverter status monitoring, and historical gap backfilling directly from Deye Cloud.
-- **Physical Energy Balance Reconciler**: Validates Kirchhoff bus conservation ($E_{residual} = E_{sources} - E_{sinks}$), decomposing residuals into continuous inverter tare load (~70 W), roundtrip battery conversion losses, and sensor sampling skew.
-- **TEI Utility Bill Intelligence**: Tariff simulation based on true observed consumption, peak demand tracking, and rate schedule forecasting.
-- **"What If?" Upgrade Simulator**: Empirically models hardware expansions (battery capacity, additional PV arrays, reserve SOC adjustments, and daytime load shifting) using historical demand vectors.
-- **Energy Analyst Engine**: Fast-path analytical rule engine delivering instant, explainable technical answers with verified physical evidence.
+- **Real-Time Deye Cloud Inverter Telemetry**: Live bi-directional integration streaming instantaneous bus power flows (PV, Battery, Grid, Load, SOC) with animated flow vectors and automated gap backfilling.
+- **Physical Energy Balance & Loss Accounting**: First-principles physical loss reconciliation across DC/AC coupling nodes ($E_{residual} = E_{sources} - E_{sinks}$), decomposing residuals into continuous inverter tare load (~70 W), bidirectional conversion losses, and current transducer sampling skew.
+- **Timestamp-Differenced Trapezoidal Quadrature**: Numerical integration across arbitrary, non-uniform sensor timestamps ($\Delta t_i = t_{i+1} - t_i$) that computes true cumulative energy (kWh) without naive fixed-step assumptions.
+- **TEI Utility Tariff & Bill Intelligence**: Precision billing engine modeling Tarlac Electric Inc. (TEI) rate structures, multi-tier energy pricing, peak demand charges, and billing period cost forecasting.
+- **Empirical Hardware Upgrade Simulation**: High-resolution "What-If" simulator evaluating physical system expansions (battery capacity, additional PV string capacity, reserve SOC tuning, daytime load shifting) against historical load vectors.
+- **Multi-File Batch Ingestion & Conflict Engine**: Multi-source spreadsheet (`.xlsx`, `.xlsm`) and CSV ingestion engine with SHA-256 fingerprinting for deduplication and automated policy-driven overlap resolution.
+- **Fast-Path Diagnostic Intelligence**: Deterministic query engine providing instantaneous technical evaluations backed by verified physical telemetry benchmarks.
 
 ---
 
