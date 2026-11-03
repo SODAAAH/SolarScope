@@ -5,7 +5,7 @@ import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from backend.app.config import settings
@@ -77,7 +77,9 @@ from backend.app.integrations.weather import get_weather_intelligence
 from backend.app.ingestion.multi_preview import inspect_file_for_preview
 from backend.app.analyst.analyst_service import (
     analyze_energy_query,
-    get_preset_diagnostic_queries
+    get_preset_diagnostic_queries,
+    stream_analyst_response,
+    get_performance_overview
 )
 
 router = APIRouter()
@@ -719,17 +721,78 @@ def get_executive_summary(dataset_id: str):
     }
 
 @router.get("/datasets/{dataset_id}/timeline")
-def get_timeline_data(dataset_id: str):
+def get_timeline_data(dataset_id: str, date: Optional[str] = Query(None)):
     records = _get_records(dataset_id)
+    if not records:
+        return {
+            "timestamps": [],
+            "timestamps_12h": [],
+            "timestamps_24h": [],
+            "pv_power_kw": [],
+            "load_power_kw": [],
+            "grid_power_kw": [],
+            "battery_power_kw": [],
+            "soc_percent": [],
+            "residual_power_kw": [],
+            "is_24h": True,
+            "selected_date": date or ""
+        }
+
+    target_date = date
+    if not target_date:
+        if dataset_id not in ["all", "historical"]:
+            target_date = records[0].timestamp[:10]
+        else:
+            target_date = records[-1].timestamp[:10]
+
+    target_date_clean = target_date.strip().split(" ")[0].split("T")[0]
+    day_recs_map = {}
+    for r in records:
+        if r.timestamp.startswith(target_date_clean):
+            t_key = r.timestamp.split(" ")[1][:5] if " " in r.timestamp else r.timestamp[:5]
+            day_recs_map[t_key] = r
+
+    slots_24h = [f"{h:02d}:{m:02d}" for h in range(24) for m in range(0, 60, 5)] + ["24:00"]
+    timestamps_full = [f"{target_date_clean} {s}:00" if s != "24:00" else f"{target_date_clean} 23:59:59" for s in slots_24h]
+    timestamps_12h = [format_datetime_12h(ts) for ts in timestamps_full]
+
+    pv_kw = []
+    load_kw = []
+    grid_kw = []
+    battery_kw = []
+    soc_pct = []
+    residual_kw = []
+
+    for s in slots_24h:
+        lookup_key = s if s != "24:00" else "23:55"
+        if lookup_key in day_recs_map:
+            rec = day_recs_map[lookup_key]
+            pv_kw.append(round(rec.pv_power_kw, 3))
+            load_kw.append(round(rec.load_power_kw, 3))
+            grid_kw.append(round(rec.grid_power_kw, 3))
+            battery_kw.append(round(rec.battery_power_kw, 3))
+            soc_pct.append(round(rec.soc_percent, 1))
+            residual_kw.append(round(rec.residual_power_kw, 3))
+        else:
+            pv_kw.append(None)
+            load_kw.append(None)
+            grid_kw.append(None)
+            battery_kw.append(None)
+            soc_pct.append(None)
+            residual_kw.append(None)
+
     return {
-        "timestamps": [r.timestamp for r in records],
-        "timestamps_12h": [format_datetime_12h(r.timestamp) for r in records],
-        "pv_power_kw": [r.pv_power_kw for r in records],
-        "load_power_kw": [r.load_power_kw for r in records],
-        "grid_power_kw": [r.grid_power_kw for r in records],
-        "battery_power_kw": [r.battery_power_kw for r in records],
-        "soc_percent": [r.soc_percent for r in records],
-        "residual_power_kw": [r.residual_power_kw for r in records]
+        "timestamps": timestamps_full,
+        "timestamps_12h": timestamps_12h,
+        "timestamps_24h": slots_24h,
+        "pv_power_kw": pv_kw,
+        "load_power_kw": load_kw,
+        "grid_power_kw": grid_kw,
+        "battery_power_kw": battery_kw,
+        "soc_percent": soc_pct,
+        "residual_power_kw": residual_kw,
+        "is_24h": True,
+        "selected_date": target_date_clean
     }
 
 @router.get("/datasets/{dataset_id}/solar")
@@ -884,7 +947,7 @@ def compare_historical_periods(
     date_b_end: str,
     dataset_id: Optional[str] = None
 ):
-    records = _get_records(dataset_id or "historical")
+    records = _get_historical_records()
     recs_a = [r for r in records if date_a_start <= r.timestamp[:10] <= date_a_end]
     recs_b = [r for r in records if date_b_start <= r.timestamp[:10] <= date_b_end]
     return compare_periods(recs_a, recs_b, label_a=f"{date_a_start} to {date_a_end}", label_b=f"{date_b_start} to {date_b_end}")
@@ -1014,7 +1077,7 @@ def get_billing_overview(dataset_id: Optional[str] = None):
     sched = get_active_rate_schedule(conn)
     profile = get_billing_profile(conn)
     conn.close()
-    records = _get_records(dataset_id or "all")
+    records = _get_records("all")
     return forecast_tei_bill(records, sched, profile, last_rate_check_cache)
 
 @router.get("/billing/progress")
@@ -1023,7 +1086,7 @@ def get_billing_progress(dataset_id: Optional[str] = None):
     sched = get_active_rate_schedule(conn)
     profile = get_billing_profile(conn)
     conn.close()
-    records = _get_records(dataset_id or "all")
+    records = _get_records("all")
     return calculate_billing_progress_series(records, sched, profile)
 
 @router.get("/billing/statement")
@@ -1032,7 +1095,7 @@ def get_billing_statement(mode: str = "expected", dataset_id: Optional[str] = No
     sched = get_active_rate_schedule(conn)
     profile = get_billing_profile(conn)
     conn.close()
-    records = _get_records(dataset_id or "all")
+    records = _get_records("all")
     forecast = forecast_tei_bill(records, sched, profile, last_rate_check_cache)
     if mode == "actual":
         return forecast.current_so_far_statement
@@ -1201,10 +1264,46 @@ def test_deye_connection_endpoint():
     client = DeyeCloudClient()
     return client.test_connection()
 
+class DeyeSyncRangePayload(BaseModel):
+    start_date: str
+    end_date: str
+
 @router.post("/deye/sync")
 def sync_deye_endpoint():
     client = DeyeCloudClient()
-    return client.sync_now()
+    res = client.sync_now()
+    dataset_cache.clear()
+    return res
+
+@router.post("/deye/sync_range")
+def sync_deye_range_endpoint(payload: DeyeSyncRangePayload):
+    client = DeyeCloudClient()
+    res = client.sync_range(payload.start_date, payload.end_date)
+    dataset_cache.clear()
+    return res
+
+@router.get("/deye/missing_dates")
+def get_deye_missing_dates_endpoint():
+    client = DeyeCloudClient()
+    missing = client.get_missing_dates()
+    return {"missing_dates": missing, "count": len(missing)}
+
+@router.post("/deye/sync_missing")
+def sync_deye_missing_endpoint():
+    client = DeyeCloudClient()
+    res = client.sync_missing_dates()
+    dataset_cache.clear()
+    return res
+
+@router.get("/deye/live_flow")
+def get_deye_live_flow_endpoint():
+    from backend.app.integrations.deye_mcp import deye_mcp_client
+    return deye_mcp_client.get_live_flow()
+
+@router.get("/deye/health")
+def get_deye_health_endpoint():
+    from backend.app.integrations.deye_mcp import deye_mcp_client
+    return deye_mcp_client.get_station_health()
 
 @router.get("/weather/intelligence")
 def get_weather_endpoint():
@@ -1282,3 +1381,24 @@ def run_analyst_query_endpoint(dataset_id: str, payload: AnalystQueryRequest):
         query_key=payload.query_key,
         query_text=payload.query_text or ""
     )
+
+class AnalystStreamRequest(BaseModel):
+    query_text: str
+
+@router.post("/datasets/{dataset_id}/analyst/stream")
+def stream_analyst_endpoint(dataset_id: str, payload: AnalystStreamRequest):
+    records = _get_records(dataset_id)
+
+    def event_generator():
+        for chunk in stream_analyst_response(payload.query_text, records):
+            yield f"data: {json.dumps(chunk)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@router.get("/analyst/performance")
+def get_analyst_performance_endpoint():
+    return get_performance_overview()
+
+@router.get("/analyst/mcp/status")
+def get_analyst_mcp_status_endpoint():
+    return get_performance_overview()

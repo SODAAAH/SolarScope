@@ -20,5 +20,7 @@ backend/data/uploads/*
 !backend/data/uploads/.gitkeep
 backend/data/reports/*
 !backend/data/reports/.gitkeep
+.agents
+*.log
 .DS_Store
 Thumbs.db

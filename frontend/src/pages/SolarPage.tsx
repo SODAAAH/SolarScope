@@ -109,41 +109,41 @@ export const SolarPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6">
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-fit">
         <button
           onClick={() => setTab("production")}
-          className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "production"
-              ? "border-amber-600 text-amber-600 dark:border-amber-500 dark:text-amber-400"
-              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400"
+              ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
-          <Sun className="w-4 h-4" />
+          <Sun className="w-3.5 h-3.5" />
           <span>Production & Yield</span>
         </button>
 
         <button
           onClick={() => setTab("weather")}
-          className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "weather"
-              ? "border-amber-600 text-amber-600 dark:border-amber-500 dark:text-amber-400"
-              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400"
+              ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
-          <CloudSun className="w-4 h-4" />
+          <CloudSun className="w-3.5 h-3.5" />
           <span>Weather & Radiation</span>
         </button>
 
         <button
           onClick={() => setTab("forecast")}
-          className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "forecast"
-              ? "border-amber-600 text-amber-600 dark:border-amber-500 dark:text-amber-400"
-              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400"
+              ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
-          <Calendar className="w-4 h-4" />
-          <span>Tomorrow's Solar Forecast</span>
+          <Calendar className="w-3.5 h-3.5" />
+          <span>Tomorrow's Forecast</span>
         </button>
       </div>
 

@@ -87,41 +87,41 @@ export const DiagnosticsPage: React.FC = () => {
         )}
       </div>
 
-      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6">
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-fit">
         <button
           onClick={() => setTab("balance")}
-          className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "balance"
-              ? "border-amber-600 text-amber-600 dark:border-amber-500 dark:text-amber-400"
-              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400"
+              ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
-          <Scale className="w-4 h-4" />
-          <span>Energy Flow Balance</span>
+          <Scale className="w-3.5 h-3.5" />
+          <span>Flow Balance</span>
         </button>
 
         <button
           onClick={() => setTab("anomalies")}
-          className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "anomalies"
-              ? "border-amber-600 text-amber-600 dark:border-amber-500 dark:text-amber-400"
-              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400"
+              ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
-          <AlertTriangle className="w-4 h-4" />
-          <span>Unusual Events & Faults</span>
+          <AlertTriangle className="w-3.5 h-3.5" />
+          <span>Telemetry Events</span>
         </button>
 
         <button
           onClick={() => setTab("hardware")}
-          className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "hardware"
-              ? "border-amber-600 text-amber-600 dark:border-amber-500 dark:text-amber-400"
-              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400"
+              ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
-          <ShieldCheck className="w-4 h-4" />
-          <span>Hardware Limits & Health</span>
+          <ShieldCheck className="w-3.5 h-3.5" />
+          <span>Hardware Limits</span>
         </button>
       </div>
 

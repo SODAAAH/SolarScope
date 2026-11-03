@@ -20,7 +20,7 @@ def format_datetime_12h(ts_str: Optional[str], include_seconds: bool = False) ->
     for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S"]:
         try:
             dt = datetime.datetime.strptime(ts_str.strip(), fmt)
-            date_part = dt.strftime("%Y-%m-%d")
+            date_part = dt.strftime("%m/%d/%Y")
             time_part = dt.strftime("%I:%M:%S %p" if include_seconds else "%I:%M %p").lstrip("0")
             return f"{date_part} {time_part}"
         except ValueError:
@@ -38,3 +38,15 @@ def hour_index_to_12h(hour: int) -> str:
     else:
         return f"{h - 12} PM"
 
+
+def format_date_mmddyyyy(date_str: Optional[str]) -> str:
+    if not date_str:
+        return ""
+    s = date_str.strip().split(" ")[0].split("T")[0]
+    for fmt in ["%Y-%m-%d", "%Y/%m/%d"]:
+        try:
+            dt = datetime.datetime.strptime(s, fmt)
+            return dt.strftime("%m/%d/%Y")
+        except ValueError:
+            continue
+    return s

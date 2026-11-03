@@ -30,6 +30,7 @@ import {
 import { EChartComponent } from "../components/charts/EChartComponent";
 import { theme } from "../lib/theme";
 import type { ViewMode } from "../lib/terminology";
+import { formatDateMMDDYYYY } from "../lib/formatters";
 
 interface OutletContextType {
   activeDatasetId: string | null;
@@ -63,7 +64,7 @@ export const BillIntelligencePage: React.FC = () => {
 
   const [settingsForm, setSettingsForm] = useState<TEIBillingProfile>({
     customer_class: "Residential",
-    billing_cycle_day: 18,
+    billing_cycle_day: 25,
     connection_type: "behind_meter",
     is_lifeline_eligible: false,
     is_senior_eligible: false,
@@ -72,6 +73,52 @@ export const BillIntelligencePage: React.FC = () => {
     payments_received: 0.0,
     forecast_method: "7day"
   });
+
+  const getCyclePreview = (day: number) => {
+    const d = Math.max(1, Math.min(31, Number(day) || 25));
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth();
+    const curDay = now.getDate();
+
+    let startYear = curYear;
+    let startMonth = curMonth;
+    let endYear = curYear;
+    let endMonth = curMonth;
+
+    if (curDay >= d) {
+      startYear = curYear;
+      startMonth = curMonth;
+      endMonth = curMonth + 1;
+      if (endMonth > 11) {
+        endMonth = 0;
+        endYear = curYear + 1;
+      }
+    } else {
+      startMonth = curMonth - 1;
+      if (startMonth < 0) {
+        startMonth = 11;
+        startYear = curYear - 1;
+      }
+      endMonth = curMonth;
+      endYear = curYear;
+    }
+
+    const maxDaysStart = new Date(startYear, startMonth + 1, 0).getDate();
+    const maxDaysEnd = new Date(endYear, endMonth + 1, 0).getDate();
+    const actualStartDay = Math.min(d, maxDaysStart);
+    const actualEndDay = Math.min(d, maxDaysEnd);
+
+    const startDate = new Date(startYear, startMonth, actualStartDay);
+    const endDate = new Date(endYear, endMonth, actualEndDay);
+
+    const formatD = (date: Date) => formatDateMMDDYYYY(date);
+
+    return {
+      startFormatted: formatD(startDate),
+      endFormatted: formatD(endDate)
+    };
+  };
 
   const [billForm, setBillForm] = useState({
     billing_period_start: "",
@@ -240,7 +287,7 @@ export const BillIntelligencePage: React.FC = () => {
         if (!params || params.length === 0) return "";
         const item = chartTimeline[params[0].dataIndex];
         if (!item) return "";
-        let html = `<div class="font-sans text-xs"><b>${item.date}</b><br/>`;
+        let html = `<div class="font-sans text-xs"><b>${formatDateMMDDYYYY(item.date)}</b><br/>`;
         if (item.is_actual) {
           html += `<span class="text-emerald-600">● Observed: ${item.cumulative_kwh_actual?.toFixed(1)} kWh (₱${item.cumulative_cost_actual?.toFixed(2)})</span><br/>`;
         } else {
@@ -317,70 +364,68 @@ export const BillIntelligencePage: React.FC = () => {
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             Local tariff monitoring, monthly electricity bill prediction, and solar savings reconciliation.
           </p>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+              <Calendar className="w-3.5 h-3.5 text-amber-600" />
+              <span>
+                Meter Reading: <strong>Day {settingsForm.billing_cycle_day || 25}</strong> ({forecast?.billing_cycle_start ? formatDateMMDDYYYY(forecast.billing_cycle_start) : "10/25/2026"} – {forecast?.billing_cycle_end ? formatDateMMDDYYYY(forecast.billing_cycle_end) : "11/25/2026"})
+              </span>
+            </span>
+            <span className="text-xs text-slate-500 font-mono">
+              Day {forecast?.days_elapsed || 0} of {forecast?.cycle_total_days || 31} ({forecast?.days_remaining || 0} days remaining)
+            </span>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleCheckRatesNow}
             disabled={checkingRates}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-xs"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${checkingRates ? 'animate-spin text-amber-500' : 'text-slate-400'}`} />
-            <span>{checkingRates ? "Checking TEI..." : "Check for New TEI Rates"}</span>
+            <span>{checkingRates ? "Checking TEI..." : "Check TEI Rates"}</span>
           </button>
 
           <button
             onClick={() => setIsSettingsOpen(true)}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-slate-200 text-white dark:text-slate-900 transition-colors flex items-center gap-1.5 shadow-sm"
+            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-slate-200 text-white dark:text-slate-900 transition-colors flex items-center gap-1.5 shadow-xs"
           >
             <Settings className="w-3.5 h-3.5" />
-            <span>My TEI Billing Settings</span>
+            <span>Billing Settings</span>
           </button>
         </div>
       </div>
 
-      <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xl flex items-center justify-between text-xs text-amber-900 dark:text-amber-200">
+      <div className="p-3 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-400">
         <div className="flex items-center gap-2">
-          <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+          <Info className="w-4 h-4 text-slate-400 shrink-0" />
           <span>
-            <strong>SolarScope Bill Estimate — Not an Official TEI Statement of Account.</strong> Projections use verified TEI published tariffs, actual meter or inverter imports, and estimated remaining cycle days.
+            Projections calculated using verified published tariffs and active cycle meter readings.
           </span>
         </div>
-        <span className="text-[11px] font-mono text-amber-700 dark:text-amber-400 shrink-0 hidden sm:inline">
-          Customer Class: {forecast?.active_rate_effective_month ? `${forecast.active_rate_effective_month} Schedule` : "October 2026"}
-        </span>
+        <div className="flex items-center gap-3 text-[11px] font-mono text-slate-500">
+          <span>Schedule: {forecast?.active_rate_effective_month || "October 2026"}</span>
+          {checkMessage && (
+            <span className="text-emerald-600 dark:text-emerald-400 font-sans font-medium flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" />
+              {checkMessage}
+            </span>
+          )}
+        </div>
       </div>
 
-      {checkMessage && (
-        <div className="p-3 bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span>{checkMessage}</span>
-          </div>
-          <button
-            onClick={() => setCheckMessage(null)}
-            className="text-slate-400 hover:text-slate-600 text-xs font-semibold"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
       {forecast?.rate_change_alert && (
-        <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800 rounded-xl flex items-start gap-3 text-xs text-emerald-900 dark:text-emerald-200 shadow-sm animate-in fade-in">
-          <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+        <div className="p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex items-start gap-3 text-xs text-slate-700 dark:text-slate-300">
+          <TrendingUp className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
           <div className="flex-1">
-            <div className="font-semibold text-sm text-emerald-800 dark:text-emerald-300">
-              New TEI Rate Published & Automatically Applied
+            <div className="font-semibold text-slate-900 dark:text-slate-100">
+              New TEI Tariff Published: {forecast.rate_change_alert.effective_month}
             </div>
-            <p className="mt-1 text-xs">
-              {forecast.rate_change_alert.summary}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-4 text-[11px] font-mono">
-              <span>Previous Rate: ₱{forecast.rate_change_alert.previous_rate.toFixed(5)}/kWh</span>
-              <span>New Rate: ₱{forecast.rate_change_alert.new_rate.toFixed(5)}/kWh</span>
-              <span>Difference: ₱{forecast.rate_change_alert.difference_per_kwh > 0 ? "+" : ""}{forecast.rate_change_alert.difference_per_kwh.toFixed(5)}/kWh</span>
-              <span>Effective: {forecast.rate_change_alert.effective_month}</span>
+            <div className="mt-1 flex flex-wrap gap-4 text-[11px] font-mono text-slate-500">
+              <span>Previous: ₱{forecast.rate_change_alert.previous_rate.toFixed(4)}/kWh</span>
+              <span>New: ₱{forecast.rate_change_alert.new_rate.toFixed(4)}/kWh</span>
+              <span>Diff: ₱{forecast.rate_change_alert.difference_per_kwh > 0 ? "+" : ""}{forecast.rate_change_alert.difference_per_kwh.toFixed(4)}/kWh</span>
             </div>
           </div>
         </div>
@@ -455,7 +500,7 @@ export const BillIntelligencePage: React.FC = () => {
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
             <span>+ Gen VAT ₱{forecast?.active_generation_vat.toFixed(5)}</span>
-            <span>Cycle: {forecast?.billing_cycle_start.slice(5)} to {forecast?.billing_cycle_end.slice(5)}</span>
+            <span>Cycle: {forecast?.billing_cycle_start ? formatDateMMDDYYYY(forecast.billing_cycle_start) : "10/25/2026"} to {forecast?.billing_cycle_end ? formatDateMMDDYYYY(forecast.billing_cycle_end) : "11/25/2026"}</span>
           </div>
         </div>
       </div>
@@ -467,7 +512,7 @@ export const BillIntelligencePage: React.FC = () => {
               Electricity Bill Progression Across Current Billing Cycle
             </h2>
             <p className="text-xs text-slate-500">
-              Tracking observed electricity purchases and projected costs toward your next meter reading date ({forecast?.next_meter_reading_date}).
+              Tracking observed electricity purchases and projected costs toward your next meter reading date ({forecast?.next_meter_reading_date ? formatDateMMDDYYYY(forecast.next_meter_reading_date) : "11/25/2026"}).
             </p>
           </div>
           <div className="flex items-center gap-3 text-xs text-slate-500">
@@ -1327,19 +1372,35 @@ export const BillIntelligencePage: React.FC = () => {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Monthly Meter Reading Day
-                  </label>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                      Monthly Meter Reading Day
+                    </label>
+                    <span className="text-[10px] text-slate-500 font-mono">Day {settingsForm.billing_cycle_day || 25}</span>
+                  </div>
                   <input
                     type="number"
                     min="1"
                     max="31"
                     value={settingsForm.billing_cycle_day}
-                    onChange={(e) => setSettingsForm({ ...settingsForm, billing_cycle_day: Number(e.target.value) })}
-                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono"
+                    onChange={(e) => setSettingsForm({ ...settingsForm, billing_cycle_day: Math.max(1, Math.min(31, Number(e.target.value))) })}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono text-xs"
+                    placeholder="Enter day of month (e.g. 25)"
                   />
                 </div>
+              </div>
+
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg space-y-1">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>
+                    Active Cycle: {getCyclePreview(settingsForm.billing_cycle_day).startFormatted} to {getCyclePreview(settingsForm.billing_cycle_day).endFormatted}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  All electricity purchases and solar savings will be integrated strictly from the <strong>{settingsForm.billing_cycle_day}th of the month</strong> to the <strong>{settingsForm.billing_cycle_day}th of the next month</strong>. Next meter reading: <strong>{getCyclePreview(settingsForm.billing_cycle_day).endFormatted}</strong>.
+                </p>
               </div>
 
               <div>

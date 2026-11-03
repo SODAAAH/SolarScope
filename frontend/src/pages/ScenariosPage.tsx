@@ -148,39 +148,39 @@ export const ScenariosPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6">
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-fit">
         <button
           onClick={() => setTab("upgrades")}
-          className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "upgrades"
-              ? "border-amber-600 text-amber-600 dark:border-amber-500 dark:text-amber-400 font-semibold"
-              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400"
+              ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
-          <BatteryCharging className="w-4 h-4" />
-          <span>Hardware Upgrade Planner</span>
+          <BatteryCharging className="w-3.5 h-3.5" />
+          <span>Hardware Upgrades</span>
         </button>
         <button
           onClick={() => setTab("load_shift")}
-          className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "load_shift"
-              ? "border-amber-600 text-amber-600 dark:border-amber-500 dark:text-amber-400 font-semibold"
-              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400"
+              ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
-          <Sliders className="w-4 h-4" />
-          <span>Parametric Simulation Sliders</span>
+          <Sliders className="w-3.5 h-3.5" />
+          <span>Parametric Simulation</span>
         </button>
         <button
           onClick={() => setTab("finance")}
-          className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "finance"
-              ? "border-amber-600 text-amber-600 dark:border-amber-500 dark:text-amber-400 font-semibold"
-              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400"
+              ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
-          <DollarSign className="w-4 h-4" />
-          <span>10-Year Discounted ROI & NPV</span>
+          <DollarSign className="w-3.5 h-3.5" />
+          <span>Financial Payback</span>
         </button>
       </div>
 

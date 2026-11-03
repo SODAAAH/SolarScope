@@ -13,12 +13,11 @@ import {
   Settings,
   SunMedium,
   Moon,
-  Calendar,
-  ChevronDown
+  Calendar
 } from 'lucide-react';
 import { api, type SourceItem } from '../../lib/api';
 import type { ViewMode } from '../../lib/terminology';
-import { HelpGlossaryModal } from '../ui/HelpGlossaryModal';
+import { formatDateMMDDYYYY } from '../../lib/formatters';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Overview', icon: LayoutDashboard },
@@ -37,14 +36,11 @@ export const AppShell: React.FC = () => {
   const [activeDatasetId, setActiveDatasetId] = useState<string>(() => {
     return localStorage.getItem('solarscope_dataset_id') || 'all';
   });
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    return (localStorage.getItem('solarscope_view_mode') as ViewMode) || 'simple';
-  });
+  const [viewMode, setViewMode] = useState<ViewMode>('simple');
   const [sources, setSources] = useState<SourceItem[]>([]);
   const [isDark, setIsDark] = useState<boolean>(() => {
     return localStorage.getItem('solarscope_theme') === 'dark';
   });
-  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -98,56 +94,7 @@ export const AppShell: React.FC = () => {
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">v1.2</span>
         </div>
 
-        <div className="p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-2">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-500 font-medium flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-amber-600" />
-              <span>Analysis Scope</span>
-            </span>
-          </div>
-
-          <div className="relative">
-            <select
-              value={activeDatasetId || 'all'}
-              onChange={(e) => setActiveDatasetId(e.target.value)}
-              className="w-full text-xs bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 pl-2.5 pr-7 py-2 rounded-lg border border-slate-300 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium cursor-pointer truncate shadow-sm appearance-none"
-            >
-              <option value="all">
-                All Dates ({sortedSources.filter((s) => s.is_included === 1).length} days combined)
-              </option>
-              {sortedSources.length > 0 && (
-                <optgroup label="Individual Observation Days">
-                  {sortedSources.map((s) => {
-                    const dateLabel = s.start_time ? s.start_time.slice(0, 10) : s.filename;
-                    return (
-                      <option key={s.id} value={s.id}>
-                        {dateLabel} ({s.filename})
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              )}
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
-          </div>
-
-          <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
-            <span>{(!activeDatasetId || activeDatasetId === 'all') ? 'Full Portfolio Applied' : 'Single Day Active'}</span>
-            <span className="font-mono">{sortedSources.reduce((sum, s) => sum + (s.total_rows || 0), 0).toLocaleString()} rows</span>
-          </div>
-        </div>
-
-        <div className="p-2 border-b border-slate-200 dark:border-slate-800">
-          <button
-            onClick={() => setIsHelpModalOpen(true)}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
-          >
-            <BookOpen className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-            <span className="truncate">Help & Glossary</span>
-          </button>
-        </div>
-
-        <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
+        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
@@ -190,38 +137,6 @@ export const AppShell: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs font-medium border border-slate-200 dark:border-slate-700">
-              <button
-                onClick={() => setViewMode('simple')}
-                className={`px-2.5 py-1 rounded-md transition-colors ${
-                  viewMode === 'simple'
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm font-semibold'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                Simple View
-              </button>
-              <button
-                onClick={() => setViewMode('detailed')}
-                className={`px-2.5 py-1 rounded-md transition-colors ${
-                  viewMode === 'detailed'
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm font-semibold'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                Detailed View
-              </button>
-            </div>
-
-            <button
-              onClick={() => setIsHelpModalOpen(true)}
-              title="Help and Glossary"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-colors"
-            >
-              <BookOpen className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-              <span>Help & Glossary</span>
-            </button>
-
             <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
               <Calendar className="w-3.5 h-3.5 text-amber-600 shrink-0" />
               <span className="text-xs text-slate-500 font-medium hidden sm:inline">Scope:</span>
@@ -233,10 +148,10 @@ export const AppShell: React.FC = () => {
                 <option value="all" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
                   All Dates ({sources.filter((s) => s.is_included === 1).length} days combined)
                 </option>
-                {sources.length > 0 && (
+                {sortedSources.length > 0 && (
                   <optgroup label="Individual Observation Days" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
-                    {sources.map((s) => {
-                      const dateLabel = s.start_time ? s.start_time.slice(0, 10) : s.filename;
+                    {sortedSources.map((s) => {
+                      const dateLabel = s.start_time ? formatDateMMDDYYYY(s.start_time) : s.filename;
                       return (
                         <option key={s.id} value={s.id} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
                           {dateLabel} ({s.filename})
@@ -250,7 +165,7 @@ export const AppShell: React.FC = () => {
 
             <button
               onClick={() => navigate('/library?tab=preview')}
-              className="text-xs bg-amber-600 hover:bg-amber-700 text-white font-medium px-3 py-1.5 rounded-md transition-colors shadow-sm"
+              className="text-xs bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 font-medium px-3 py-1.5 rounded-md transition-colors shadow-xs"
             >
               Import Data
             </button>
@@ -261,10 +176,7 @@ export const AppShell: React.FC = () => {
           <Outlet context={{ activeDatasetId, setActiveDatasetId, viewMode, setViewMode }} />
         </main>
 
-        <HelpGlossaryModal
-          isOpen={isHelpModalOpen}
-          onClose={() => setIsHelpModalOpen(false)}
-        />
+
       </div>
     </div>
   );

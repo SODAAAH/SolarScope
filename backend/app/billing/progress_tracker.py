@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 from backend.app.ingestion.models import CanonicalRecord
 from backend.app.billing.tariff_models import TEIRateSchedule, TEIBillingProfile
 from backend.app.billing.bill_calculator import calculate_statement_of_account
+from backend.app.billing.billing_profile import compute_cycle_dates
 from backend.app.metrics.integrator import integrate_power_series
 
 def calculate_billing_progress_series(
@@ -10,23 +11,10 @@ def calculate_billing_progress_series(
     schedule: TEIRateSchedule,
     profile: TEIBillingProfile
 ) -> Dict[str, Any]:
-    cycle_day = profile.billing_cycle_day or 18
-    now = datetime.datetime.now()
-
-    if profile.cycle_start_date and profile.cycle_end_date:
-        start_date = datetime.datetime.strptime(profile.cycle_start_date, "%Y-%m-%d").date()
-        end_date = datetime.datetime.strptime(profile.cycle_end_date, "%Y-%m-%d").date()
-    else:
-        if now.day >= cycle_day:
-            start_date = datetime.date(now.year, now.month, cycle_day)
-            next_month = now.month + 1 if now.month < 12 else 1
-            next_year = now.year if now.month < 12 else now.year + 1
-            end_date = datetime.date(next_year, next_month, cycle_day)
-        else:
-            prev_month = now.month - 1 if now.month > 1 else 12
-            prev_year = now.year if now.month > 1 else now.year - 1
-            start_date = datetime.date(prev_year, prev_month, cycle_day)
-            end_date = datetime.date(now.year, now.month, cycle_day)
+    cycle_day = max(1, min(31, int(profile.billing_cycle_day or 25)))
+    tz_manila = datetime.timezone(datetime.timedelta(hours=8))
+    now = datetime.datetime.now(tz_manila)
+    start_date, end_date = compute_cycle_dates(cycle_day, now.date())
 
     today_date = now.date()
 

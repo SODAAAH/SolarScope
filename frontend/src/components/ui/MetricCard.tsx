@@ -41,32 +41,32 @@ export const MetricCard: React.FC<MetricCardProps> = ({
 
   const colorClasses = {
     solar: {
-      border: 'border-amber-200/80 dark:border-amber-900/40',
+      border: 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700',
       iconBg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-      badge: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+      badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
     },
     teal: {
-      border: 'border-teal-200/80 dark:border-teal-900/40',
+      border: 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700',
       iconBg: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
-      badge: 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300'
+      badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
     },
     coral: {
-      border: 'border-orange-200/80 dark:border-orange-900/40',
+      border: 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700',
       iconBg: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-      badge: 'bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300'
+      badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
     },
     slate: {
-      border: 'border-slate-200 dark:border-slate-800',
+      border: 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700',
       iconBg: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
       badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
     }
   }[accentColor];
 
   const provenanceBadgeColor = {
-    Measured: 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300',
-    Calculated: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300',
-    Estimated: 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300',
-    Simulated: 'bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300'
+    Measured: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
+    Calculated: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
+    Estimated: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
+    Simulated: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
   }[term.provenance];
 
   return (

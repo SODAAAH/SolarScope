@@ -208,16 +208,22 @@ export const api = {
     });
   },
   getSummary: (datasetId: string) => fetchJson<any>(`/datasets/${datasetId}/summary`),
-  getTimeline: (datasetId: string) => fetchJson<{
-    timestamps: string[];
-    timestamps_12h?: string[];
-    pv_power_kw: number[];
-    load_power_kw: number[];
-    grid_power_kw: number[];
-    battery_power_kw: number[];
-    soc_percent: number[];
-    residual_power_kw: number[];
-  }>(`/datasets/${datasetId}/timeline`),
+  getTimeline: (datasetId: string, date?: string) => {
+    const q = date ? `?date=${encodeURIComponent(date)}` : '';
+    return fetchJson<{
+      timestamps: string[];
+      timestamps_12h?: string[];
+      timestamps_24h?: string[];
+      pv_power_kw: (number | null)[];
+      load_power_kw: (number | null)[];
+      grid_power_kw: (number | null)[];
+      battery_power_kw: (number | null)[];
+      soc_percent: (number | null)[];
+      residual_power_kw: (number | null)[];
+      is_24h?: boolean;
+      selected_date?: string;
+    }>(`/datasets/${datasetId}/timeline${q}`);
+  },
   getSolar: (datasetId: string) => fetchJson<any>(`/datasets/${datasetId}/solar`),
   getConsumption: (datasetId: string) => fetchJson<any>(`/datasets/${datasetId}/consumption`),
   getBattery: (datasetId: string) => fetchJson<any>(`/datasets/${datasetId}/battery`),
@@ -363,6 +369,27 @@ export const api = {
       method: "POST"
     });
   },
+  syncDeyeRange: (startDate: string, endDate: string) => {
+    return fetchJson<{ status: string; message: string; records_inserted: number; datasets_created?: string[]; days_count?: number; dataset_id?: string; filename?: string }>("/deye/sync_range", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start_date: startDate, end_date: endDate })
+    });
+  },
+  getDeyeMissingDates: () => {
+    return fetchJson<{ missing_dates: string[]; count: number }>("/deye/missing_dates");
+  },
+  syncDeyeMissing: () => {
+    return fetchJson<{ status: string; message: string; records_inserted: number; backfilled_dates?: string[] }>("/deye/sync_missing", {
+      method: "POST"
+    });
+  },
+  getDeyeLiveFlow: () => {
+    return fetchJson<LiveFlowResponse>("/deye/live_flow");
+  },
+  getDeyeHealth: () => {
+    return fetchJson<StationHealthResponse>("/deye/health");
+  },
   getWeatherIntelligence: () => {
     return fetchJson<WeatherIntelligenceResponse>("/weather/intelligence");
   },
@@ -393,6 +420,48 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query_key: queryKey, query_text: queryText || "" })
     });
+  },
+  streamAnalystQuery: async (
+    datasetId: string,
+    queryText: string,
+    onChunk: (data: any) => void,
+    signal?: AbortSignal
+  ) => {
+    const res = await fetch(`${API_BASE}/datasets/${datasetId}/analyst/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query_text: queryText }),
+      signal
+    });
+    if (!res.ok) {
+      throw new Error(`Streaming failed: HTTP ${res.status}`);
+    }
+    const reader = res.body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data: ")) {
+          try {
+            const data = JSON.parse(trimmed.slice(6));
+            onChunk(data);
+          } catch {}
+        }
+      }
+    }
+  },
+  getAnalystPerformance: () => {
+    return fetchJson<AnalystDiagnosticEngineStats>("/analyst/performance");
+  },
+  getAnalystMcpStatus: () => {
+    return fetchJson<AnalystDiagnosticEngineStats>("/analyst/mcp/status");
   }
 };
 
@@ -725,4 +794,124 @@ export interface AnalystResponse {
   energy_or_money_impact: string;
   what_to_do: string;
   confidence_level: string;
+}
+
+export interface AnalystDiagnosticEngineStats {
+  mcp_connected: boolean;
+  mcp_endpoint: string;
+  station_name: string;
+  station_id: string;
+  inverter_sn: string;
+  read_only_enforced: boolean;
+  inference_engine: string;
+  hardware_profile: string;
+  utility: string;
+}
+
+export interface LiveFlowResponse {
+  success: boolean;
+  station_name: string;
+  station_id: string;
+  inverter_model: string;
+  inverter_serial: string;
+  connection_status: string;
+  is_on_grid: boolean;
+  last_update_time: string;
+  nodes: {
+    solar: {
+      power_w: number;
+      power_kw: number;
+      is_active: boolean;
+    };
+    battery: {
+      soc_percent: number;
+      power_w: number;
+      power_kw: number;
+      state: "CHARGING" | "DISCHARGING" | "IDLE";
+      is_charging: boolean;
+      is_discharging: boolean;
+    };
+    inverter: {
+      status: string;
+      throughput_w: number;
+      throughput_kw: number;
+    };
+    grid: {
+      power_w: number;
+      power_kw: number;
+      status_label: string;
+      state: "IMPORT" | "EXPORT" | "IDLE";
+      is_importing: boolean;
+      is_exporting: boolean;
+    };
+    load: {
+      power_w: number;
+      power_kw: number;
+      is_active: boolean;
+    };
+    ups: {
+      power_w: number;
+      power_kw: number;
+      is_active: boolean;
+    };
+  };
+  summary: {
+    accumulative_production_kwh: number;
+    accumulative_consumption_kwh: number;
+    daily_production_kwh: number;
+    weather_temp_c: number;
+  };
+  utilization?: {
+    consumption_total_kwh: number;
+    consumption_breakdown: Array<{
+      label: string;
+      kwh: number;
+      pct: number;
+      color: string;
+    }>;
+    production_total_kwh: number;
+    production_breakdown: Array<{
+      label: string;
+      kwh: number;
+      pct: number;
+      color: string;
+    }>;
+  };
+}
+
+export interface StationHealthResponse {
+  station_id: string;
+  station_name: string;
+  overall_status: string;
+  is_healthy: boolean;
+  mcp_endpoint: string;
+  read_only_enforced: boolean;
+  realtime_power: {
+    pv_kw: number;
+    load_kw: number;
+    battery_kw: number;
+    grid_kw: number;
+    battery_soc_percent: number;
+  };
+  device_health: {
+    logger: {
+      serial: string;
+      status: string;
+      reporting_interval_min: number;
+    };
+    inverter: {
+      serial: string;
+      model: string;
+      status: string;
+      rated_output_kw: number;
+    };
+    battery: {
+      model: string;
+      soc_percent: number;
+      status: string;
+    };
+  };
+  alerts_count: number;
+  active_alerts: any[];
+  recommendation: string;
 }
