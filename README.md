@@ -6,25 +6,27 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6.svg)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC.svg)](https://tailwindcss.com/)
 [![Apache ECharts](https://img.shields.io/badge/ECharts-5.6-AA344D.svg)](https://echarts.apache.org/)
-[![Local-First](https://img.shields.io/badge/Architecture-Local--First-success.svg)](#architecture)
+[![Local-First](https://img.shields.io/badge/Architecture-Local--First-success.svg)](#architecture--technology-stack)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-SolarScope is an offline, local-first solar energy analytics platform. It transforms raw Excel (`.xlsx`, `.xlsm`) and CSV exports from residential and commercial solar inverters into accurate, explainable energy intelligence.
+SolarScope is an offline, local-first solar energy analytics platform with integrated live Deye Cloud telemetry. It transforms raw Excel (`.xlsx`, `.xlsm`) and CSV exports from residential and commercial solar inverters into accurate, explainable energy intelligence.
 
-Designed for both everyday homeowners and solar engineering professionals, SolarScope provides a **Simple View** by default—communicating in plain language—alongside a **Detailed View** with complete physical formulas, mathematical proofs, and raw sensor channels.
+Designed with an intuitive, clean interface, SolarScope presents verified physical metrics in clear, accessible language while retaining rigorous engineering formulas, mathematical proofs, and sensor channels underneath.
 
 ---
 
 ## Key Features
 
-- **Plain-Language Intelligence**: Everyday labels by default (*"Solar electricity produced"*, *"Electricity your home used"*, *"Electricity bought from TEI"*, *"Battery charge level"*), backed by an interactive **Help & Glossary** modal.
-- **Dual-Perspective View Mode**: Instant toggle between **Simple View** (clean metrics and practical takeaways) and **Detailed View** (quadrature formulas, statistical definitions, and sensor boundary conditions).
-- **Multi-File Batch Ingestion**: Upload dozens of single-day or multi-day exports at once. SHA-256 fingerprinting prevents double-counting, while conflict detection flags and resolves overlapping intervals.
-- **Global Portfolio Aggregation**: Global Scope Selector applies across all 16 views simultaneously, switching seamlessly between **All Dates (Combined Portfolio)** and single-day deep dives.
-- **Strict 12-Hour Clock Format**: Standardized `hh:mm AM/PM` formatting (`12 AM` to `11 PM`) across all timelines, hourly histograms, tooltips, anomaly logs, and generated audit reports.
-- **Physical Energy Balance Reconciler**: Validates Kirchhoff bus conservation ($E_{residual} = E_{sources} - E_{sinks}$), decomposing residuals into continuous inverter tare load (~70 W), roundtrip conversion losses, and sensor polling skew.
-- **"What If?" Upgrade Simulator**: Empirically tests hardware upgrades (larger battery pack, additional solar panels, minimum reserve adjustments, and daytime load shifting) using historical demand vectors.
-- **Multi-Format Publication Reports**: Generates formal Engineering PDF audit reports (via ReportLab), multi-tab Excel workbooks (via OpenPyXL), and reproducible JSON packages.
+- **Live Telemetry & Diurnal Power Profile**: Real-time animated power flow diagrams, 24-hour diurnal load/solar profiles with day-by-day navigation (`<` and `>` buttons alongside a date selector in `MM/DD/YYYY`), and solar self-consumption utilization breakdowns.
+- **Standardized Date & Time Conventions**: Consistent `MM/DD/YYYY` date representation and strict 12-hour `hh:mm AM/PM` timestamps across all timelines, hourly histograms, tooltips, cards, and anomaly logs.
+- **10 Focused Operational Hubs**: Streamlined navigation organizing energy management into 10 core engineering hubs: Overview, Solar Intelligence, Energy & Demand, Bill Intelligence, Trends & History, Diagnostics, What-If & Upgrades, Energy Analyst, Data Library & Cloud, and System Settings.
+- **Clean Simplicity**: Clear, accessible labels (*"Solar electricity produced"*, *"Electricity your home used"*, *"Electricity bought from TEI"*, *"Battery charge level"*) without confusing presets—all parameters are manually configurable.
+- **Multi-File Batch Ingestion**: Upload multiple single-day or multi-day inverter export files simultaneously. SHA-256 fingerprinting prevents duplicate counting, while automated conflict policies resolve overlapping observation intervals.
+- **Deye Cloud OpenAPI & MCP Integration**: Secure local integration for real-time live telemetry, inverter status monitoring, and historical gap backfilling directly from Deye Cloud.
+- **Physical Energy Balance Reconciler**: Validates Kirchhoff bus conservation ($E_{residual} = E_{sources} - E_{sinks}$), decomposing residuals into continuous inverter tare load (~70 W), roundtrip battery conversion losses, and sensor sampling skew.
+- **TEI Utility Bill Intelligence**: Tariff simulation based on true observed consumption, peak demand tracking, and rate schedule forecasting.
+- **"What If?" Upgrade Simulator**: Empirically models hardware expansions (battery capacity, additional PV arrays, reserve SOC adjustments, and daytime load shifting) using historical demand vectors.
+- **Energy Analyst Engine**: Fast-path analytical rule engine delivering instant, explainable technical answers with verified physical evidence.
 
 ---
 
@@ -34,17 +36,20 @@ Designed for both everyday homeowners and solar engineering professionals, Solar
 SolarScope Architecture
 ├── Frontend (Client)
 │   ├── React 19 + TypeScript (Strict Mode)
-│   ├── Vite 8 (Hot Module Replacement + API Reverse Proxy)
-│   ├── Tailwind CSS + Custom Design System (Anti-AI-Slop compliance)
-│   ├── Apache ECharts (Hardware-accelerated analytical charts)
-│   └── Lucide SVG Icons (Zero emoji convention)
+│   ├── Vite 8 (Hot Module Replacement + Dev Reverse Proxy)
+│   ├── Tailwind CSS + Custom Design System (Zero emoji, clean UI)
+│   ├── Apache ECharts (Hardware-accelerated analytical visualizations)
+│   └── Lucide SVG Icons (Professional glyph convention)
 │
 ├── Backend (Analytics Engine)
 │   ├── Python 3.12+ / FastAPI (Typed REST endpoints with Pydantic v2)
-│   ├── Pandas, NumPy & SciPy (Time-differenced trapezoidal quadrature)
-│   ├── OpenPyXL (Excel ingestion & multi-tab workbook builder)
-│   ├── ReportLab (Vector graphics engineering PDF generator)
-│   └── SQLite (Local metadata, provenance catalog & column mappings)
+│   ├── Pandas, NumPy & SciPy (Timestamp-differenced trapezoidal quadrature)
+│   ├── OpenPyXL (Excel ingestion & multi-tab workbook processing)
+│   ├── ReportLab (Vector graphics engineering audit export)
+│   └── SQLite (Local metadata catalog, provenances, and tariff schedules)
+│
+├── Process Supervisor
+│   └── dev.py (Single-window lifecycle manager with automated port clearing & Ctrl+C cleanup)
 │
 └── Storage Layer (Local-First)
     ├── SQLite Database (solarscope.db)
@@ -53,11 +58,28 @@ SolarScope Architecture
 
 ---
 
+## 10 Core Application Hubs
+
+| Hub | Description |
+| :--- | :--- |
+| **Overview** | Real-time animated power flow, 24-hour diurnal power profile with date switcher, live summary, and monthly generation/consumption bars. |
+| **Solar Intelligence** | Photovoltaic array performance, peak sun hours, clipping detection, string efficiency, and diurnal solar curves. |
+| **Energy & Demand** | Total home consumption, base vs. peak load decomposition, and diurnal demand histograms. |
+| **Bill Intelligence** | TEI utility billing audit, monthly tariff breakdown, demand charges, and billing period progress tracking. |
+| **Trends & History** | Long-term energy generation and consumption trends with multi-day calendar rollups. |
+| **Diagnostics** | Physical residual breakdown, continuous inverter standby tare (~70 W), conversion efficiency, and telemetry quality scoring. |
+| **What-If & Upgrades** | Empirical hardware simulation for battery pack expansion, additional PV modules, and daytime load shifting. |
+| **Energy Analyst** | Fast-path diagnostic intelligence engine providing instant operational answers backed by observed energy metrics. |
+| **Data Library & Cloud** | Historical spreadsheet file management, Deye Cloud live synchronization, and conflict resolution. |
+| **System Settings** | Manual system parameters, utility tariff schedules, inverter hardware ratings, and local cloud credentials. |
+
+---
+
 ## Quick Start
 
 ### Prerequisites
 
-- **Python 3.12+** (tested on Python 3.14)
+- **Python 3.12+** (tested on Python 3.12 to 3.14)
 - **Node.js 20+** (tested on Node v24 with npm 11)
 
 ### 1. Repository Installation
@@ -83,25 +105,21 @@ cd ..
 
 ### 2. Launch Development Environment
 
-#### One-Click Windows Launchers
-Run either launcher from the project root:
+Run the unified single-window launcher from the project root. This starts both the FastAPI backend and Vite frontend inside a single terminal session, automatically clears occupied ports, and cleanly shuts down both processes on `Ctrl+C`:
+
+#### Windows Command Prompt:
 ```cmd
 start-dev.bat
 ```
-or in PowerShell:
+
+#### PowerShell:
 ```powershell
 .\start-dev.ps1
 ```
 
-#### Manual Terminal Commands
-**Terminal 1 — Backend API Server:**
+#### Or Directly via Python:
 ```powershell
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-**Terminal 2 — Frontend Dev Server:**
-```powershell
-npm --prefix frontend run dev
+python dev.py
 ```
 
 - **Web Dashboard**: [http://localhost:5173](http://localhost:5173)
@@ -118,7 +136,7 @@ $$\Delta t_i = t_{i+1} - t_i \quad \text{(seconds)}$$
 
 $$E = \sum_{i=0}^{N-2} \left[ \frac{P_i + P_{i+1}}{2} \right] \cdot \frac{\Delta t_i}{3600} \quad \text{(kWh)}$$
 
-Trapezoidal numerical integration accurately calculates energy across irregular intervals, missing sensor intervals, and communication gaps without assuming fixed 5-minute steps.
+Trapezoidal numerical integration accurately calculates energy across irregular intervals, missing sensor entries, and communication gaps without assuming fixed 5-minute intervals.
 
 ### 2. Energy Balance & Loss Reconciliation
 At every point in time across the inverter DC/AC coupling nodes:
@@ -152,30 +170,12 @@ In residential hybrid systems, this residual decomposes into:
 
 ---
 
-## Verification & Audit Suites
-
-Run the 20-test automated verification suite:
-```powershell
-python -m pytest backend/tests/ -v
-```
-
-Covered test suites:
-- `test_12hour_formatting.py`: Validates 12-hour clock conversion across all 24 clock hours (`12 AM` to `11 PM`).
-- `test_multifile_and_conflicts.py`: Validates SHA-256 fingerprinting, duplicate detection, and conflict policies.
-- `test_historical_aggregation.py`: Verifies daily summaries, calendar rollups, and time-weighted averages.
-- `test_api_endpoints.py`: End-to-end integration tests for health, sources, preview, and audit report generation.
-- `test_integration.py`: Validates trapezoidal numerical integration over uniform and irregular intervals.
-- `test_energy_balance.py`: Tests physical power conservation, zero-residual conditions, and self-consumption ratios.
-- `test_ingestion_and_oct21.py`: Ingests benchmark `Oct 21.xlsx`, verifies identical duplicate channel detection (`Production` vs `PV`), and confirms dynamic integration benchmarks.
-
----
-
 ## Privacy, Security & Data Safety
 
 - **100% Local-First**: Telemetry files and databases never leave your local machine.
-- **Zero Cloud Databases**: No external cloud database or paid API keys required for core operations.
+- **Zero Cloud Databases**: No external cloud database required for core operations.
 - **Safe Spreadsheet Processing**: Excel formula evaluation and macro execution are strictly disabled during ingestion.
-- **Credential Protection**: Private energy records, database files, and local logs are excluded from source control.
+- **Credential Protection**: Private energy records, database files (`*.db`), and local credentials are kept out of source control.
 
 ---
 
