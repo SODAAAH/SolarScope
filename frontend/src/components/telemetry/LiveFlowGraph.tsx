@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sun, Zap, Battery, Home, ShieldCheck, RefreshCw, CheckCircle2, ChevronDown } from 'lucide-react';
 import type { LiveFlowResponse } from '../../lib/api';
 import { api } from '../../lib/api';
+import { format12HourTime } from '../../lib/formatters';
 
 interface LiveFlowGraphProps {
   initialData?: LiveFlowResponse | null;
@@ -87,12 +88,12 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
   const pathInvToLoad = "M 295 165 H 325 V 265 H 385";
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm h-full flex flex-col justify-between">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Flow Graph</h3>
-          <span className="text-[11px] font-mono text-slate-400">
-            {data?.last_update_time ? data.last_update_time.split(' ')[1] : ''}
+          <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+            {data?.last_update_time ? format12HourTime(data.last_update_time, true) : ''}
           </span>
         </div>
 

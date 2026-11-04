@@ -93,7 +93,6 @@ _timeline_cache: Dict[str, Any] = {}
 def invalidate_all_caches():
     global _historical_records_cache
     _historical_records_cache = None
-    invalidate_all_caches()
     _summary_cache.clear()
     _daily_summaries_cache.clear()
     _timeline_cache.clear()
@@ -470,7 +469,6 @@ def delete_source(source_id: str):
     conn.execute("DELETE FROM datasets WHERE id = ?", (source_id,))
     conn.commit()
     conn.close()
-
     invalidate_all_caches()
     return {"status": "deleted", "source_id": source_id}
 

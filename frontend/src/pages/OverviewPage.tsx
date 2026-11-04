@@ -58,7 +58,30 @@ export const OverviewPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'devices' | 'alerts' | 'info'>('overview');
   const [historyPeriod, setHistoryPeriod] = useState<'M' | 'Y' | 'T'>('M');
-  const [powerProfileDate, setPowerProfileDate] = useState<string>('2026-10-31');
+  const [selectedHistoryMonth, setSelectedHistoryMonth] = useState<string>(() => {
+    try {
+      const saved = sessionStorage.getItem('solarscope_cached_daily');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed[parsed.length - 1].date.slice(0, 7);
+        }
+      }
+    } catch {}
+    return '2026-11';
+  });
+  const [powerProfileDate, setPowerProfileDate] = useState<string>(() => {
+    try {
+      const saved = sessionStorage.getItem('solarscope_cached_daily');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed[parsed.length - 1].date;
+        }
+      }
+    } catch {}
+    return '2026-11-04';
+  });
   const [timelineLoading, setTimelineLoading] = useState<boolean>(false);
   const navigate = useNavigate();
 
@@ -98,6 +121,8 @@ export const OverviewPage: React.FC = () => {
           if (!powerProfileDate || !dailyRes.some(d => d.date === powerProfileDate)) {
             setPowerProfileDate(dailyRes[dailyRes.length - 1].date);
           }
+          const latestMonth = dailyRes[dailyRes.length - 1].date.slice(0, 7);
+          setSelectedHistoryMonth((prev) => (prev ? prev : latestMonth));
         }
       })
       .catch(() => {});
@@ -217,14 +242,15 @@ export const OverviewPage: React.FC = () => {
       }
     },
     legend: {
-      data: ['Production', 'PV', 'Grid', 'Battery', 'Consumption', 'SOC'],
+      data: ['Solar (PV)', 'Grid', 'Battery', 'Consumption', 'SOC'],
       textStyle: { fontSize: 11, color: '#64748B' },
-      top: 0
+      top: 2,
+      right: 8
     },
     grid: {
       left: '3%',
       right: '4%',
-      top: '12%',
+      top: '16%',
       bottom: '10%',
       containLabel: true
     },
@@ -258,19 +284,11 @@ export const OverviewPage: React.FC = () => {
     ],
     series: [
       {
-        name: 'Production',
+        name: 'Solar (PV)',
         type: 'line',
         smooth: true,
         showSymbol: false,
-        lineStyle: { width: 2, color: '#10B981' },
-        data: timeline.pv_power_kw
-      },
-      {
-        name: 'PV',
-        type: 'line',
-        smooth: true,
-        showSymbol: false,
-        lineStyle: { width: 1.5, color: '#F59E0B' },
+        lineStyle: { width: 2, color: '#F59E0B' },
         data: timeline.pv_power_kw
       },
       {
@@ -294,7 +312,7 @@ export const OverviewPage: React.FC = () => {
         type: 'line',
         smooth: true,
         showSymbol: false,
-        lineStyle: { width: 2, color: '#F97316' },
+        lineStyle: { width: 2, color: '#10B981' },
         data: timeline.load_power_kw
       },
       {
@@ -309,9 +327,30 @@ export const OverviewPage: React.FC = () => {
     ]
   } : null;
 
-  const monthDays = Array.from({ length: 31 }, (_, i) => i + 1);
+  const availableMonths = Array.from(new Set(dailySummaries.map((d) => d.date.slice(0, 7)))).sort();
+  const currentMonthIdx = availableMonths.indexOf(selectedHistoryMonth);
+
+  const handlePrevMonth = () => {
+    if (currentMonthIdx > 0) {
+      setSelectedHistoryMonth(availableMonths[currentMonthIdx - 1]);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonthIdx < availableMonths.length - 1) {
+      setSelectedHistoryMonth(availableMonths[currentMonthIdx + 1]);
+    }
+  };
+
+  const [selYearStr, selMonthStr] = (selectedHistoryMonth || '2026-11').split('-');
+  const selYear = parseInt(selYearStr, 10) || 2026;
+  const selMonth = parseInt(selMonthStr, 10) || 11;
+  const daysInSelMonth = new Date(selYear, selMonth, 0).getDate();
+  const monthDays = Array.from({ length: daysInSelMonth }, (_, i) => i + 1);
+
+  const currentMonthSummaries = dailySummaries.filter((d) => d.date.startsWith(selectedHistoryMonth));
   const daySummaryMap = new Map<number, DailySummaryItem>();
-  dailySummaries.forEach((d) => {
+  currentMonthSummaries.forEach((d) => {
     try {
       const parts = d.date.split('-');
       if (parts.length === 3) {
@@ -321,6 +360,28 @@ export const OverviewPage: React.FC = () => {
     } catch {
     }
   });
+
+  const selectedHistoryMonthDisplay = `${String(selMonth).padStart(2, '0')}/${selYear}`;
+
+  const currentMonthPvTotal = currentMonthSummaries.reduce((acc, d) => acc + d.pv_kwh, 0);
+  const currentMonthLoadTotal = currentMonthSummaries.reduce((acc, d) => acc + d.load_kwh, 0);
+  const currentMonthImportTotal = currentMonthSummaries.reduce((acc, d) => acc + d.grid_import_kwh, 0);
+  const currentMonthDischargeTotal = currentMonthSummaries.reduce((acc, d) => acc + d.battery_discharge_kwh, 0);
+  const currentMonthChargeTotal = currentMonthSummaries.reduce((acc, d) => acc + d.battery_charge_kwh, 0);
+  const currentMonthDirectPv = Math.max(0, currentMonthLoadTotal - currentMonthImportTotal - currentMonthDischargeTotal);
+
+  const monthConsBreakdown = [
+    { label: 'Import', kwh: currentMonthImportTotal, pct: currentMonthLoadTotal > 0 ? (currentMonthImportTotal / currentMonthLoadTotal) * 100 : 33.3, color: '#6366F1' },
+    { label: 'Discharge', kwh: currentMonthDischargeTotal, pct: currentMonthLoadTotal > 0 ? (currentMonthDischargeTotal / currentMonthLoadTotal) * 100 : 33.3, color: '#06B6D4' },
+    { label: 'PV', kwh: currentMonthDirectPv, pct: currentMonthLoadTotal > 0 ? (currentMonthDirectPv / currentMonthLoadTotal) * 100 : 33.4, color: '#10B981' }
+  ];
+
+  const monthProdBreakdown = [
+    { label: 'Charge', kwh: currentMonthChargeTotal, pct: (currentMonthChargeTotal + currentMonthDirectPv) > 0 ? (currentMonthChargeTotal / (currentMonthChargeTotal + currentMonthDirectPv)) * 100 : 50, color: '#F59E0B' },
+    { label: 'Consumption', kwh: currentMonthDirectPv, pct: (currentMonthChargeTotal + currentMonthDirectPv) > 0 ? (currentMonthDirectPv / (currentMonthChargeTotal + currentMonthDirectPv)) * 100 : 50, color: '#EAB308' }
+  ];
+
+  const todaySummary = dailySummaries.length > 0 ? dailySummaries[dailySummaries.length - 1] : null;
 
   const historyOption = {
     ...baseOpt,
@@ -353,9 +414,7 @@ export const OverviewPage: React.FC = () => {
         itemStyle: { color: '#10B981' },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
-          if (item) return item.pv_kwh;
-          if (d >= 18 && d <= 31) return Math.round(14 + Math.sin(d) * 4);
-          return 0;
+          return item ? item.pv_kwh : 0;
         })
       },
       {
@@ -365,9 +424,7 @@ export const OverviewPage: React.FC = () => {
         itemStyle: { color: '#06B6D4' },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
-          if (item) return item.battery_discharge_kwh;
-          if (d >= 18 && d <= 31) return Math.round(7 + Math.cos(d) * 2);
-          return 0;
+          return item ? item.battery_discharge_kwh : 0;
         })
       },
       {
@@ -377,9 +434,7 @@ export const OverviewPage: React.FC = () => {
         itemStyle: { color: '#6366F1' },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
-          if (item) return item.grid_import_kwh;
-          if (d >= 18 && d <= 31) return Math.round(6 + Math.sin(d * 2) * 2);
-          return 0;
+          return item ? item.grid_import_kwh : 0;
         })
       },
       {
@@ -389,9 +444,7 @@ export const OverviewPage: React.FC = () => {
         itemStyle: { color: '#F59E0B' },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
-          if (item) return -Math.abs(item.load_kwh);
-          if (d >= 18 && d <= 31) return -Math.round(20 + Math.sin(d) * 3);
-          return 0;
+          return item ? -Math.abs(item.load_kwh) : 0;
         })
       },
       {
@@ -401,9 +454,7 @@ export const OverviewPage: React.FC = () => {
         itemStyle: { color: '#3B82F6' },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
-          if (item) return -Math.abs(item.battery_charge_kwh);
-          if (d >= 18 && d <= 31) return -Math.round(8 + Math.cos(d) * 2);
-          return 0;
+          return item ? -Math.abs(item.battery_charge_kwh) : 0;
         })
       },
       {
@@ -411,7 +462,10 @@ export const OverviewPage: React.FC = () => {
         type: 'bar',
         stack: 'negative',
         itemStyle: { color: '#EF4444' },
-        data: monthDays.map(() => 0)
+        data: monthDays.map((d) => {
+          const item = daySummaryMap.get(d);
+          return item ? -Math.abs(item.grid_export_kwh || 0) : 0;
+        })
       }
     ]
   };
@@ -463,26 +517,35 @@ export const OverviewPage: React.FC = () => {
 
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-            <div className="md:col-span-12 lg:col-span-5">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
+            <div className="md:col-span-12 lg:col-span-5 flex flex-col">
               <LiveFlowGraph initialData={liveFlow} onRefreshRequested={fetchOverviewData} />
             </div>
 
-            <div className="md:col-span-6 lg:col-span-3">
+            <div className="md:col-span-6 lg:col-span-3 flex flex-col">
               <LiveSummaryCard
                 accumulativeProductionKwh={liveFlow?.summary.accumulative_production_kwh ?? 270.80}
                 accumulativeConsumptionKwh={liveFlow?.summary.accumulative_consumption_kwh ?? 371.10}
                 dailyProductionKwh={liveFlow?.summary.daily_production_kwh ?? (solarKwh > 0 ? solarKwh : 15.90)}
+                dailyConsumptionKwh={todaySummary?.load_kwh ?? 21.40}
+                selfConsumptionRate={
+                  todaySummary && todaySummary.pv_kwh > 0
+                    ? Math.min(100, Math.max(0, ((todaySummary.pv_kwh - (todaySummary.grid_export_kwh || 0)) / todaySummary.pv_kwh) * 100))
+                    : 84.5
+                }
                 weatherTempC={liveFlow?.summary.weather_temp_c ?? 28}
               />
             </div>
 
-            <div className="md:col-span-6 lg:col-span-4">
+            <div className="md:col-span-6 lg:col-span-4 flex flex-col">
               <SolarUtilizationCard
-                consumptionTotalKwh={liveFlow?.utilization?.consumption_total_kwh ?? 371.10}
-                consumptionBreakdown={liveFlow?.utilization?.consumption_breakdown}
-                productionTotalKwh={liveFlow?.utilization?.production_total_kwh ?? 270.80}
-                productionBreakdown={liveFlow?.utilization?.production_breakdown}
+                consumptionTotalKwh={currentMonthLoadTotal > 0 ? currentMonthLoadTotal : (liveFlow?.utilization?.consumption_total_kwh ?? 371.10)}
+                consumptionBreakdown={currentMonthLoadTotal > 0 ? monthConsBreakdown : liveFlow?.utilization?.consumption_breakdown}
+                productionTotalKwh={currentMonthPvTotal > 0 ? currentMonthPvTotal : (liveFlow?.utilization?.production_total_kwh ?? 270.80)}
+                productionBreakdown={currentMonthPvTotal > 0 ? monthProdBreakdown : liveFlow?.utilization?.production_breakdown}
+                dateLabel={selectedHistoryMonthDisplay}
+                onPrevMonth={handlePrevMonth}
+                onNextMonth={handleNextMonth}
               />
             </div>
           </div>
@@ -590,9 +653,23 @@ export const OverviewPage: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
-                    <ChevronLeft className="h-3 w-3 cursor-pointer" />
-                    <span className="font-mono">2026/10</span>
-                    <ChevronRight className="h-3 w-3 cursor-pointer" />
+                    <button
+                      type="button"
+                      onClick={handlePrevMonth}
+                      disabled={currentMonthIdx <= 0}
+                      className="p-0.5 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 disabled:hover:text-slate-500 cursor-pointer"
+                    >
+                      <ChevronLeft className="h-3 w-3" />
+                    </button>
+                    <span className="font-mono">{selectedHistoryMonthDisplay}</span>
+                    <button
+                      type="button"
+                      onClick={handleNextMonth}
+                      disabled={currentMonthIdx >= availableMonths.length - 1}
+                      className="p-0.5 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 disabled:hover:text-slate-500 cursor-pointer"
+                    >
+                      <ChevronRight className="h-3 w-3" />
+                    </button>
                     <Calendar className="h-3 w-3 text-slate-400 ml-1" />
                   </div>
                 </div>

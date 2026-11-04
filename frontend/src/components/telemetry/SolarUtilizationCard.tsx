@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HelpCircle, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { EChartComponent } from '../charts/EChartComponent';
 
 interface UtilizationSlice {
@@ -14,30 +14,47 @@ interface SolarUtilizationCardProps {
   consumptionBreakdown?: UtilizationSlice[];
   productionTotalKwh?: number;
   productionBreakdown?: UtilizationSlice[];
+  dateLabel?: string;
+  onPrevMonth?: () => void;
+  onNextMonth?: () => void;
 }
 
 export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
   consumptionTotalKwh = 371.10,
   consumptionBreakdown,
   productionTotalKwh = 270.80,
-  productionBreakdown
+  productionBreakdown,
+  dateLabel = '11/2026',
+  onPrevMonth,
+  onNextMonth
 }) => {
   const [period, setPeriod] = useState<'M' | 'Y' | 'T'>('M');
-  const [dateLabel] = useState('2026/10');
 
-  const defaultConsumption = [
-    { label: 'Import', kwh: 110.0, pct: 30.0, color: '#6366F1' },
-    { label: 'Discharge', kwh: 119.79, pct: 32.0, color: '#06B6D4' },
-    { label: 'PV', kwh: 141.29, pct: 38.0, color: '#10B981' }
+  const defaultConsumption: UtilizationSlice[] = [
+    { label: 'Import', kwh: 110.0, pct: 29.6, color: '#6366F1' },
+    { label: 'Discharge', kwh: 119.79, pct: 32.3, color: '#06B6D4' },
+    { label: 'PV', kwh: 141.29, pct: 38.1, color: '#10B981' }
   ];
 
-  const defaultProduction = [
-    { label: 'Charge', kwh: 128.70, pct: 48.0, color: '#F59E0B' },
-    { label: 'Consumption', kwh: 141.29, pct: 52.0, color: '#EAB308' }
+  const defaultProduction: UtilizationSlice[] = [
+    { label: 'Charge', kwh: 128.70, pct: 47.7, color: '#F59E0B' },
+    { label: 'Consumption', kwh: 141.29, pct: 52.3, color: '#EAB308' }
   ];
 
-  const consSlices = consumptionBreakdown && consumptionBreakdown.length > 0 ? consumptionBreakdown : defaultConsumption;
-  const prodSlices = productionBreakdown && productionBreakdown.length > 0 ? productionBreakdown : defaultProduction;
+  const rawConsSlices = consumptionBreakdown && consumptionBreakdown.length > 0 ? consumptionBreakdown : defaultConsumption;
+  const rawProdSlices = productionBreakdown && productionBreakdown.length > 0 ? productionBreakdown : defaultProduction;
+
+  const normalizeSlices = (slices: UtilizationSlice[]): UtilizationSlice[] => {
+    const total = slices.reduce((acc, s) => acc + s.kwh, 0);
+    if (total <= 0) return slices;
+    return slices.map((s) => ({
+      ...s,
+      pct: (s.kwh / total) * 100
+    }));
+  };
+
+  const consSlices = normalizeSlices(rawConsSlices);
+  const prodSlices = normalizeSlices(rawProdSlices);
 
   const makeDonutOption = (title: string, totalKwh: number, slices: UtilizationSlice[]) => {
     return {
@@ -106,12 +123,9 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
   const prodOption = makeDonutOption('Production', productionTotalKwh, prodSlices);
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm h-full flex flex-col justify-between">
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-1.5">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Solar & Utilization</h3>
-          <HelpCircle className="h-3.5 w-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer" />
-        </div>
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Solar & Utilization</h3>
 
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-md text-[11px] font-medium">
@@ -131,11 +145,17 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
           </div>
 
           <div className="flex items-center gap-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">
-            <button className="p-0.5 hover:text-slate-900 dark:hover:text-white">
+            <button
+              onClick={onPrevMonth}
+              className="p-0.5 hover:text-slate-900 dark:hover:text-white"
+            >
               <ChevronLeft className="h-3 w-3" />
             </button>
             <span className="font-mono text-[11px]">{dateLabel}</span>
-            <button className="p-0.5 hover:text-slate-900 dark:hover:text-white">
+            <button
+              onClick={onNextMonth}
+              className="p-0.5 hover:text-slate-900 dark:hover:text-white"
+            >
               <ChevronRight className="h-3 w-3" />
             </button>
             <Calendar className="h-3 w-3 text-slate-400 ml-1" />
@@ -143,7 +163,7 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4 my-auto">
         <div className="flex flex-col items-center">
           <div className="w-full h-36">
             <EChartComponent option={consOption} height={144} />
