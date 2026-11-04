@@ -102,13 +102,13 @@ export const AppShell: React.FC = () => {
               <NavLink
                 key={item.path}
                 to={item.path}
-                className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-colors ${
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all duration-150 active:scale-[0.98] ${
                   isActive
-                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold'
+                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
-                <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-amber-600' : 'text-slate-400'}`} />
+                <Icon className={`h-4 w-4 shrink-0 transition-transform duration-150 ${isActive ? 'text-amber-600 scale-105' : 'text-slate-400'}`} />
                 <span className="truncate">{item.label}</span>
               </NavLink>
             );
@@ -178,7 +178,9 @@ export const AppShell: React.FC = () => {
         </header>
 
         <main className="flex-1 overflow-y-auto p-6">
-          <Outlet context={{ activeDatasetId, setActiveDatasetId, viewMode, setViewMode }} />
+          <div key={location.pathname} className="animate-page-enter">
+            <Outlet context={{ activeDatasetId, setActiveDatasetId, viewMode, setViewMode }} />
+          </div>
         </main>
 
 
