@@ -79,13 +79,13 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
   const upsActive = nodes.ups.power_w > 10;
   const loadActive = nodes.load.power_w > 5;
 
-  const pathPvToInv = "M 115 75 H 175 V 155 H 205";
-  const pathBattToInv = "M 115 265 H 175 V 165 H 205";
-  const pathInvToBatt = "M 205 165 H 175 V 265 H 115";
-  const pathGridToInv = "M 385 75 H 325 V 155 H 295";
-  const pathInvToGrid = "M 295 155 H 325 V 75 H 385";
-  const pathInvToUps = "M 250 190 V 235";
-  const pathInvToLoad = "M 295 165 H 325 V 265 H 385";
+  const pathPvToInv = "M 103 60 H 155 V 120 H 208";
+  const pathBattToInv = "M 103 220 H 155 V 150 H 208";
+  const pathInvToBatt = "M 208 150 H 155 V 220 H 103";
+  const pathGridToInv = "M 397 60 H 345 V 120 H 292";
+  const pathInvToGrid = "M 292 120 H 345 V 60 H 397";
+  const pathInvToUps = "M 250 167 V 197";
+  const pathInvToLoad = "M 292 150 H 345 V 220 H 397";
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm h-full flex flex-col justify-between">
@@ -131,7 +131,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
       </div>
 
       <div className="relative w-full aspect-[500/320] select-none bg-slate-50/50 dark:bg-slate-950/40 rounded-lg p-2 overflow-hidden border border-slate-100 dark:border-slate-800/60">
-        <svg viewBox="0 0 500 320" className="w-full h-full">
+        <svg viewBox="0 0 500 320" className="w-full h-full overflow-visible">
           <defs>
             <filter id="glow-solar" x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur stdDeviation="3" result="blur" />
@@ -231,90 +231,100 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
               </circle>
             </>
           )}
+
+          <foreignObject x="20" y="32" width="110" height="85">
+            <div className="flex flex-col items-center">
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
+                pvActive
+                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-500 shadow-sm shadow-amber-500/20'
+                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+              }`}>
+                <Sun className={`h-6 w-6 ${pvActive ? 'text-amber-500' : 'text-slate-400'}`} />
+              </div>
+              <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                {formatPower(nodes.solar.power_w, nodes.solar.power_kw)}
+              </span>
+            </div>
+          </foreignObject>
+
+          <foreignObject x="370" y="32" width="110" height="95">
+            <div className="flex flex-col items-center">
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
+                gridImporting
+                  ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-500 shadow-sm shadow-indigo-500/20'
+                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+              }`}>
+                <Zap className={`h-6 w-6 ${gridImporting ? 'text-indigo-500' : 'text-slate-400'}`} />
+              </div>
+              <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                {formatPower(nodes.grid.power_w, nodes.grid.power_kw)}
+              </span>
+              <div className="mt-1 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="h-2.5 w-2.5" />
+                <span>{nodes.grid.status_label}</span>
+              </div>
+            </div>
+          </foreignObject>
+
+          <foreignObject x="208" y="103" width="84" height="64">
+            <div className="w-full h-full rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-sm flex flex-col items-center justify-center p-1.5">
+              <div className="w-6 h-4 rounded-sm border border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-1">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              </div>
+              <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">Inverter</span>
+            </div>
+          </foreignObject>
+
+          <foreignObject x="20" y="192" width="110" height="85">
+            <div className="flex flex-col items-center">
+              <div className="relative">
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
+                  battDischarging || battCharging
+                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-500 shadow-sm shadow-emerald-500/20'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                }`}>
+                  <Battery className={`h-6 w-6 ${battDischarging || battCharging ? 'text-emerald-500' : 'text-slate-400'}`} />
+                </div>
+                <span className="absolute -top-2 -right-2 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold shadow-sm">
+                  {nodes.battery.soc_percent.toFixed(0)}%
+                </span>
+              </div>
+              <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                {formatPower(nodes.battery.power_w, nodes.battery.power_kw)}
+              </span>
+            </div>
+          </foreignObject>
+
+          <foreignObject x="195" y="197" width="110" height="85">
+            <div className="flex flex-col items-center">
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
+                upsActive
+                  ? 'bg-sky-500/10 border-sky-500/40 text-sky-500 shadow-sm shadow-sky-500/20'
+                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+              }`}>
+                <ShieldCheck className={`h-6 w-6 ${upsActive ? 'text-sky-500' : 'text-slate-400'}`} />
+              </div>
+              <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                {formatPower(nodes.ups.power_w, nodes.ups.power_kw)}
+              </span>
+            </div>
+          </foreignObject>
+
+          <foreignObject x="370" y="192" width="110" height="85">
+            <div className="flex flex-col items-center">
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
+                loadActive
+                  ? 'bg-orange-500/10 border-orange-500/40 text-orange-500 shadow-sm shadow-orange-500/20'
+                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+              }`}>
+                <Home className={`h-6 w-6 ${loadActive ? 'text-orange-500' : 'text-slate-400'}`} />
+              </div>
+              <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                {formatPower(nodes.load.power_w, nodes.load.power_kw)}
+              </span>
+            </div>
+          </foreignObject>
         </svg>
-
-        <div className="absolute top-[8%] left-[7%] flex flex-col items-center">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-            pvActive
-              ? 'bg-amber-500/10 border-amber-500/40 text-amber-500 shadow-sm shadow-amber-500/20'
-              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-          }`}>
-            <Sun className={`h-6 w-6 ${pvActive ? 'text-amber-500' : 'text-slate-400'}`} />
-          </div>
-          <span className="mt-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-            {formatPower(nodes.solar.power_w, nodes.solar.power_kw)}
-          </span>
-        </div>
-
-        <div className="absolute top-[8%] right-[7%] flex flex-col items-center">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-            gridImporting
-              ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-500 shadow-sm shadow-indigo-500/20'
-              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-          }`}>
-            <Zap className={`h-6 w-6 ${gridImporting ? 'text-indigo-500' : 'text-slate-400'}`} />
-          </div>
-          <span className="mt-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-            {formatPower(nodes.grid.power_w, nodes.grid.power_kw)}
-          </span>
-          <div className="mt-1 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 className="h-2.5 w-2.5" />
-            <span>{nodes.grid.status_label}</span>
-          </div>
-        </div>
-
-        <div className="absolute top-[37%] left-[41%] flex flex-col items-center">
-          <div className="w-20 h-16 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-sm flex flex-col items-center justify-center p-1.5">
-            <div className="w-6 h-4 rounded-sm border border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-1">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            </div>
-            <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">Inverter</span>
-          </div>
-        </div>
-
-        <div className="absolute bottom-[6%] left-[7%] flex flex-col items-center">
-          <div className="relative">
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-              battDischarging || battCharging
-                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-500 shadow-sm shadow-emerald-500/20'
-                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-            }`}>
-              <Battery className={`h-6 w-6 ${battDischarging || battCharging ? 'text-emerald-500' : 'text-slate-400'}`} />
-            </div>
-            <span className="absolute -top-2 -right-2 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold shadow-sm">
-              {nodes.battery.soc_percent.toFixed(0)}%
-            </span>
-          </div>
-          <span className="mt-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-            {formatPower(nodes.battery.power_w, nodes.battery.power_kw)}
-          </span>
-        </div>
-
-        <div className="absolute bottom-[6%] left-[41%] flex flex-col items-center">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-            upsActive
-              ? 'bg-sky-500/10 border-sky-500/40 text-sky-500 shadow-sm shadow-sky-500/20'
-              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-          }`}>
-            <ShieldCheck className={`h-6 w-6 ${upsActive ? 'text-sky-500' : 'text-slate-400'}`} />
-          </div>
-          <span className="mt-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-            {formatPower(nodes.ups.power_w, nodes.ups.power_kw)}
-          </span>
-        </div>
-
-        <div className="absolute bottom-[6%] right-[7%] flex flex-col items-center">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-            loadActive
-              ? 'bg-orange-500/10 border-orange-500/40 text-orange-500 shadow-sm shadow-orange-500/20'
-              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-          }`}>
-            <Home className={`h-6 w-6 ${loadActive ? 'text-orange-500' : 'text-slate-400'}`} />
-          </div>
-          <span className="mt-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-            {formatPower(nodes.load.power_w, nodes.load.power_kw)}
-          </span>
-        </div>
       </div>
     </div>
   );
