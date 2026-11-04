@@ -130,7 +130,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
         </div>
       </div>
 
-      <div className="relative w-full aspect-[500/320] select-none bg-slate-50/50 dark:bg-slate-950/40 rounded-lg p-2 overflow-hidden border border-slate-100 dark:border-slate-800/60">
+      <div className="relative w-full aspect-[500/320] select-none bg-slate-50/50 dark:bg-slate-950/40 rounded-lg p-2 overflow-visible border border-slate-100 dark:border-slate-800/60">
         <svg viewBox="0 0 500 320" className="w-full h-full overflow-visible">
           <defs>
             <filter id="glow-solar" x="-20%" y="-20%" width="140%" height="140%">
@@ -232,7 +232,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             </>
           )}
 
-          <foreignObject x="20" y="32" width="110" height="85">
+          <foreignObject x="15" y="32" width="120" height="110" style={{ overflow: 'visible' }}>
             <div className="flex flex-col items-center">
               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
                 pvActive
@@ -247,7 +247,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             </div>
           </foreignObject>
 
-          <foreignObject x="370" y="32" width="110" height="95">
+          <foreignObject x="365" y="32" width="120" height="130" style={{ overflow: 'visible' }}>
             <div className="flex flex-col items-center">
               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
                 gridImporting
@@ -266,7 +266,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             </div>
           </foreignObject>
 
-          <foreignObject x="208" y="103" width="84" height="64">
+          <foreignObject x="208" y="103" width="84" height="64" style={{ overflow: 'visible' }}>
             <div className="w-full h-full rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-sm flex flex-col items-center justify-center p-1.5">
               <div className="w-6 h-4 rounded-sm border border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-1">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -275,8 +275,8 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             </div>
           </foreignObject>
 
-          <foreignObject x="20" y="192" width="110" height="85">
-            <div className="flex flex-col items-center">
+          <foreignObject x="15" y="172" width="120" height="130" style={{ overflow: 'visible' }}>
+            <div className="flex flex-col items-center pt-5">
               <div className="relative">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
                   battDischarging || battCharging
@@ -295,7 +295,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             </div>
           </foreignObject>
 
-          <foreignObject x="195" y="197" width="110" height="85">
+          <foreignObject x="190" y="197" width="120" height="110" style={{ overflow: 'visible' }}>
             <div className="flex flex-col items-center">
               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
                 upsActive
@@ -310,7 +310,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             </div>
           </foreignObject>
 
-          <foreignObject x="370" y="192" width="110" height="85">
+          <foreignObject x="365" y="192" width="120" height="110" style={{ overflow: 'visible' }}>
             <div className="flex flex-col items-center">
               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
                 loadActive
