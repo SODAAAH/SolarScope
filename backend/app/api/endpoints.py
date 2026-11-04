@@ -85,6 +85,18 @@ from backend.app.analyst.analyst_service import (
 router = APIRouter()
 
 dataset_cache: Dict[str, List[CanonicalRecord]] = {}
+_historical_records_cache: Optional[List[CanonicalRecord]] = None
+_summary_cache: Dict[str, Any] = {}
+_daily_summaries_cache: Dict[str, Any] = {}
+_timeline_cache: Dict[str, Any] = {}
+
+def invalidate_all_caches():
+    global _historical_records_cache
+    _historical_records_cache = None
+    invalidate_all_caches()
+    _summary_cache.clear()
+    _daily_summaries_cache.clear()
+    _timeline_cache.clear()
 
 last_rate_check_cache: Dict[str, Any] = {
     "status": "verified_current",
@@ -436,6 +448,7 @@ def update_source(source_id: str, payload: UpdateSourceModel):
 
     conn.commit()
     conn.close()
+    invalidate_all_caches()
     return {"status": "updated", "source_id": source_id}
 
 @router.delete("/sources/{source_id}")
@@ -458,9 +471,7 @@ def delete_source(source_id: str):
     conn.commit()
     conn.close()
 
-    if source_id in dataset_cache:
-        del dataset_cache[source_id]
-
+    invalidate_all_caches()
     return {"status": "deleted", "source_id": source_id}
 
 @router.post("/datasets/load_sample")
@@ -662,6 +673,10 @@ def _get_records(dataset_id: str) -> List[CanonicalRecord]:
     return records
 
 def _get_historical_records() -> List[CanonicalRecord]:
+    global _historical_records_cache
+    if _historical_records_cache is not None:
+        return _historical_records_cache
+
     conn = get_connection()
     rows = conn.execute("SELECT id FROM datasets WHERE is_included = 1 ORDER BY start_time ASC").fetchall()
     conn.close()
@@ -682,10 +697,13 @@ def _get_historical_records() -> List[CanonicalRecord]:
             merged = resolve_and_merge_records(merged, recs, policy="KEEP_EXISTING")
         except Exception:
             continue
+    _historical_records_cache = merged
     return merged
 
 @router.get("/datasets/{dataset_id}/summary")
 def get_executive_summary(dataset_id: str):
+    if dataset_id in _summary_cache:
+        return _summary_cache[dataset_id]
     records = _get_records(dataset_id)
     settings_dict = get_settings()
 
@@ -706,7 +724,7 @@ def get_executive_summary(dataset_id: str):
     start_t = records[0].timestamp if records else ""
     end_t = records[-1].timestamp if records else ""
 
-    return {
+    result = {
         "dataset_id": dataset_id,
         "date_range": f"{start_t[:10]} to {end_t[:10]}" if records else "",
         "start_time_12h": format_datetime_12h(start_t),
@@ -719,9 +737,14 @@ def get_executive_summary(dataset_id: str):
         "balance": balance,
         "finance": finance
     }
+    _summary_cache[dataset_id] = result
+    return result
 
 @router.get("/datasets/{dataset_id}/timeline")
 def get_timeline_data(dataset_id: str, date: Optional[str] = Query(None)):
+    cache_key = f"{dataset_id}_{date or ''}"
+    if cache_key in _timeline_cache:
+        return _timeline_cache[cache_key]
     records = _get_records(dataset_id)
     if not records:
         return {
@@ -781,7 +804,7 @@ def get_timeline_data(dataset_id: str, date: Optional[str] = Query(None)):
             soc_pct.append(None)
             residual_kw.append(None)
 
-    return {
+    timeline_res = {
         "timestamps": timestamps_full,
         "timestamps_12h": timestamps_12h,
         "timestamps_24h": slots_24h,
@@ -794,6 +817,8 @@ def get_timeline_data(dataset_id: str, date: Optional[str] = Query(None)):
         "is_24h": True,
         "selected_date": target_date_clean
     }
+    _timeline_cache[cache_key] = timeline_res
+    return timeline_res
 
 @router.get("/datasets/{dataset_id}/solar")
 def get_solar_analysis(dataset_id: str):
@@ -884,37 +909,28 @@ def get_finance_analysis(
 
 @router.get("/historical/daily")
 def get_historical_daily(dataset_id: Optional[str] = None):
-    records = _get_records(dataset_id or "historical")
+    cache_key = dataset_id or "historical"
+    if cache_key in _daily_summaries_cache:
+        return _daily_summaries_cache[cache_key]
+    records = _get_records(cache_key)
     settings_dict = get_settings()
-    return calculate_daily_summaries(
+    res = calculate_daily_summaries(
         records=records,
         pv_capacity_kwp=settings_dict["pv_capacity_kwp"],
         nominal_battery_kwh=settings_dict["battery_capacity_kwh"],
         reserve_soc=settings_dict["reserve_soc"]
     )
+    _daily_summaries_cache[cache_key] = res
+    return res
 
 @router.get("/historical/weekly")
 def get_historical_weekly(dataset_id: Optional[str] = None):
-    records = _get_records(dataset_id or "historical")
-    settings_dict = get_settings()
-    daily = calculate_daily_summaries(
-        records=records,
-        pv_capacity_kwp=settings_dict["pv_capacity_kwp"],
-        nominal_battery_kwh=settings_dict["battery_capacity_kwh"],
-        reserve_soc=settings_dict["reserve_soc"]
-    )
+    daily = get_historical_daily(dataset_id)
     return calculate_weekly_summaries(daily)
 
 @router.get("/historical/monthly")
 def get_historical_monthly(dataset_id: Optional[str] = None):
-    records = _get_records(dataset_id or "historical")
-    settings_dict = get_settings()
-    daily = calculate_daily_summaries(
-        records=records,
-        pv_capacity_kwp=settings_dict["pv_capacity_kwp"],
-        nominal_battery_kwh=settings_dict["battery_capacity_kwh"],
-        reserve_soc=settings_dict["reserve_soc"]
-    )
+    daily = get_historical_daily(dataset_id)
     return calculate_monthly_summaries(daily)
 
 @router.get("/historical/hourly_profile")
@@ -1272,14 +1288,14 @@ class DeyeSyncRangePayload(BaseModel):
 def sync_deye_endpoint():
     client = DeyeCloudClient()
     res = client.sync_now()
-    dataset_cache.clear()
+    invalidate_all_caches()
     return res
 
 @router.post("/deye/sync_range")
 def sync_deye_range_endpoint(payload: DeyeSyncRangePayload):
     client = DeyeCloudClient()
     res = client.sync_range(payload.start_date, payload.end_date)
-    dataset_cache.clear()
+    invalidate_all_caches()
     return res
 
 @router.get("/deye/missing_dates")
@@ -1292,7 +1308,7 @@ def get_deye_missing_dates_endpoint():
 def sync_deye_missing_endpoint():
     client = DeyeCloudClient()
     res = client.sync_missing_dates()
-    dataset_cache.clear()
+    invalidate_all_caches()
     return res
 
 @router.get("/deye/live_flow")

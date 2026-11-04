@@ -28,13 +28,33 @@ export const OverviewPage: React.FC = () => {
     viewMode: ViewMode;
   }>();
 
-  const [summary, setSummary] = useState<any>(null);
+  const [summary, setSummary] = useState<any>(() => {
+    try {
+      const saved = sessionStorage.getItem(`solarscope_cached_summary_${activeDatasetId || 'all'}`);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [timeline, setTimeline] = useState<any>(null);
   const [liveFlow, setLiveFlow] = useState<LiveFlowResponse | null>(null);
-  const [dailySummaries, setDailySummaries] = useState<DailySummaryItem[]>([]);
+  const [dailySummaries, setDailySummaries] = useState<DailySummaryItem[]>(() => {
+    try {
+      const saved = sessionStorage.getItem('solarscope_cached_daily');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [anomalies, setAnomalies] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(() => {
+    try {
+      return !sessionStorage.getItem(`solarscope_cached_summary_${activeDatasetId || 'all'}`);
+    } catch {
+      return true;
+    }
+  });
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'devices' | 'alerts' | 'info'>('overview');
   const [historyPeriod, setHistoryPeriod] = useState<'M' | 'Y' | 'T'>('M');
@@ -44,36 +64,63 @@ export const OverviewPage: React.FC = () => {
 
   const fetchOverviewData = () => {
     if (!activeDatasetId) return;
-    setLoading(true);
+    if (!summary) {
+      setLoading(true);
+    }
     setError(null);
 
-    Promise.all([
-      api.getSummary(activeDatasetId).catch(() => null),
-      api.getTimeline(activeDatasetId).catch(() => null),
-      api.getDeyeLiveFlow().catch(() => null),
-      api.getHistoricalDaily().catch(() => []),
-      api.getSettings().catch(() => null),
-      api.getAnomalies(activeDatasetId).catch(() => [])
-    ])
-      .then(([sumRes, timeRes, flowRes, dailyRes, setRes, anomRes]) => {
-        if (sumRes) setSummary(sumRes);
-        if (timeRes) setTimeline(timeRes);
-        if (flowRes && flowRes.success) setLiveFlow(flowRes);
-        if (dailyRes && dailyRes.length > 0) {
-          setDailySummaries(dailyRes);
-          if (!powerProfileDate || !dailyRes.some(d => d.date === powerProfileDate)) {
-            setPowerProfileDate(dailyRes[dailyRes.length - 1].date);
-          }
+    api.getSummary(activeDatasetId)
+      .then((sumRes) => {
+        if (sumRes) {
+          setSummary(sumRes);
+          setLoading(false);
+          try {
+            sessionStorage.setItem(`solarscope_cached_summary_${activeDatasetId}`, JSON.stringify(sumRes));
+          } catch {}
         }
-        if (setRes) setSettings(setRes);
-        if (anomRes) setAnomalies(anomRes);
       })
       .catch((err) => {
-        setError(err.message || 'Failed to load system metrics');
+        if (!summary) {
+          setError(err.message || 'Failed to load system metrics');
+        }
       })
       .finally(() => {
         setLoading(false);
       });
+
+    api.getHistoricalDaily()
+      .then((dailyRes) => {
+        if (dailyRes && dailyRes.length > 0) {
+          setDailySummaries(dailyRes);
+          try {
+            sessionStorage.setItem('solarscope_cached_daily', JSON.stringify(dailyRes));
+          } catch {}
+          if (!powerProfileDate || !dailyRes.some(d => d.date === powerProfileDate)) {
+            setPowerProfileDate(dailyRes[dailyRes.length - 1].date);
+          }
+        }
+      })
+      .catch(() => {});
+
+    api.getDeyeLiveFlow()
+      .then((flowRes) => {
+        if (flowRes && flowRes.success) {
+          setLiveFlow(flowRes);
+        }
+      })
+      .catch(() => {});
+
+    api.getSettings()
+      .then((setRes) => {
+        if (setRes) setSettings(setRes);
+      })
+      .catch(() => {});
+
+    api.getAnomalies(activeDatasetId)
+      .then((anomRes) => {
+        if (anomRes) setAnomalies(anomRes);
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {

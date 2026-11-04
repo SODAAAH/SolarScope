@@ -25,6 +25,8 @@ class DeyeMCPClient:
         self.mcp_endpoint = "https://developer.deyecloud.com/openmcp/mcp"
         self._cached_token = None
         self._token_expiry = None
+        self._cached_live_flow = None
+        self._cached_live_flow_time = 0.0
 
     def _get_credentials(self) -> Dict[str, str]:
         conn = get_connection()
@@ -73,7 +75,7 @@ class DeyeMCPClient:
         token_url = f"{self.base_url}/v1.0/account/token?appId={urllib.parse.quote(creds['app_id'])}"
         try:
             req = urllib.request.Request(token_url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 if data.get("success") and "accessToken" in data:
                     self._cached_token = data["accessToken"]
@@ -140,7 +142,7 @@ class DeyeMCPClient:
             method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 if not data.get("success"):
                     return {"success": False, "error": data.get("msg", "Unknown error"), "raw": data}
@@ -272,7 +274,7 @@ class DeyeMCPClient:
             method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return {"success": True, "device_data": data.get("deviceDataList", []), "raw": data}
         except Exception as e:
@@ -323,7 +325,7 @@ class DeyeMCPClient:
             method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 alerts = data.get("alertList", [])
                 return {
@@ -356,7 +358,7 @@ class DeyeMCPClient:
             method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 alerts = data.get("alertList", [])
                 return {
@@ -445,6 +447,10 @@ class DeyeMCPClient:
         }
 
     def get_live_flow(self) -> Dict[str, Any]:
+        now_ts = datetime.datetime.now().timestamp()
+        if self._cached_live_flow is not None and (now_ts - self._cached_live_flow_time) < 10.0:
+            return self._cached_live_flow
+
         creds = self._get_credentials()
         station_id = creds["station_id"]
         latest_res = self.get_station_latest(station_id)
@@ -496,10 +502,11 @@ class DeyeMCPClient:
         elif grid_w < -5.0:
             grid_state = "EXPORT"
 
-        from backend.app.api.endpoints import _get_historical_records
-        from backend.app.aggregation.historical import calculate_daily_summaries
-        recs = _get_historical_records()
-        sums = calculate_daily_summaries(recs)
+        from backend.app.api.endpoints import get_historical_daily
+        try:
+            sums = get_historical_daily("historical")
+        except Exception:
+            sums = []
         tot_pv = sum(d.get("pv_kwh", 0) for d in sums) if sums else 270.8
         tot_load = sum(d.get("load_kwh", 0) for d in sums) if sums else 371.1
         tot_import = sum(d.get("grid_import_kwh", 0) for d in sums) if sums else 110.0
@@ -510,7 +517,7 @@ class DeyeMCPClient:
             tot_pv_self = 141.29
         today_pv = sums[-1].get("pv_kwh", 0) if sums else 15.9
 
-        return {
+        flow_res = {
             "success": True,
             "station_name": "Mam Micah",
             "station_id": station_id,
