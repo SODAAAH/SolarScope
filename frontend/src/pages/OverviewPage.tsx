@@ -388,39 +388,78 @@ export const OverviewPage: React.FC = () => {
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
-      textStyle: { fontSize: 11 }
+      textStyle: { fontSize: 11 },
+      formatter: (params: any) => {
+        if (!params || params.length === 0) return '';
+        const day = params[0].axisValueLabel || params[0].name;
+        let res = `<div class="font-sans text-xs font-semibold pb-1 mb-1 border-b border-slate-200 dark:border-slate-700">${selectedHistoryMonthDisplay} - Day ${day}</div>`;
+        let hasData = false;
+        params.forEach((p: any) => {
+          if (p.value !== null && p.value !== undefined && p.value !== 0) {
+            hasData = true;
+            const val = Math.abs(Number(p.value)).toFixed(2);
+            res += `<div class="flex items-center justify-between gap-4 text-xs font-sans">
+              <span style="color:${p.color}">● ${p.seriesName}</span>
+              <span class="font-mono font-medium">${val} kWh</span>
+            </div>`;
+          }
+        });
+        if (!hasData) {
+          res += `<div class="text-xs text-slate-400 font-sans">No recorded data</div>`;
+        }
+        return res;
+      }
     },
     legend: {
-      data: ['Daily Production', 'Daily Discharge', 'Daily Purchased', 'Daily Consumption', 'Daily Charge', 'Daily Grid Feed-in'],
+      data: ['Production', 'Discharge', 'Purchased', 'Consumption', 'Charge', 'Grid Feed-in'],
       textStyle: { fontSize: 10, color: '#64748B' },
-      top: 0
+      top: 2,
+      itemGap: 10,
+      itemWidth: 10,
+      itemHeight: 8
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      top: '18%',
+      bottom: '10%',
+      containLabel: true
     },
     xAxis: {
       type: 'category',
       data: monthDays.map((d) => d.toString()),
-      axisLabel: { fontSize: 9, color: '#64748B' }
+      axisLabel: {
+        interval: (index: number) => index === 0 || ((index + 1) % 5 === 0 && monthDays.length - 1 - index >= 2) || index === monthDays.length - 1,
+        fontSize: 10,
+        color: '#64748B'
+      },
+      axisLine: { lineStyle: { color: '#CBD5E1' } },
+      axisTick: { alignWithLabel: true }
     },
     yAxis: {
-      type: 'value',
+      ...baseOpt.yAxis,
       name: 'kWh',
+      nameTextStyle: { fontSize: 10, color: '#64748B' },
       axisLabel: { fontSize: 10, color: '#64748B' },
       splitLine: { lineStyle: { color: '#E2E8F0', type: 'dashed' } }
     },
     series: [
       {
-        name: 'Daily Production',
+        name: 'Production',
         type: 'bar',
         stack: 'positive',
-        itemStyle: { color: '#10B981' },
+        barMaxWidth: 16,
+        itemStyle: { color: '#10B981', borderRadius: [2, 2, 0, 0] },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
           return item ? item.pv_kwh : 0;
         })
       },
       {
-        name: 'Daily Discharge',
+        name: 'Discharge',
         type: 'bar',
         stack: 'positive',
+        barMaxWidth: 16,
         itemStyle: { color: '#06B6D4' },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
@@ -428,9 +467,10 @@ export const OverviewPage: React.FC = () => {
         })
       },
       {
-        name: 'Daily Purchased',
+        name: 'Purchased',
         type: 'bar',
         stack: 'positive',
+        barMaxWidth: 16,
         itemStyle: { color: '#6366F1' },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
@@ -438,9 +478,10 @@ export const OverviewPage: React.FC = () => {
         })
       },
       {
-        name: 'Daily Consumption',
+        name: 'Consumption',
         type: 'bar',
         stack: 'negative',
+        barMaxWidth: 16,
         itemStyle: { color: '#F59E0B' },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
@@ -448,9 +489,10 @@ export const OverviewPage: React.FC = () => {
         })
       },
       {
-        name: 'Daily Charge',
+        name: 'Charge',
         type: 'bar',
         stack: 'negative',
+        barMaxWidth: 16,
         itemStyle: { color: '#3B82F6' },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
@@ -458,10 +500,11 @@ export const OverviewPage: React.FC = () => {
         })
       },
       {
-        name: 'Daily Grid Feed-in',
+        name: 'Grid Feed-in',
         type: 'bar',
         stack: 'negative',
-        itemStyle: { color: '#EF4444' },
+        barMaxWidth: 16,
+        itemStyle: { color: '#EF4444', borderRadius: [0, 0, 2, 2] },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
           return item ? -Math.abs(item.grid_export_kwh || 0) : 0;
