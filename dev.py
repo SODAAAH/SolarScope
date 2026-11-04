@@ -82,9 +82,19 @@ def main():
 
     try:
         while True:
-            time.sleep(0.5)
-            if backend_proc.poll() is not None and frontend_proc.poll() is not None:
-                break
+            time.sleep(1.0)
+            if backend_proc.poll() is not None:
+                backend_proc = subprocess.Popen(
+                    backend_cmd,
+                    cwd=root,
+                    stdin=subprocess.DEVNULL
+                )
+            if frontend_proc.poll() is not None:
+                frontend_proc = subprocess.Popen(
+                    frontend_cmd,
+                    cwd=frontend_dir,
+                    stdin=subprocess.DEVNULL
+                )
     except KeyboardInterrupt:
         cleanup()
     finally:
