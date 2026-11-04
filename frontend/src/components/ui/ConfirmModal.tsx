@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, Trash2, X, Loader2 } from "lucide-react";
 
 interface ConfirmModalProps {
@@ -38,7 +39,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div
         className="fixed inset-0"
@@ -63,16 +64,15 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                   <AlertTriangle className="w-5 h-5" />
                 )}
               </div>
-              <div>
-                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                  {title}
-                </h3>
-              </div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                {title}
+              </h3>
             </div>
             <button
+              type="button"
               onClick={onCancel}
               disabled={loading}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg transition-colors"
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-md transition-colors disabled:opacity-50"
             >
               <X className="w-4 h-4" />
             </button>
@@ -83,19 +83,19 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           </p>
 
           {itemDetails && itemDetails.length > 0 && (
-            <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-100 dark:border-slate-800 space-y-1.5 text-xs">
-              {itemDetails.map((item, idx) => (
-                <div key={idx} className="flex justify-between items-center text-[11px]">
-                  <span className="text-slate-500">{item.label}</span>
-                  <span className="font-medium font-mono text-slate-800 dark:text-slate-200 truncate max-w-[220px]">
-                    {item.value}
+            <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs">
+              {itemDetails.map((detail, idx) => (
+                <div key={idx} className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">{detail.label}:</span>
+                  <span className="text-slate-800 dark:text-slate-200 font-mono font-semibold truncate max-w-[200px]">
+                    {detail.value}
                   </span>
                 </div>
               ))}
             </div>
           )}
 
-          <div className="mt-6 flex items-center justify-end gap-3">
+          <div className="mt-6 flex justify-end gap-2.5">
             <button
               type="button"
               onClick={onCancel}
@@ -120,7 +120,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
-
