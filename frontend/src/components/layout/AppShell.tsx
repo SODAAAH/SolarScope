@@ -128,12 +128,17 @@ export const AppShell: React.FC = () => {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="h-14 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between px-6 shrink-0 z-10">
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-2.5 text-xs">
             <span className="font-semibold text-slate-800 dark:text-slate-200">
               {NAV_ITEMS.find(n => n.path === location.pathname)?.label || 'Energy Intelligence'}
             </span>
             <span className="text-slate-300 dark:text-slate-700">/</span>
-            <span className="text-slate-500">Local-First Energy Telemetry</span>
+            <span className="text-slate-600 dark:text-slate-300 font-medium">Mam Micah</span>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Online
+            </span>
+            <span className="text-slate-400 text-[11px] hidden md:inline">6.2 kWp</span>
           </div>
 
           <div className="flex items-center gap-3">

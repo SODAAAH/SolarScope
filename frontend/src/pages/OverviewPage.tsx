@@ -1,22 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import type { LiveFlowResponse, DailySummaryItem, SystemSettings } from '../lib/api';
+import type { LiveFlowResponse, DailySummaryItem } from '../lib/api';
 import { EChartComponent } from '../components/charts/EChartComponent';
 import { getBaseEChartsOption } from '../lib/theme';
 import {
-  CheckCircle2,
   AlertCircle,
   Calendar,
   Download,
   ChevronLeft,
   ChevronRight,
-  ShieldCheck,
-  Server,
-  Info,
   Loader2
 } from 'lucide-react';
-import { format12HourDateTime, formatDateMMDDYYYY } from '../lib/formatters';
+import { formatDateMMDDYYYY } from '../lib/formatters';
 import { LiveFlowGraph } from '../components/telemetry/LiveFlowGraph';
 import { LiveSummaryCard } from '../components/telemetry/LiveSummaryCard';
 import { SolarUtilizationCard } from '../components/telemetry/SolarUtilizationCard';
@@ -46,8 +42,6 @@ export const OverviewPage: React.FC = () => {
       return [];
     }
   });
-  const [settings, setSettings] = useState<SystemSettings | null>(null);
-  const [anomalies, setAnomalies] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(() => {
     try {
       return !sessionStorage.getItem(`solarscope_cached_summary_${activeDatasetId || 'all'}`);
@@ -56,7 +50,6 @@ export const OverviewPage: React.FC = () => {
     }
   });
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'devices' | 'alerts' | 'info'>('overview');
   const [historyPeriod, setHistoryPeriod] = useState<'M' | 'Y' | 'T'>('M');
   const [selectedHistoryMonth, setSelectedHistoryMonth] = useState<string>(() => {
     try {
@@ -132,18 +125,6 @@ export const OverviewPage: React.FC = () => {
         if (flowRes && flowRes.success) {
           setLiveFlow(flowRes);
         }
-      })
-      .catch(() => {});
-
-    api.getSettings()
-      .then((setRes) => {
-        if (setRes) setSettings(setRes);
-      })
-      .catch(() => {});
-
-    api.getAnomalies(activeDatasetId)
-      .then((anomRes) => {
-        if (anomRes) setAnomalies(anomRes);
       })
       .catch(() => {});
   };
@@ -515,51 +496,9 @@ export const OverviewPage: React.FC = () => {
 
   const sol = summary?.solar || {};
   const solarKwh = summary?.balance?.pv_kwh ?? sol.total_generation_kwh ?? 0;
-  const stationName = liveFlow?.station_name || "Mam Micah";
-  const lastUpdateTime = liveFlow?.last_update_time ? format12HourDateTime(liveFlow.last_update_time) : `${formatDateMMDDYYYY(summary?.date_range || '2026-10-31')} 6:52 PM`;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              {stationName}
-            </h1>
-            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Online
-            </span>
-            <span className="text-xs font-medium text-slate-500">6.2kWp</span>
-            <span className="text-xs text-slate-400">Online Inverter 1</span>
-          </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Last update {lastUpdateTime} (UTC+08:00)
-          </p>
-        </div>
-
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium">
-          {(['overview', 'devices', 'alerts', 'info'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-3 py-1.5 rounded-md transition-colors ${
-                activeTab === tab
-                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              {tab === 'overview' && 'Overview'}
-              {tab === 'devices' && 'Devices'}
-              {tab === 'alerts' && 'Alerts'}
-              {tab === 'info' && 'Plant Info'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
             <div className="md:col-span-12 lg:col-span-5 flex flex-col">
               <LiveFlowGraph initialData={liveFlow} onRefreshRequested={fetchOverviewData} />
@@ -720,188 +659,6 @@ export const OverviewPage: React.FC = () => {
               <EChartComponent option={historyOption} height={280} />
             </div>
           </div>
-        </div>
-      )}
-
-      {activeTab === 'devices' && (
-        <div className="space-y-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Server className="w-4 h-4 text-amber-600" />
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  Station Hardware & Inverter Fleet
-                </h2>
-              </div>
-              <span className="text-xs font-mono text-slate-500">
-                Station ID: {settings ? '62805884' : '62805884'}
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 font-mono uppercase text-[11px] border-b border-slate-200 dark:border-slate-800">
-                  <tr>
-                    <th className="px-4 py-3">Device Name</th>
-                    <th className="px-4 py-3">Type</th>
-                    <th className="px-4 py-3">Serial Number</th>
-                    <th className="px-4 py-3">Model / Specification</th>
-                    <th className="px-4 py-3">Capacity</th>
-                    <th className="px-4 py-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300 font-mono">
-                  <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                    <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100 font-sans">
-                      Hybrid Inverter 1
-                    </td>
-                    <td className="px-4 py-3 font-sans">Inverter</td>
-                    <td className="px-4 py-3">{settings?.inverter_serial || '2604282202'}</td>
-                    <td className="px-4 py-3 font-sans">{settings?.inverter_model || 'SUN-6K-SG06LP1-EU-CM2'}</td>
-                    <td className="px-4 py-3">{settings?.inverter_power_kw || 6.0} kW</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-sans font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        Normal
-                      </span>
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                    <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100 font-sans">
-                      ESS Battery Bank
-                    </td>
-                    <td className="px-4 py-3 font-sans">Battery</td>
-                    <td className="px-4 py-3">LFP-51.2V-314AH</td>
-                    <td className="px-4 py-3 font-sans">{settings?.battery_model || 'MENRED ESS'} (LFP)</td>
-                    <td className="px-4 py-3">{settings?.battery_capacity_kwh || 16.08} kWh</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-sans font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        Normal
-                      </span>
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                    <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100 font-sans">
-                      Rooftop Solar Array
-                    </td>
-                    <td className="px-4 py-3 font-sans">PV Array</td>
-                    <td className="px-4 py-3">10 Panels Bifacial</td>
-                    <td className="px-4 py-3 font-sans">{settings?.panel_model || 'Canadian Solar'} TOPCon</td>
-                    <td className="px-4 py-3">{settings?.pv_capacity_kwp || 6.20} kWp</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-sans font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        Normal
-                      </span>
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                    <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100 font-sans">
-                      Deye Data Logger
-                    </td>
-                    <td className="px-4 py-3 font-sans">Collector</td>
-                    <td className="px-4 py-3">{settings?.logger_serial || '1251892903'}</td>
-                    <td className="px-4 py-3 font-sans">{settings?.logger_firmware || 'MW4_32_5407_SS_04'}</td>
-                    <td className="px-4 py-3">5 min interval</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-sans font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        Online
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'alerts' && (
-        <div className="space-y-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-4">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  Telemetry & Alarm Monitor
-                </h2>
-              </div>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                0 Critical Faults
-              </span>
-            </div>
-
-            {anomalies.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-500">
-                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                <p className="font-medium text-slate-700 dark:text-slate-300">No active hardware faults or alarms detected.</p>
-                <p className="mt-1">Inverter grid-tie synchronization and battery BMS operating within verified design limits.</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {anomalies.map((anom, idx) => (
-                  <div key={idx} className="py-3 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2.5">
-                      <span className="w-2 h-2 rounded-full bg-amber-500" />
-                      <span className="font-medium text-slate-800 dark:text-slate-200">{anom.title || anom.anomaly_type || 'Observation'}</span>
-                      <span className="text-slate-500 font-mono">{anom.timestamp ? format12HourDateTime(anom.timestamp) : ''}</span>
-                    </div>
-                    <span className="text-slate-500 text-[11px]">{anom.description || ''}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'info' && (
-        <div className="space-y-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
-            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 mb-4">
-              <Info className="w-4 h-4 text-amber-600" />
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                Station Profile & Physical Installation
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500 block mb-1">Station Name & Identifier</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200 font-mono text-sm">
-                  Mam Micah (ID: 62805884)
-                </span>
-              </div>
-
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500 block mb-1">System Architecture</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">
-                  Residential Solar PV + LFP Storage (Behind-the-Meter)
-                </span>
-              </div>
-
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500 block mb-1">Installed Capacity</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200 font-mono">
-                  6.20 kWp PV / 6.0 kW Inverter / 16.08 kWh Battery
-                </span>
-              </div>
-
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500 block mb-1">Geographic Location & Grid Operator</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">
-                  Tarlac City, Philippines (TEI Utility Grid)
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
