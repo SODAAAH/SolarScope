@@ -238,13 +238,33 @@ class DeyeCloudClient:
             cur += datetime.timedelta(days=1)
         return missing
 
+    def _parse_date(self, s: str) -> datetime.date:
+        s = s.strip()
+        if "/" in s:
+            parts = s.split("/")
+            if len(parts) == 3:
+                if len(parts[2]) == 4:
+                    return datetime.date(int(parts[2]), int(parts[0]), int(parts[1]))
+                elif len(parts[0]) == 4:
+                    return datetime.date(int(parts[0]), int(parts[1]), int(parts[2]))
+        if "-" in s:
+            parts = s.split("-")
+            if len(parts) == 3:
+                if len(parts[0]) == 4:
+                    return datetime.date(int(parts[0]), int(parts[1]), int(parts[2]))
+                elif len(parts[2]) == 4:
+                    return datetime.date(int(parts[2]), int(parts[0]), int(parts[1]))
+        return datetime.date.fromisoformat(s)
+
     def fetch_range_from_cloud(self, start_date_str: str, end_date_str: str) -> List[Dict[str, Any]]:
         self._load_config()
         tz_manila = datetime.timezone(datetime.timedelta(hours=8))
-        d_start = datetime.date.fromisoformat(start_date_str)
-        d_end = datetime.date.fromisoformat(end_date_str)
+        d_start = self._parse_date(start_date_str)
+        d_end = self._parse_date(end_date_str)
+        now_manila = datetime.datetime.now(tz_manila).date()
+        d_end = min(d_end, now_manila)
         if d_start > d_end:
-            d_start, d_end = d_end, d_start
+            d_start = d_end
 
         if self.app_id == "demo" or self.username == "demo":
             simulated = []
@@ -299,8 +319,12 @@ class DeyeCloudClient:
                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                res = json.loads(resp.read().decode("utf-8"))
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    res = json.loads(resp.read().decode("utf-8"))
+            except Exception:
+                chunk_start = chunk_end + datetime.timedelta(days=1)
+                continue
 
             items = res.get("stationDataItems", [])
             for it in items:

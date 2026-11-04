@@ -584,6 +584,9 @@ class DeyeMCPClient:
                 ]
             }
         }
+        self._cached_live_flow = flow_res
+        self._cached_live_flow_time = datetime.datetime.now().timestamp()
+        return flow_res
 
 deye_mcp_client = DeyeMCPClient()
 

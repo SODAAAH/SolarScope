@@ -1286,17 +1286,23 @@ class DeyeSyncRangePayload(BaseModel):
 
 @router.post("/deye/sync")
 def sync_deye_endpoint():
-    client = DeyeCloudClient()
-    res = client.sync_now()
-    invalidate_all_caches()
-    return res
+    try:
+        client = DeyeCloudClient()
+        res = client.sync_now()
+        invalidate_all_caches()
+        return res
+    except Exception as e:
+        return {"status": "FAILED", "message": str(e), "records_inserted": 0}
 
 @router.post("/deye/sync_range")
 def sync_deye_range_endpoint(payload: DeyeSyncRangePayload):
-    client = DeyeCloudClient()
-    res = client.sync_range(payload.start_date, payload.end_date)
-    invalidate_all_caches()
-    return res
+    try:
+        client = DeyeCloudClient()
+        res = client.sync_range(payload.start_date, payload.end_date)
+        invalidate_all_caches()
+        return res
+    except Exception as e:
+        return {"status": "FAILED", "message": str(e), "records_inserted": 0}
 
 @router.get("/deye/missing_dates")
 def get_deye_missing_dates_endpoint():
