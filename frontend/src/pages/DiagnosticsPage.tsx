@@ -128,7 +128,7 @@ export const DiagnosticsPage: React.FC = () => {
       {currentTab === "balance" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-1 interactive-card">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Node Balance Check</span>
               <div className="flex items-center gap-2 mt-2">
                 {balance?.is_balanced ? (
@@ -145,7 +145,7 @@ export const DiagnosticsPage: React.FC = () => {
               </p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-4 interactive-card">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Solar Self-Sufficiency</span>
               <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2 tabular-nums">
                 {((balance?.self_sufficiency_ratio || 0) * 100).toFixed(1)}%
@@ -153,7 +153,7 @@ export const DiagnosticsPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-1">Percentage of home electricity supplied by solar and battery</p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-4 interactive-card">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Solar Self-Consumption</span>
               <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2 tabular-nums">
                 {((balance?.self_consumption_ratio || 0) * 100).toFixed(1)}%
@@ -162,7 +162,7 @@ export const DiagnosticsPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-4 interactive-card">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
               Energy Flow Distribution (Sankey Flow)
             </h3>

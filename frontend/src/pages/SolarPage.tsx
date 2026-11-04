@@ -150,7 +150,7 @@ export const SolarPage: React.FC = () => {
       {currentTab === "production" && (
         <div className="space-y-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-1 interactive-card">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Total Solar Generated</span>
               <span className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
                 {solar?.total_generation_kwh?.toFixed(2)} <span className="text-xs font-normal text-slate-500">kWh</span>
@@ -158,7 +158,7 @@ export const SolarPage: React.FC = () => {
               <span className="text-xs text-slate-500 block mt-1">Trapezoidal integration</span>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-2 interactive-card">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Specific Yield</span>
               <span className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
                 {solar?.specific_yield_kwh_per_kwp?.toFixed(2)} <span className="text-xs font-normal text-slate-500">kWh/kWp</span>
@@ -166,7 +166,7 @@ export const SolarPage: React.FC = () => {
               <span className="text-xs text-slate-500 block mt-1">Capacity: {solar?.pv_capacity_kwp || 6.2} kWp</span>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-3 interactive-card">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Peak PV Power</span>
               <span className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
                 {solar?.peak_power_kw?.toFixed(2)} <span className="text-xs font-normal text-slate-500">kW</span>
@@ -174,7 +174,7 @@ export const SolarPage: React.FC = () => {
               <span className="text-xs text-slate-500 block mt-1">At {solar?.peak_power_time_12h || "12:15 PM"}</span>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-4 interactive-card">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Inverter Saturation</span>
               <span className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
                 {solar?.estimated_clipping_kwh ? `${solar.estimated_clipping_kwh.toFixed(2)} kWh` : "None"}
@@ -183,7 +183,7 @@ export const SolarPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-5 interactive-card">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
               Hourly Solar Energy Generation Profile
             </h3>

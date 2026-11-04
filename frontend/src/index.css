@@ -95,11 +95,106 @@ body {
   animation: pulsePill 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+.card-stagger-1 {
+  animation: cardEnter 240ms cubic-bezier(0.16, 1, 0.3, 1) 0ms forwards;
+  opacity: 0;
+}
+.card-stagger-2 {
+  animation: cardEnter 240ms cubic-bezier(0.16, 1, 0.3, 1) 40ms forwards;
+  opacity: 0;
+}
+.card-stagger-3 {
+  animation: cardEnter 240ms cubic-bezier(0.16, 1, 0.3, 1) 80ms forwards;
+  opacity: 0;
+}
+.card-stagger-4 {
+  animation: cardEnter 240ms cubic-bezier(0.16, 1, 0.3, 1) 120ms forwards;
+  opacity: 0;
+}
+.card-stagger-5 {
+  animation: cardEnter 240ms cubic-bezier(0.16, 1, 0.3, 1) 160ms forwards;
+  opacity: 0;
+}
+.card-stagger-6 {
+  animation: cardEnter 240ms cubic-bezier(0.16, 1, 0.3, 1) 200ms forwards;
+  opacity: 0;
+}
+
+.interactive-card {
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms ease-out;
+}
+.interactive-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+}
+.dark .interactive-card:hover {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.35), 0 8px 10px -6px rgba(0, 0, 0, 0.25);
+}
+
+.btn-interactive {
+  transition: transform 120ms ease-out, background-color 120ms ease-out, box-shadow 120ms ease-out, border-color 120ms ease-out;
+}
+.btn-interactive:active {
+  transform: scale(0.97);
+}
+
+@keyframes flowDash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+@keyframes flowDashReverse {
+  to {
+    stroke-dashoffset: 24;
+  }
+}
+
+.flow-line-active {
+  stroke-dasharray: 6 6;
+  animation: flowDash var(--flow-speed, 1.2s) linear infinite;
+}
+.flow-line-reverse {
+  stroke-dasharray: 6 6;
+  animation: flowDashReverse var(--flow-speed, 1.2s) linear infinite;
+}
+
+@keyframes shimmerWave {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.skeleton-shimmer {
+  background: linear-gradient(90deg, rgba(241, 245, 249, 0.8) 0%, rgba(226, 232, 240, 0.6) 50%, rgba(241, 245, 249, 0.8) 100%);
+  background-size: 200% 100%;
+  animation: shimmerWave 1.8s ease-in-out infinite;
+}
+.dark .skeleton-shimmer {
+  background: linear-gradient(90deg, rgba(30, 41, 59, 0.8) 0%, rgba(51, 65, 85, 0.6) 50%, rgba(30, 41, 59, 0.8) 100%);
+  background-size: 200% 100%;
+  animation: shimmerWave 1.8s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-page-enter,
   .animate-card-enter,
-  .animate-pulse-pill {
+  .animate-pulse-pill,
+  .card-stagger-1,
+  .card-stagger-2,
+  .card-stagger-3,
+  .card-stagger-4,
+  .card-stagger-5,
+  .card-stagger-6,
+  .interactive-card,
+  .btn-interactive,
+  .flow-line-active,
+  .flow-line-reverse,
+  .skeleton-shimmer {
     animation: none !important;
     transition: none !important;
+    transform: none !important;
+    opacity: 1 !important;
   }
 }

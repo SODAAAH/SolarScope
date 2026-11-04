@@ -1,5 +1,6 @@
 import React from 'react';
 import { Zap, Home, CloudSun } from 'lucide-react';
+import { useAnimatedNumber } from '../../lib/useAnimatedNumber';
 
 interface LiveSummaryCardProps {
   accumulativeProductionKwh?: number;
@@ -18,8 +19,14 @@ export const LiveSummaryCard: React.FC<LiveSummaryCardProps> = ({
   selfConsumptionRate = 84.5,
   weatherTempC = 28
 }) => {
+  const animAccumProd = useAnimatedNumber(accumulativeProductionKwh, 700, 2);
+  const animAccumCons = useAnimatedNumber(accumulativeConsumptionKwh, 700, 2);
+  const animDailyProd = useAnimatedNumber(dailyProductionKwh, 600, 2);
+  const animDailyCons = useAnimatedNumber(dailyConsumptionKwh, 600, 2);
+  const animSelfCons = useAnimatedNumber(selfConsumptionRate, 600, 1);
+
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm h-full flex flex-col justify-between">
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm h-full flex flex-col justify-between interactive-card">
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Summary</h3>
@@ -35,8 +42,8 @@ export const LiveSummaryCard: React.FC<LiveSummaryCardProps> = ({
             </div>
             <div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Accumulative production</div>
-              <div className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                {accumulativeProductionKwh.toFixed(2)} <span className="text-xs font-normal text-slate-500">kWh</span>
+              <div className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
+                {animAccumProd} <span className="text-xs font-normal text-slate-500">kWh</span>
               </div>
             </div>
           </div>
@@ -47,8 +54,8 @@ export const LiveSummaryCard: React.FC<LiveSummaryCardProps> = ({
             </div>
             <div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Accumulative consumption</div>
-              <div className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                {accumulativeConsumptionKwh.toFixed(2)} <span className="text-xs font-normal text-slate-500">kWh</span>
+              <div className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
+                {animAccumCons} <span className="text-xs font-normal text-slate-500">kWh</span>
               </div>
             </div>
           </div>
@@ -59,22 +66,22 @@ export const LiveSummaryCard: React.FC<LiveSummaryCardProps> = ({
         <div className="grid grid-cols-2 gap-3">
           <div className="p-2.5 rounded-lg bg-slate-50/40 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800/40">
             <div className="text-[11px] text-slate-500 dark:text-slate-400">Daily Production</div>
-            <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-0.5">
-              {dailyProductionKwh.toFixed(2)} <span className="text-[10px] font-normal text-slate-500">kWh</span>
+            <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-0.5 tabular-nums">
+              {animDailyProd} <span className="text-[10px] font-normal text-slate-500">kWh</span>
             </div>
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-50/40 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800/40">
             <div className="text-[11px] text-slate-500 dark:text-slate-400">Daily Consumption</div>
-            <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-0.5">
-              {dailyConsumptionKwh.toFixed(2)} <span className="text-[10px] font-normal text-slate-500">kWh</span>
+            <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-0.5 tabular-nums">
+              {animDailyCons} <span className="text-[10px] font-normal text-slate-500">kWh</span>
             </div>
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-50/40 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800/40">
             <div className="text-[11px] text-slate-500 dark:text-slate-400">Self-Consumption</div>
-            <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
-              {selfConsumptionRate.toFixed(1)}%
+            <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 tabular-nums">
+              {animSelfCons}%
             </div>
           </div>
 

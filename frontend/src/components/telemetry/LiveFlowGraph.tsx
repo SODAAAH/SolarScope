@@ -87,8 +87,22 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
   const pathInvToUps = "M 250 167 V 197";
   const pathInvToLoad = "M 292 150 H 345 V 220 H 397";
 
+  const getSpeed = (watts: number) => {
+    const w = Math.abs(watts);
+    if (w > 3000) return { dur: "0.9s", half: "0.45s" };
+    if (w > 1500) return { dur: "1.3s", half: "0.65s" };
+    if (w > 500) return { dur: "1.8s", half: "0.9s" };
+    return { dur: "2.4s", half: "1.2s" };
+  };
+
+  const pvSpeed = getSpeed(nodes.solar.power_w);
+  const battSpeed = getSpeed(nodes.battery.power_w);
+  const gridSpeed = getSpeed(nodes.grid.power_w);
+  const upsSpeed = getSpeed(nodes.ups.power_w);
+  const loadSpeed = getSpeed(nodes.load.power_w);
+
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm h-full flex flex-col justify-between">
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm h-full flex flex-col justify-between interactive-card">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Flow Graph</h3>
@@ -161,10 +175,10 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             <>
               <path d={pathPvToInv} fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.2s_linear_infinite]" filter="url(#glow-solar)" />
               <circle r="4" fill="#F59E0B">
-                <animateMotion path={pathPvToInv} dur="1.8s" repeatCount="indefinite" />
+                <animateMotion path={pathPvToInv} dur={pvSpeed.dur} repeatCount="indefinite" />
               </circle>
               <circle r="3" fill="#FDE68A">
-                <animateMotion path={pathPvToInv} dur="1.8s" begin="0.9s" repeatCount="indefinite" />
+                <animateMotion path={pathPvToInv} dur={pvSpeed.dur} begin={pvSpeed.half} repeatCount="indefinite" />
               </circle>
             </>
           )}
@@ -173,10 +187,10 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             <>
               <path d={pathBattToInv} fill="none" stroke="#10B981" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.2s_linear_infinite]" filter="url(#glow-batt)" />
               <circle r="4" fill="#10B981">
-                <animateMotion path={pathBattToInv} dur="1.8s" repeatCount="indefinite" />
+                <animateMotion path={pathBattToInv} dur={battSpeed.dur} repeatCount="indefinite" />
               </circle>
               <circle r="3" fill="#6EE7B7">
-                <animateMotion path={pathBattToInv} dur="1.8s" begin="0.9s" repeatCount="indefinite" />
+                <animateMotion path={pathBattToInv} dur={battSpeed.dur} begin={battSpeed.half} repeatCount="indefinite" />
               </circle>
             </>
           )}
@@ -185,10 +199,10 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             <>
               <path d={pathInvToBatt} fill="none" stroke="#3B82F6" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.2s_linear_infinite]" filter="url(#glow-batt)" />
               <circle r="4" fill="#3B82F6">
-                <animateMotion path={pathInvToBatt} dur="1.8s" repeatCount="indefinite" />
+                <animateMotion path={pathInvToBatt} dur={battSpeed.dur} repeatCount="indefinite" />
               </circle>
               <circle r="3" fill="#93C5FD">
-                <animateMotion path={pathInvToBatt} dur="1.8s" begin="0.9s" repeatCount="indefinite" />
+                <animateMotion path={pathInvToBatt} dur={battSpeed.dur} begin={battSpeed.half} repeatCount="indefinite" />
               </circle>
             </>
           )}
@@ -197,7 +211,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             <>
               <path d={pathGridToInv} fill="none" stroke="#6366F1" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.5s_linear_infinite]" filter="url(#glow-grid)" />
               <circle r="4" fill="#6366F1">
-                <animateMotion path={pathGridToInv} dur="2.2s" repeatCount="indefinite" />
+                <animateMotion path={pathGridToInv} dur={gridSpeed.dur} repeatCount="indefinite" />
               </circle>
             </>
           )}
@@ -206,7 +220,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             <>
               <path d={pathInvToGrid} fill="none" stroke="#10B981" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.5s_linear_infinite]" filter="url(#glow-grid)" />
               <circle r="4" fill="#10B981">
-                <animateMotion path={pathInvToGrid} dur="2.2s" repeatCount="indefinite" />
+                <animateMotion path={pathInvToGrid} dur={gridSpeed.dur} repeatCount="indefinite" />
               </circle>
             </>
           )}
@@ -215,10 +229,10 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             <>
               <path d={pathInvToUps} fill="none" stroke="#0EA5E9" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.2s_linear_infinite]" filter="url(#glow-load)" />
               <circle r="4" fill="#0EA5E9">
-                <animateMotion path={pathInvToUps} dur="1.4s" repeatCount="indefinite" />
+                <animateMotion path={pathInvToUps} dur={upsSpeed.dur} repeatCount="indefinite" />
               </circle>
               <circle r="3" fill="#7DD3FC">
-                <animateMotion path={pathInvToUps} dur="1.4s" begin="0.7s" repeatCount="indefinite" />
+                <animateMotion path={pathInvToUps} dur={upsSpeed.dur} begin={upsSpeed.half} repeatCount="indefinite" />
               </circle>
             </>
           )}
@@ -227,7 +241,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             <>
               <path d={pathInvToLoad} fill="none" stroke="#F97316" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.4s_linear_infinite]" filter="url(#glow-load)" />
               <circle r="4" fill="#F97316">
-                <animateMotion path={pathInvToLoad} dur="2.0s" repeatCount="indefinite" />
+                <animateMotion path={pathInvToLoad} dur={loadSpeed.dur} repeatCount="indefinite" />
               </circle>
             </>
           )}

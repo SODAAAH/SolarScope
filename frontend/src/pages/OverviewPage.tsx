@@ -500,11 +500,11 @@ export const OverviewPage: React.FC = () => {
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-8">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
-            <div className="md:col-span-12 lg:col-span-5 flex flex-col">
+            <div className="md:col-span-12 lg:col-span-5 flex flex-col card-stagger-1">
               <LiveFlowGraph initialData={liveFlow} onRefreshRequested={fetchOverviewData} />
             </div>
 
-            <div className="md:col-span-6 lg:col-span-3 flex flex-col">
+            <div className="md:col-span-6 lg:col-span-3 flex flex-col card-stagger-2">
               <LiveSummaryCard
                 accumulativeProductionKwh={liveFlow?.summary.accumulative_production_kwh ?? 270.80}
                 accumulativeConsumptionKwh={liveFlow?.summary.accumulative_consumption_kwh ?? 371.10}
@@ -519,7 +519,7 @@ export const OverviewPage: React.FC = () => {
               />
             </div>
 
-            <div className="md:col-span-6 lg:col-span-4 flex flex-col">
+            <div className="md:col-span-6 lg:col-span-4 flex flex-col card-stagger-3">
               <SolarUtilizationCard
                 consumptionTotalKwh={currentMonthLoadTotal > 0 ? currentMonthLoadTotal : (liveFlow?.utilization?.consumption_total_kwh ?? 371.10)}
                 consumptionBreakdown={currentMonthLoadTotal > 0 ? monthConsBreakdown : liveFlow?.utilization?.consumption_breakdown}
@@ -533,7 +533,7 @@ export const OverviewPage: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs card-stagger-4 interactive-card">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Power Profile</h3>
@@ -598,7 +598,7 @@ export const OverviewPage: React.FC = () => {
               {powerProfileOption && <EChartComponent option={powerProfileOption} height={280} />}
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs card-stagger-5 interactive-card">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Generation & Usage History</h3>
                 <div className="flex items-center gap-2">

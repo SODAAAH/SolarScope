@@ -222,7 +222,7 @@ export const TrendsPage: React.FC = () => {
 
       {currentTab === "summaries" && (
         <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs card-stagger-1 interactive-card">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -236,7 +236,7 @@ export const TrendsPage: React.FC = () => {
             <EChartComponent option={hourlyChartOption} height="320px" />
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs card-stagger-2 interactive-card">
             <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
               <div>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">

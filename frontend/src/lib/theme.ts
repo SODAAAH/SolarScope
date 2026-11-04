@@ -21,6 +21,11 @@ export function getBaseEChartsOption(isDark = false) {
 
   return {
     backgroundColor: 'transparent',
+    animation: true,
+    animationDuration: 500,
+    animationEasing: 'cubicOut',
+    animationDurationUpdate: 400,
+    animationEasingUpdate: 'cubicInOut',
     textStyle: {
       fontFamily: 'Inter, system-ui, sans-serif'
     },
