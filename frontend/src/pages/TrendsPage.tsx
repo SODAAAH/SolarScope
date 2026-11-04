@@ -1,3 +1,4 @@
+import { Tooltip } from '../components/common/Tooltip';
 import React, { useState, useEffect } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { Calendar, Scale, BarChart3, AlertCircle, RefreshCw } from "lucide-react";
@@ -358,9 +359,16 @@ export const TrendsPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Solar Generation
-                  </span>
+                  <Tooltip
+                    title="Comparative Solar Generation"
+                    content="Total solar energy generated during Period A compared to Period B."
+                    provenance="Calculated"
+                    underline
+                  >
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">
+                      Solar Generation
+                    </span>
+                  </Tooltip>
                   <span className="text-[11px] font-mono text-slate-400">
                     {compareResult.period_a?.days_count || 1}d vs {compareResult.period_b?.days_count || 1}d
                   </span>
@@ -394,9 +402,16 @@ export const TrendsPage: React.FC = () => {
 
               <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Household Consumption
-                  </span>
+                  <Tooltip
+                    title="Comparative Household Consumption"
+                    content="Total electricity consumed across household loads during Period A compared to Period B."
+                    provenance="Calculated"
+                    underline
+                  >
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">
+                      Household Consumption
+                    </span>
+                  </Tooltip>
                   <span className="text-[11px] font-mono text-slate-400">
                     {compareResult.period_a?.days_count || 1}d vs {compareResult.period_b?.days_count || 1}d
                   </span>
@@ -430,9 +445,16 @@ export const TrendsPage: React.FC = () => {
 
               <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Grid Purchases (TEI)
-                  </span>
+                  <Tooltip
+                    title="Comparative Utility Grid Purchases"
+                    content="Total electricity imported from the TEI utility grid during Period A compared to Period B."
+                    provenance="Calculated"
+                    underline
+                  >
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">
+                      Grid Purchases (TEI)
+                    </span>
+                  </Tooltip>
                   <span className="text-[11px] font-mono text-slate-400">
                     {compareResult.period_a?.days_count || 1}d vs {compareResult.period_b?.days_count || 1}d
                   </span>
@@ -471,9 +493,15 @@ export const TrendsPage: React.FC = () => {
       {currentTab === "statistics" && (
         <div className="space-y-6">
           <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
-              Power Duration Curves (% of Time Exceeded)
-            </h3>
+            <Tooltip
+                title="Power Duration Curves"
+                content="Cumulative frequency distribution showing the percentage of observation time that electrical load, solar generation, or grid import exceeded any given power level (kW)."
+                position="bottom"
+              >
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4 cursor-help">
+                  Power Duration Curves (% of Time Exceeded)
+                </h3>
+              </Tooltip>
             <EChartComponent option={durationOption} height="360px" />
           </div>
         </div>

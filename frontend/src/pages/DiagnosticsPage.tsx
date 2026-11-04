@@ -1,3 +1,4 @@
+import { Tooltip } from '../components/common/Tooltip';
 import React, { useState, useEffect } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { Scale, AlertTriangle, ShieldCheck, CheckCircle2, AlertCircle } from "lucide-react";
@@ -129,7 +130,15 @@ export const DiagnosticsPage: React.FC = () => {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-1 interactive-card">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Node Balance Check</span>
+              <Tooltip
+                title="Kirchhoff Node Balance Check"
+                content="First-principles verification that total energy into the inverter equals total energy out plus conversion and standby losses."
+                formula="Residual = (PV + Import + Discharge) - (Load + Charge + Export)"
+                provenance="Calculated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Node Balance Check</span>
+              </Tooltip>
               <div className="flex items-center gap-2 mt-2">
                 {balance?.is_balanced ? (
                   <CheckCircle2 className="w-6 h-6 text-emerald-500" />
@@ -146,7 +155,15 @@ export const DiagnosticsPage: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-4 interactive-card">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Solar Self-Sufficiency</span>
+              <Tooltip
+                title="Solar Self-Sufficiency"
+                content="The percentage of your home electricity supplied by your own solar panels and battery storage without relying on utility purchases."
+                formula="Autonomy = 1 - (Grid Import / Total Load)"
+                provenance="Calculated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Solar Self-Sufficiency</span>
+              </Tooltip>
               <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2 tabular-nums">
                 {((balance?.self_sufficiency_ratio || 0) * 100).toFixed(1)}%
               </div>
@@ -154,7 +171,15 @@ export const DiagnosticsPage: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-4 interactive-card">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Solar Self-Consumption</span>
+              <Tooltip
+                title="Solar Self-Consumption"
+                content="The percentage of generated solar electricity that was directly used by your home appliances or stored in your battery rather than exported."
+                formula="Self-Consumption = (Total PV - Export) / Total PV"
+                provenance="Calculated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Solar Self-Consumption</span>
+              </Tooltip>
               <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2 tabular-nums">
                 {((balance?.self_consumption_ratio || 0) * 100).toFixed(1)}%
               </div>
@@ -163,9 +188,15 @@ export const DiagnosticsPage: React.FC = () => {
           </div>
 
           <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-4 interactive-card">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
-              Energy Flow Distribution (Sankey Flow)
-            </h3>
+            <Tooltip
+              title="Energy Flow Distribution"
+              content="Sankey diagram showing conservation of energy: tracing energy origins (solar PV, TEI grid, battery discharge) to destinations (home consumption, battery storage, and inverter standby tare)."
+              position="bottom"
+            >
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4 cursor-help">
+                Energy Flow Distribution (Sankey Flow)
+              </h3>
+            </Tooltip>
             <EChartComponent option={sankeyOption} height="360px" />
           </div>
         </div>
@@ -218,9 +249,15 @@ export const DiagnosticsPage: React.FC = () => {
       {currentTab === "hardware" && (
         <div className="space-y-6">
           <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Verified Physical Hardware Thresholds
-            </h3>
+            <Tooltip
+              title="Hardware Specification Limits"
+              content="Physical nameplate ratings, continuous inverter thresholds, and BMS firmware cutoff parameters governing safe system dispatch."
+              position="bottom"
+            >
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-help">
+                Verified Physical Hardware Thresholds
+              </h3>
+            </Tooltip>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
               <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg space-y-2">
                 <span className="font-semibold text-slate-800 dark:text-slate-200 block">Deye Hybrid Inverter</span>

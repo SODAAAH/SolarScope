@@ -1,3 +1,4 @@
+import { Tooltip } from '../common/Tooltip';
 import React, { useState } from 'react';
 import { HelpCircle, X, ChevronRight, type LucideIcon } from 'lucide-react';
 import { getTerm, type ViewMode } from '../../lib/terminology';
@@ -78,9 +79,18 @@ export const MetricCard: React.FC<MetricCardProps> = ({
               <Icon className="w-4 h-4" />
             </div>
           )}
-          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 leading-tight">
-            {label}
-          </span>
+          <Tooltip
+            title={term.technicalLabel || label}
+            content={explanation}
+            formula={term.formula}
+            provenance={term.provenance}
+            position="top"
+            underline
+          >
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 leading-tight cursor-help">
+              {label}
+            </span>
+          </Tooltip>
         </div>
 
         <div className="flex items-center gap-1">

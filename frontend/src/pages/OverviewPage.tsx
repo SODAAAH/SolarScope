@@ -1,3 +1,4 @@
+import { Tooltip } from '../components/common/Tooltip';
 import React, { useState, useEffect } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -536,7 +537,13 @@ export const OverviewPage: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs card-stagger-4 interactive-card">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Power Profile</h3>
+                  <Tooltip
+                    title="24-Hour Power Profile"
+                    content="High-resolution time series of solar generation, battery power and state-of-charge, grid power exchange, and total household consumption."
+                    position="bottom"
+                  >
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-help">Power Profile</h3>
+                  </Tooltip>
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">24-Hour</span>
                   {timelineLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />}
                 </div>
@@ -600,7 +607,13 @@ export const OverviewPage: React.FC = () => {
 
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs card-stagger-5 interactive-card">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Generation & Usage History</h3>
+                <Tooltip
+                  title="Generation & Usage History"
+                  content="Stacked daily historical breakdown comparing rooftop solar generation, battery discharge/charge cycling, utility grid import, and household load."
+                  position="bottom"
+                >
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-help">Generation & Usage History</h3>
+                </Tooltip>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => {

@@ -1,3 +1,4 @@
+import { Tooltip } from '../components/common/Tooltip';
 import React, { useState, useEffect } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { Zap, Home, BatteryCharging, Activity, Clock } from "lucide-react";
@@ -171,7 +172,15 @@ export const EnergyPage: React.FC = () => {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Consumption</span>
+              <Tooltip
+                title="Total Household Consumption"
+                content="Total electrical energy consumed across all home circuits during the observation cycle."
+                formula="E_load = ∫ P_load(t) dt"
+                provenance="Calculated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Total Consumption</span>
+              </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
                 {(consumption.consumed_energy_kwh || 0).toFixed(2)} kWh
               </div>
@@ -179,7 +188,15 @@ export const EnergyPage: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Baseload Power</span>
+              <Tooltip
+                title="Baseload Power Draw"
+                content="Continuous 24/7 background power draw from always-on appliances (refrigerators, Wi-Fi routers, security systems, standby electronics). Estimated from overnight 02:00-05:00 measurements."
+                formula="P_base = Quantile_0.05(P_load[02:00-05:00])"
+                provenance="Estimated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Baseload Power</span>
+              </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
                 {(consumption.baseload_power_kw || 0).toFixed(2)} kW
               </div>
@@ -187,7 +204,14 @@ export const EnergyPage: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Peak Demand</span>
+              <Tooltip
+                title="Peak Power Demand"
+                content="The maximum instantaneous power rate drawn by household appliances at any single moment."
+                provenance="Measured"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Peak Demand</span>
+              </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
                 {(consumption.peak_load_kw || 0).toFixed(2)} kW
               </div>
@@ -195,7 +219,14 @@ export const EnergyPage: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Daytime Use Ratio</span>
+              <Tooltip
+                title="Daytime Solar Coincidence"
+                content="Fraction of total home electricity consumed during solar daylight hours (06:00 - 18:00) when free rooftop solar is available."
+                provenance="Calculated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Daytime Use Ratio</span>
+              </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
                 {consumption.day_consumption_ratio_percent ? consumption.day_consumption_ratio_percent.toFixed(1) : "55.0"}%
               </div>
@@ -209,7 +240,15 @@ export const EnergyPage: React.FC = () => {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Grid Import</span>
+              <Tooltip
+                title="Utility Grid Import"
+                content="Electricity purchased from TEI when household demand exceeded solar generation and battery discharge."
+                formula="E_import = ∫ max(0, P_grid(t)) dt"
+                provenance="Calculated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Grid Import</span>
+              </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400 mt-1">
                 {(grid.imported_energy_kwh || 0).toFixed(2)} kWh
               </div>
@@ -217,7 +256,15 @@ export const EnergyPage: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Grid Dependence</span>
+              <Tooltip
+                title="Grid Dependence Ratio"
+                content="Proportion of household energy supplied by the utility grid. A lower percentage reflects higher self-sufficiency and solar autonomy."
+                formula="Dependence = Grid Import / Total Consumption"
+                provenance="Calculated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Grid Dependence</span>
+              </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
                 {((grid.grid_dependence_ratio || 0) * 100).toFixed(1)}%
               </div>
@@ -225,7 +272,14 @@ export const EnergyPage: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Peak Import Power</span>
+              <Tooltip
+                title="Peak Grid Import Surge"
+                content="Highest instantaneous power surge drawn from the TEI utility service lines."
+                provenance="Measured"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Peak Import Power</span>
+              </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
                 {(grid.peak_import_kw || 0).toFixed(2)} kW
               </div>
@@ -233,7 +287,14 @@ export const EnergyPage: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Reserve Cutoff Import</span>
+              <Tooltip
+                title="Reserve Cutoff Grid Import"
+                content="Electricity imported from the grid after battery reached its configured minimum depth-of-discharge reserve cutoff (20% SOC)."
+                provenance="Calculated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Reserve Cutoff Import</span>
+              </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400 mt-1">
                 {(grid.reserve_coincident_import_kwh || 0).toFixed(2)} kWh
               </div>
@@ -283,7 +344,14 @@ export const EnergyPage: React.FC = () => {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Remaining Autonomy</span>
+              <Tooltip
+                title="Remaining Battery Autonomy"
+                content="Estimated runtime the battery can sustain current household consumption before reaching the 20% safe reserve floor."
+                provenance="Estimated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Remaining Autonomy</span>
+              </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1.5">
                 <Clock className="w-5 h-5" />
                 <span>{battery.estimated_autonomy_formatted || "8h 30m"}</span>
@@ -292,7 +360,15 @@ export const EnergyPage: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Charge Level (SOC)</span>
+              <Tooltip
+                title="Battery State of Charge"
+                content="Current percentage of total usable battery capacity remaining in the LiFePO4 battery bank."
+                formula="SOC = Remaining Ah / Rated Ah × 100%"
+                provenance="Measured"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Charge Level (SOC)</span>
+              </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
                 {(battery.final_soc_percent || 0).toFixed(0)}%
               </div>
@@ -300,7 +376,15 @@ export const EnergyPage: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Round-Trip Efficiency</span>
+              <Tooltip
+                title="Round-Trip Coulombic Efficiency"
+                content="Percentage of electrical energy recovered from the battery bank compared to total electrical energy injected during charging."
+                formula="RTE = Total Discharged (kWh) / Total Charged (kWh) × 100%"
+                provenance="Calculated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Round-Trip Efficiency</span>
+              </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
                 {(battery.round_trip_efficiency_percent || 95.0).toFixed(1)}%
               </div>
@@ -308,7 +392,14 @@ export const EnergyPage: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">BMS Current Limit</span>
+              <Tooltip
+                title="BMS Current Threshold"
+                content="Maximum continuous DC charge/discharge current permitted by the Battery Management System hardware to prevent overheating and cell degradation."
+                provenance="Measured"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">BMS Current Limit</span>
+              </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
                 {battery.bms_limit_enforced_a || 100.0} A
               </div>

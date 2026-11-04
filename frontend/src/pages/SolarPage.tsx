@@ -1,3 +1,4 @@
+import { Tooltip } from '../components/common/Tooltip';
 import React, { useState, useEffect } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { Sun, CloudSun, Calendar, Cloud, Thermometer } from "lucide-react";
@@ -151,7 +152,15 @@ export const SolarPage: React.FC = () => {
         <div className="space-y-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-1 interactive-card">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Total Solar Generated</span>
+              <Tooltip
+                title="Total Solar Generated"
+                content="Total clean electrical energy produced by your rooftop solar PV array over the selected period."
+                formula="E_pv = ∫ P_pv(t) dt"
+                provenance="Calculated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Total Solar Generated</span>
+              </Tooltip>
               <span className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
                 {solar?.total_generation_kwh?.toFixed(2)} <span className="text-xs font-normal text-slate-500">kWh</span>
               </span>
@@ -159,7 +168,15 @@ export const SolarPage: React.FC = () => {
             </div>
 
             <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-2 interactive-card">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Specific Yield</span>
+              <Tooltip
+                title="Specific PV Yield"
+                content="Standard normalized metric measuring kilowatt-hours generated per kilowatt-peak of installed DC solar panel capacity (6.2 kWp)."
+                formula="Specific Yield = Total PV (kWh) / Installed Capacity (kWp)"
+                provenance="Calculated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Specific Yield</span>
+              </Tooltip>
               <span className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
                 {solar?.specific_yield_kwh_per_kwp?.toFixed(2)} <span className="text-xs font-normal text-slate-500">kWh/kWp</span>
               </span>
@@ -167,7 +184,14 @@ export const SolarPage: React.FC = () => {
             </div>
 
             <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-3 interactive-card">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Peak PV Power</span>
+              <Tooltip
+                title="Peak PV Power"
+                content="The highest instantaneous solar direct-current output recorded during the active observation period."
+                provenance="Measured"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Peak PV Power</span>
+              </Tooltip>
               <span className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
                 {solar?.peak_power_kw?.toFixed(2)} <span className="text-xs font-normal text-slate-500">kW</span>
               </span>
@@ -175,7 +199,14 @@ export const SolarPage: React.FC = () => {
             </div>
 
             <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-4 interactive-card">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Inverter Saturation</span>
+              <Tooltip
+                title="Inverter AC Saturation & Clipping"
+                content="Energy lost when DC array production exceeds the continuous AC inverter threshold (6.0 kW). System operates safely within continuous ratings."
+                provenance="Estimated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Inverter Saturation</span>
+              </Tooltip>
               <span className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
                 {solar?.estimated_clipping_kwh ? `${solar.estimated_clipping_kwh.toFixed(2)} kWh` : "None"}
               </span>
@@ -198,7 +229,13 @@ export const SolarPage: React.FC = () => {
             <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
               <Cloud className="w-8 h-8 text-slate-400" />
               <div>
-                <span className="text-xs text-slate-500 block">Cloud Cover</span>
+                <Tooltip
+                    title="Atmospheric Cloud Cover"
+                    content="Fraction of sky obscured by clouds according to local meteorological radar and satellite observation for Central Luzon."
+                    underline
+                  >
+                    <span className="text-xs text-slate-500 block cursor-help">Cloud Cover</span>
+                  </Tooltip>
                 <span className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                   {weather?.current_conditions.cloud_cover_percent || 25}%
                 </span>
@@ -209,7 +246,14 @@ export const SolarPage: React.FC = () => {
             <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
               <Sun className="w-8 h-8 text-amber-500" />
               <div>
-                <span className="text-xs text-slate-500 block">Solar Radiation</span>
+                <Tooltip
+                    title="Solar Irradiance (GHI)"
+                    content="Global Horizontal Irradiance measuring total direct and diffuse solar power incident on a horizontal surface in W/m²."
+                    provenance="Measured"
+                    underline
+                  >
+                    <span className="text-xs text-slate-500 block cursor-help">Solar Radiation</span>
+                  </Tooltip>
                 <span className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
                   {weather?.current_conditions.solar_radiation_wm2 || 650} W/m²
                 </span>
@@ -220,7 +264,14 @@ export const SolarPage: React.FC = () => {
             <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
               <Thermometer className="w-8 h-8 text-rose-500" />
               <div>
-                <span className="text-xs text-slate-500 block">Ambient Temperature</span>
+                <Tooltip
+                    title="Outdoor Ambient Temperature"
+                    content="Ambient dry-bulb temperature. Rooftop photovoltaic panels experience a thermal coefficient loss of ~0.4% per °C rise above 25°C."
+                    provenance="Measured"
+                    underline
+                  >
+                    <span className="text-xs text-slate-500 block cursor-help">Ambient Temperature</span>
+                  </Tooltip>
                 <span className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                   {weather?.current_conditions.temperature_c || 31}°C
                 </span>
@@ -240,7 +291,14 @@ export const SolarPage: React.FC = () => {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Expected Tomorrow Yield</span>
+              <Tooltip
+                title="Expected Tomorrow Yield"
+                content="Projected kilowatt-hours of solar energy tomorrow based on solar irradiation models, sun angle, and cloud forecast."
+                provenance="Estimated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Expected Tomorrow Yield</span>
+              </Tooltip>
               <span className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
                 {weather?.tomorrow_forecast.expected_solar_kwh || 21.5} <span className="text-xs font-normal text-slate-500">kWh</span>
               </span>
@@ -248,7 +306,14 @@ export const SolarPage: React.FC = () => {
             </div>
 
             <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Full Charge Probability</span>
+              <Tooltip
+                title="Full Battery Charge Probability"
+                content="Statistical likelihood that solar generation tomorrow will exceed daily loads enough to fill the battery to 100% SOC before sunset."
+                provenance="Estimated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Full Charge Probability</span>
+              </Tooltip>
               <span className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
                 {weather?.tomorrow_forecast.probability_full_charge_percent || 85}%
               </span>
@@ -256,7 +321,14 @@ export const SolarPage: React.FC = () => {
             </div>
 
             <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Sunset Battery SOC</span>
+              <Tooltip
+                title="Projected Sunset Battery SOC"
+                content="Forecasted battery state-of-charge percentage at approximately 6:00 PM sunset tomorrow before evening discharge begins."
+                provenance="Estimated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Sunset Battery SOC</span>
+              </Tooltip>
               <span className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
                 {weather?.tomorrow_forecast.projected_sunset_soc_percent || 95}%
               </span>
@@ -264,7 +336,14 @@ export const SolarPage: React.FC = () => {
             </div>
 
             <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Projected Night Autonomy</span>
+              <Tooltip
+                title="Projected Night Autonomy"
+                content="Estimated duration the battery will sustain household evening and overnight loads without buying electricity from TEI."
+                provenance="Estimated"
+                underline
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Projected Night Autonomy</span>
+              </Tooltip>
               <span className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
                 {weather?.tomorrow_forecast.projected_night_autonomy_formatted || "9h 30m"}
               </span>

@@ -32,3 +32,4 @@ export function useAnimatedNumber(target: number, durationMs: number = 600, deci
 
   return current.toFixed(decimals);
 }
+

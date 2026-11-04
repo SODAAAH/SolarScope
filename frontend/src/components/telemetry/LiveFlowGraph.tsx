@@ -3,6 +3,7 @@ import { Sun, Zap, Battery, Home, ShieldCheck, RefreshCw, CheckCircle2, ChevronD
 import type { LiveFlowResponse } from '../../lib/api';
 import { api } from '../../lib/api';
 import { format12HourTime } from '../../lib/formatters';
+import { Tooltip } from '../common/Tooltip';
 
 interface LiveFlowGraphProps {
   initialData?: LiveFlowResponse | null;
@@ -105,33 +106,51 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm h-full flex flex-col justify-between interactive-card">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Flow Graph</h3>
+          <Tooltip
+            title="Live Energy Flow"
+            content="Real-time physical power vectors showing current generation, battery charge/discharge, grid import/export, and home consumption."
+            position="bottom"
+          >
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-help">Flow Graph</h3>
+          </Tooltip>
           <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
             {data?.last_update_time ? format12HourTime(data.last_update_time, true) : ''}
           </span>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <button
-              onClick={() => setDataMode(dataMode === 'plant' ? 'live' : 'plant')}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors"
-            >
-              <span>{dataMode === 'plant' ? 'Plant data' : 'Live Telemetry'}</span>
-              <ChevronDown className="h-3 w-3 text-slate-400" />
-            </button>
-          </div>
-
-          <button
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
-              autoRefresh
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-            }`}
+          <Tooltip
+            title="Telemetry Channel"
+            content="Station cloud telemetry stream synchronized with inverter registers."
+            position="bottom"
           >
-            {autoRefresh ? `${secondsUntilRefresh}s` : 'Paused'}
-          </button>
+            <div className="relative">
+              <button
+                onClick={() => setDataMode(dataMode === 'plant' ? 'live' : 'plant')}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors"
+              >
+                <span>{dataMode === 'plant' ? 'Plant data' : 'Live Telemetry'}</span>
+                <ChevronDown className="h-3 w-3 text-slate-400" />
+              </button>
+            </div>
+          </Tooltip>
+
+          <Tooltip
+            title="Auto Refresh Rate"
+            content={autoRefresh ? `Telemetry polls live registers every 15 seconds. Next refresh in ${secondsUntilRefresh}s.` : 'Polling paused. Click to resume auto-refresh.'}
+            position="bottom"
+          >
+            <button
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                autoRefresh
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+              }`}
+            >
+              {autoRefresh ? `${secondsUntilRefresh}s` : 'Paused'}
+            </button>
+          </Tooltip>
 
           <button
             onClick={() => fetchFlowData()}
@@ -177,7 +196,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
               <circle r="4" fill="#F59E0B">
                 <animateMotion path={pathPvToInv} dur={pvSpeed.dur} repeatCount="indefinite" />
               </circle>
-              <circle r="3" fill="#FDE68A">
+              <circle r="3" fill="#FCD34D">
                 <animateMotion path={pathPvToInv} dur={pvSpeed.dur} begin={pvSpeed.half} repeatCount="indefinite" />
               </circle>
             </>
@@ -248,94 +267,148 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
 
           <foreignObject x="15" y="32" width="120" height="110" style={{ overflow: 'visible' }}>
             <div className="flex flex-col items-center">
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-                pvActive
-                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-500 shadow-sm shadow-amber-500/20'
-                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-              }`}>
-                <Sun className={`h-6 w-6 ${pvActive ? 'text-amber-500' : 'text-slate-400'}`} />
-              </div>
-              <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                {formatPower(nodes.solar.power_w, nodes.solar.power_kw)}
-              </span>
+              <Tooltip
+                title="Rooftop Solar PV Array"
+                content="Real-time direct-current (DC) power generated by your photovoltaic rooftop panels right now."
+                provenance="Measured"
+                position="bottom"
+              >
+                <div className="flex flex-col items-center cursor-help">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
+                    pvActive
+                      ? 'bg-amber-500/10 border-amber-500/40 text-amber-500 shadow-sm shadow-amber-500/20'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                  }`}>
+                    <Sun className={`h-6 w-6 ${pvActive ? 'text-amber-500' : 'text-slate-400'}`} />
+                  </div>
+                  <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    {formatPower(nodes.solar.power_w, nodes.solar.power_kw)}
+                  </span>
+                </div>
+              </Tooltip>
             </div>
           </foreignObject>
 
           <foreignObject x="365" y="32" width="120" height="130" style={{ overflow: 'visible' }}>
             <div className="flex flex-col items-center">
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-                gridImporting
-                  ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-500 shadow-sm shadow-indigo-500/20'
-                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-              }`}>
-                <Zap className={`h-6 w-6 ${gridImporting ? 'text-indigo-500' : 'text-slate-400'}`} />
-              </div>
-              <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                {formatPower(nodes.grid.power_w, nodes.grid.power_kw)}
-              </span>
-              <div className="mt-1 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="h-2.5 w-2.5" />
-                <span>{nodes.grid.status_label}</span>
-              </div>
+              <Tooltip
+                title="Utility Grid Connection (TEI)"
+                content="Current power exchange with the TEI electric grid. Positive watts indicate importing power; negative watts indicate exporting surplus solar."
+                provenance="Measured"
+                position="bottom"
+              >
+                <div className="flex flex-col items-center cursor-help">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
+                    gridImporting
+                      ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-500 shadow-sm shadow-indigo-500/20'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                  }`}>
+                    <Zap className={`h-6 w-6 ${gridImporting ? 'text-indigo-500' : 'text-slate-400'}`} />
+                  </div>
+                  <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    {formatPower(nodes.grid.power_w, nodes.grid.power_kw)}
+                  </span>
+                  <div className="mt-1 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="h-2.5 w-2.5" />
+                    <span>{nodes.grid.status_label}</span>
+                  </div>
+                </div>
+              </Tooltip>
             </div>
           </foreignObject>
 
           <foreignObject x="208" y="103" width="84" height="64" style={{ overflow: 'visible' }}>
-            <div className="w-full h-full rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-sm flex flex-col items-center justify-center p-1.5">
-              <div className="w-6 h-4 rounded-sm border border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-1">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <Tooltip
+              title="Hybrid Inverter"
+              content="Central bi-directional inverter managing power conversion between solar DC, battery storage, and 230V AC home appliances."
+              provenance="Measured"
+              position="top"
+              className="w-full h-full"
+            >
+              <div className="w-full h-full rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-sm flex flex-col items-center justify-center p-1.5 cursor-help">
+                <div className="w-6 h-4 rounded-sm border border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-1">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                </div>
+                <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">Inverter</span>
               </div>
-              <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">Inverter</span>
-            </div>
+            </Tooltip>
           </foreignObject>
 
           <foreignObject x="15" y="172" width="120" height="130" style={{ overflow: 'visible' }}>
             <div className="flex flex-col items-center pt-5">
-              <div className="relative">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-                  battDischarging || battCharging
-                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-500 shadow-sm shadow-emerald-500/20'
-                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-                }`}>
-                  <Battery className={`h-6 w-6 ${battDischarging || battCharging ? 'text-emerald-500' : 'text-slate-400'}`} />
+              <Tooltip
+                title="Battery Storage (LiFePO4)"
+                content="State of Charge (SOC) and real-time charging or discharging rate of your lithium iron phosphate home battery system."
+                formula="SOC(t) = Q_rem(t) / Q_nominal × 100%"
+                provenance="Measured"
+                position="top"
+              >
+                <div className="flex flex-col items-center cursor-help">
+                  <div className="relative">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
+                      battDischarging || battCharging
+                        ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-500 shadow-sm shadow-emerald-500/20'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                    }`}>
+                      <Battery className={`h-6 w-6 ${battDischarging || battCharging ? 'text-emerald-500' : 'text-slate-400'}`} />
+                    </div>
+                    <span className="absolute -top-2 -right-2 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold shadow-sm">
+                      {nodes.battery.soc_percent.toFixed(0)}%
+                    </span>
+                  </div>
+                  <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    {formatPower(nodes.battery.power_w, nodes.battery.power_kw)}
+                  </span>
                 </div>
-                <span className="absolute -top-2 -right-2 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold shadow-sm">
-                  {nodes.battery.soc_percent.toFixed(0)}%
-                </span>
-              </div>
-              <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                {formatPower(nodes.battery.power_w, nodes.battery.power_kw)}
-              </span>
+              </Tooltip>
             </div>
           </foreignObject>
 
           <foreignObject x="190" y="197" width="120" height="110" style={{ overflow: 'visible' }}>
             <div className="flex flex-col items-center">
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-                upsActive
-                  ? 'bg-sky-500/10 border-sky-500/40 text-sky-500 shadow-sm shadow-sky-500/20'
-                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-              }`}>
-                <ShieldCheck className={`h-6 w-6 ${upsActive ? 'text-sky-500' : 'text-slate-400'}`} />
-              </div>
-              <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                {formatPower(nodes.ups.power_w, nodes.ups.power_kw)}
-              </span>
+              <Tooltip
+                title="Critical UPS Backup Port"
+                content="Protected household circuits connected to the inverter dedicated emergency EPS backup port, running seamlessly without grid outages."
+                provenance="Measured"
+                position="top"
+              >
+                <div className="flex flex-col items-center cursor-help">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
+                    upsActive
+                      ? 'bg-sky-500/10 border-sky-500/40 text-sky-500 shadow-sm shadow-sky-500/20'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                  }`}>
+                    <ShieldCheck className={`h-6 w-6 ${upsActive ? 'text-sky-500' : 'text-slate-400'}`} />
+                  </div>
+                  <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    {formatPower(nodes.ups.power_w, nodes.ups.power_kw)}
+                  </span>
+                </div>
+              </Tooltip>
             </div>
           </foreignObject>
 
           <foreignObject x="365" y="192" width="120" height="110" style={{ overflow: 'visible' }}>
             <div className="flex flex-col items-center">
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-                loadActive
-                  ? 'bg-orange-500/10 border-orange-500/40 text-orange-500 shadow-sm shadow-orange-500/20'
-                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-              }`}>
-                <Home className={`h-6 w-6 ${loadActive ? 'text-orange-500' : 'text-slate-400'}`} />
-              </div>
-              <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                {formatPower(nodes.load.power_w, nodes.load.power_kw)}
-              </span>
+              <Tooltip
+                title="Household Consumption"
+                content="Total instantaneous power consumed across all circuits, appliances, air conditioners, and devices in your home."
+                provenance="Measured"
+                position="top"
+              >
+                <div className="flex flex-col items-center cursor-help">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
+                    loadActive
+                      ? 'bg-orange-500/10 border-orange-500/40 text-orange-500 shadow-sm shadow-orange-500/20'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                  }`}>
+                    <Home className={`h-6 w-6 ${loadActive ? 'text-orange-500' : 'text-slate-400'}`} />
+                  </div>
+                  <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    {formatPower(nodes.load.power_w, nodes.load.power_kw)}
+                  </span>
+                </div>
+              </Tooltip>
             </div>
           </foreignObject>
         </svg>

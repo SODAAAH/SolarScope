@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { EChartComponent } from '../charts/EChartComponent';
+import { Tooltip } from '../common/Tooltip';
 
 interface UtilizationSlice {
   label: string;
@@ -18,6 +19,34 @@ interface SolarUtilizationCardProps {
   onPrevMonth?: () => void;
   onNextMonth?: () => void;
 }
+
+const sliceDefinitions: Record<string, { title: string; content: string; provenance?: 'Measured' | 'Calculated' | 'Estimated' }> = {
+  Import: {
+    title: 'Utility Grid Import',
+    content: 'Electricity purchased from the TEI utility grid when solar and battery were insufficient.',
+    provenance: 'Calculated'
+  },
+  Discharge: {
+    title: 'Battery Discharge',
+    content: 'Stored battery power discharged to supply household loads during evening or peak demand hours.',
+    provenance: 'Calculated'
+  },
+  PV: {
+    title: 'Direct Solar to Home',
+    content: 'Solar electricity powering home appliances immediately as generated, with zero storage losses.',
+    provenance: 'Calculated'
+  },
+  Charge: {
+    title: 'Solar Stored in Battery',
+    content: 'Surplus solar energy stored into your battery pack for use during the night.',
+    provenance: 'Calculated'
+  },
+  Consumption: {
+    title: 'Self-Consumed Solar',
+    content: 'Solar energy absorbed directly by appliances without being stored or exported.',
+    provenance: 'Calculated'
+  }
+};
 
 export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
   consumptionTotalKwh = 371.10,
@@ -125,7 +154,13 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm h-full flex flex-col justify-between interactive-card">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Solar & Utilization</h3>
+        <Tooltip
+          title="Solar & Utilization Breakdown"
+          content="Energy source origins for home consumption (grid, battery, solar), and the destination split for solar production (battery charging vs immediate appliance use)."
+          position="bottom"
+        >
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-help">Solar & Utilization</h3>
+        </Tooltip>
 
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-md text-[11px] font-medium">
@@ -169,13 +204,28 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
             <EChartComponent option={consOption} height={144} />
           </div>
           <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px]">
-            {consSlices.map((s) => (
-              <div key={s.label} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
-                <span className="text-slate-500 dark:text-slate-400">{s.label}</span>
-                <span className="font-semibold text-slate-700 dark:text-slate-200">{s.pct.toFixed(0)}%</span>
-              </div>
-            ))}
+            {consSlices.map((s) => {
+              const def = sliceDefinitions[s.label];
+              return (
+                <div key={s.label} className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                  {def ? (
+                    <Tooltip
+                      title={def.title}
+                      content={def.content}
+                      provenance={def.provenance}
+                      position="top"
+                      underline
+                    >
+                      <span className="text-slate-500 dark:text-slate-400">{s.label}</span>
+                    </Tooltip>
+                  ) : (
+                    <span className="text-slate-500 dark:text-slate-400">{s.label}</span>
+                  )}
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">{s.pct.toFixed(0)}%</span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -184,13 +234,28 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
             <EChartComponent option={prodOption} height={144} />
           </div>
           <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px]">
-            {prodSlices.map((s) => (
-              <div key={s.label} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
-                <span className="text-slate-500 dark:text-slate-400">{s.label}</span>
-                <span className="font-semibold text-slate-700 dark:text-slate-200">{s.pct.toFixed(0)}%</span>
-              </div>
-            ))}
+            {prodSlices.map((s) => {
+              const def = sliceDefinitions[s.label];
+              return (
+                <div key={s.label} className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                  {def ? (
+                    <Tooltip
+                      title={def.title}
+                      content={def.content}
+                      provenance={def.provenance}
+                      position="top"
+                      underline
+                    >
+                      <span className="text-slate-500 dark:text-slate-400">{s.label}</span>
+                    </Tooltip>
+                  ) : (
+                    <span className="text-slate-500 dark:text-slate-400">{s.label}</span>
+                  )}
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">{s.pct.toFixed(0)}%</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

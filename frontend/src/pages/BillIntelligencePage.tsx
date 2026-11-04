@@ -1,3 +1,4 @@
+import { Tooltip } from '../components/common/Tooltip';
 import React, { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
@@ -434,9 +435,16 @@ export const BillIntelligencePage: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-2 card-stagger-1 interactive-card">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Estimated Next TEI Bill
-            </span>
+            <Tooltip
+              title="Estimated TEI Bill Forecast"
+              content="Deterministic unbundled billing forecast calculated using Tarlac Electric Inc (TEI) official 30-line residential tariff schedule and observed consumption patterns."
+              provenance="Estimated"
+              underline
+            >
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-help">
+                Estimated Next TEI Bill
+              </span>
+            </Tooltip>
             <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
               Forecast
             </span>
@@ -452,9 +460,16 @@ export const BillIntelligencePage: React.FC = () => {
 
         <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-2 card-stagger-2 interactive-card">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Electricity Bought So Far
-            </span>
+            <Tooltip
+              title="Current Cycle Grid Imports"
+              content="Actual kilowatt-hours of electricity imported from the utility grid since your last meter reading date."
+              provenance="Measured"
+              underline
+            >
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-help">
+                Electricity Bought So Far
+              </span>
+            </Tooltip>
             <span className="text-[10px] font-mono text-slate-400">
               Day {forecast?.days_elapsed || 0} of {forecast?.cycle_total_days || 30}
             </span>
@@ -470,9 +485,16 @@ export const BillIntelligencePage: React.FC = () => {
 
         <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-2 card-stagger-3 interactive-card">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Solar Savings This Cycle
-            </span>
+            <Tooltip
+              title="Estimated Cycle Solar Savings"
+              content="Money saved this billing cycle by powering household appliances directly with rooftop solar and battery storage instead of purchasing power from TEI."
+              provenance="Calculated"
+              underline
+            >
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-help">
+                Solar Savings This Cycle
+              </span>
+            </Tooltip>
             <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400">
               {forecast?.solar_savings.savings_percentage.toFixed(0)}% Lower
             </span>
@@ -488,9 +510,16 @@ export const BillIntelligencePage: React.FC = () => {
 
         <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Active TEI Generation Rate
-            </span>
+            <Tooltip
+              title="Active TEI Generation Charge"
+              content="Official pass-through rate per kWh charged by TEI for power generation supply from power plants and WESM."
+              provenance="Measured"
+              underline
+            >
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-help">
+                Active TEI Generation Rate
+              </span>
+            </Tooltip>
             <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded">
               Verified
             </span>
