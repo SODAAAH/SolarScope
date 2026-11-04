@@ -5,9 +5,11 @@ import {
   Search,
   Square,
   ShieldCheck,
+  CheckCircle2,
   Loader2
 } from "lucide-react";
 import { api } from "../lib/api";
+import { MarkdownView } from "../components/common/MarkdownView";
 
 interface OutletContextType {
   activeDatasetId: string | null;
@@ -215,22 +217,27 @@ export const AnalystPage: React.FC = () => {
       {streaming.streamedText && (
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
           <div className="p-5 bg-slate-50 dark:bg-slate-800/40 flex items-center justify-between gap-4">
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Diagnostic Finding
-              </span>
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mt-0.5">
-                Verified Energy Intelligence
-              </h3>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  Diagnostic Finding
+                </span>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  Verified Energy Intelligence
+                </h3>
+              </div>
             </div>
             {streaming.stats && (
               <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500">
                 {streaming.stats.path === "FAST_PATH" ? (
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 font-semibold">
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-100/70 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 font-semibold border border-emerald-200 dark:border-emerald-800">
                     Fast Path (Direct Compute: {streaming.stats.duration_ms || 3}ms)
                   </span>
                 ) : (
-                  <span className="px-2.5 py-1 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold">
+                  <span className="px-2.5 py-1 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold border border-slate-300 dark:border-slate-700">
                     Deye Open MCP Diagnostics ({streaming.stats.duration_ms || 2500}ms)
                   </span>
                 )}
@@ -238,8 +245,8 @@ export const AnalystPage: React.FC = () => {
             )}
           </div>
 
-          <div className="p-6 text-xs text-slate-700 dark:text-slate-300 space-y-4 leading-relaxed whitespace-pre-wrap font-sans">
-            {streaming.streamedText}
+          <div className="p-6 font-sans">
+            <MarkdownView content={streaming.streamedText} />
           </div>
         </div>
       )}

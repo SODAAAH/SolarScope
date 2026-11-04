@@ -1,5 +1,5 @@
 import datetime
-from backend.app.metrics.time_utils import format_date_mmddyyyy
+from backend.app.metrics.time_utils import format_date_mmddyyyy, format_datetime_12h
 from typing import Dict, Any, List
 from backend.app.storage.db import get_connection
 from backend.app.integrations.deye_mcp import get_station_health
@@ -37,8 +37,8 @@ def execute_fast_path(intent_info: Dict[str, Any], project_id: str = "default") 
     conn.close()
 
     total_days = len(datasets)
-    start_str = datasets[0]["start_time"].split(" ")[0] if datasets else "2026-10-18"
-    end_str = datasets[-1]["end_time"].split(" ")[0] if datasets else "2026-10-31"
+    start_str = format_date_mmddyyyy(datasets[0]["start_time"]) if datasets else "10/18/2026"
+    end_str = format_date_mmddyyyy(datasets[-1]["end_time"]) if datasets else "10/31/2026"
 
     from backend.app.api.endpoints import _get_historical_records
     from backend.app.aggregation.historical import calculate_daily_summaries
@@ -95,7 +95,7 @@ def execute_fast_path(intent_info: Dict[str, Any], project_id: str = "default") 
     if "battery" in metric:
         latest = records[-1] if records else None
         soc_val = latest.soc_percent if latest else 72.0
-        ts_val = latest.timestamp if latest else "Recent"
+        ts_val = format_datetime_12h(latest.timestamp) if latest and latest.timestamp else "Recent"
         usable_kwh = (soc_val / 100.0) * (sys_row["battery_capacity_kwh"] if sys_row else 16.08)
         text = (
             f"Your MENRED battery currently has a **{soc_val:.0f}% charge level** "
