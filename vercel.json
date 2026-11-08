@@ -1,6 +1,11 @@
 {
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
+  "functions": {
+    "api/index.py": {
+      "excludeFiles": "{frontend/**,horizon/**,backend/data/uploads/**,backend/data/reports/**}"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
@@ -12,4 +17,3 @@
     }
   ]
 }
-

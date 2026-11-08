@@ -1,7 +1,16 @@
 import numpy as np
-from scipy import stats
 from typing import List, Dict, Any
 from backend.app.ingestion.models import CanonicalRecord
+
+def _rank_values(a: np.ndarray) -> np.ndarray:
+    temp = np.argsort(a)
+    ranks = np.empty_like(temp, dtype=float)
+    ranks[temp] = np.arange(len(a), dtype=float) + 1.0
+    return ranks
+
+def _calc_corr(a: np.ndarray, b: np.ndarray) -> float:
+    c = np.corrcoef(a, b)[0, 1]
+    return 0.0 if np.isnan(c) else float(c)
 
 def calculate_correlation_matrices(records: List[CanonicalRecord]) -> Dict[str, Any]:
     if len(records) < 3:
@@ -35,8 +44,8 @@ def calculate_correlation_matrices(records: List[CanonicalRecord]) -> Dict[str, 
                     row_p.append(0.0)
                     row_s.append(0.0)
                 else:
-                    p_corr, _ = stats.pearsonr(data[i], data[j])
-                    s_corr, _ = stats.spearmanr(data[i], data[j])
+                    p_corr = _calc_corr(data[i], data[j])
+                    s_corr = _calc_corr(_rank_values(data[i]), _rank_values(data[j]))
                     row_p.append(round(float(p_corr), 3))
                     row_s.append(round(float(s_corr), 3))
         pearson_matrix.append(row_p)
