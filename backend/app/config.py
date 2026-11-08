@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +21,17 @@ class Settings(BaseSettings):
     gap_threshold_minutes: float = 30.0
 
 settings = Settings()
-settings.upload_dir.mkdir(parents=True, exist_ok=True)
-settings.reports_dir.mkdir(parents=True, exist_ok=True)
-settings.sample_dir.mkdir(parents=True, exist_ok=True)
+
+if os.environ.get("VERCEL"):
+    writable_base = Path("/tmp") / "solarscope"
+    settings.data_dir = writable_base / "data"
+    settings.upload_dir = writable_base / "data" / "uploads"
+    settings.reports_dir = writable_base / "data" / "reports"
+    settings.sample_dir = writable_base / "data" / "sample"
+
+try:
+    settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    settings.reports_dir.mkdir(parents=True, exist_ok=True)
+    settings.sample_dir.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass

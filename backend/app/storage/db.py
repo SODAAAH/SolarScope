@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import json
 import datetime
@@ -5,6 +6,10 @@ from pathlib import Path
 from backend.app.config import settings
 
 def get_db_path() -> Path:
+    if os.environ.get("VERCEL"):
+        db_dir = Path("/tmp") / "solarscope"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        return db_dir / "solarscope.db"
     return settings.base_dir / "solarscope.db"
 
 def get_connection() -> sqlite3.Connection:
