@@ -2,6 +2,7 @@ import os
 import json
 import urllib.request
 import urllib.parse
+import urllib.error
 import hashlib
 import datetime
 from typing import Dict, Any, List, Optional
@@ -26,8 +27,10 @@ class DeyeMCPClient:
         self.mcp_endpoint = "https://developer.deyecloud.com/openmcp/mcp"
         self._cached_token = None
         self._token_expiry = None
-        self._cached_live_flow = None
-        self._cached_live_flow_time = 0.0
+        self._last_auth_error: Optional[str] = None
+        self._cached_live_flows: Dict[str, Dict[str, Any]] = {}
+        self._cached_live_flow_times: Dict[str, float] = {}
+        self._last_real_flows: Dict[str, Dict[str, Any]] = {}
 
     def _get_credentials(self) -> Dict[str, str]:
         conn = get_connection()
@@ -57,13 +60,27 @@ class DeyeMCPClient:
             "logger_sn": logger_sn
         }
 
-    def get_auth_token(self) -> Optional[str]:
+    def _has_server_credentials(self, creds: Dict[str, str]) -> bool:
+        if creds["app_id"] == "demo" or creds["username"] == "demo":
+            return False
+        return bool(creds["app_id"] and creds["app_secret"] and creds["username"] and creds["password"])
+
+    def get_auth_token(self, force_refresh: bool = False) -> Optional[str]:
         now = datetime.datetime.now(datetime.timezone.utc)
-        if self._cached_token and self._token_expiry and now < self._token_expiry:
+        if not force_refresh and self._cached_token and self._token_expiry and now < self._token_expiry:
             return self._cached_token
 
+        if force_refresh:
+            self._cached_token = None
+            self._token_expiry = None
+
         creds = self._get_credentials()
-        if not (creds["app_id"] and creds["app_secret"] and creds["username"] and creds["password"]):
+        if creds["app_id"] == "demo" or creds["username"] == "demo":
+            self._last_auth_error = None
+            return None
+
+        if not self._has_server_credentials(creds):
+            self._last_auth_error = "Deye Cloud credentials not configured."
             return None
 
         pwd_hash = hashlib.sha256(creds["password"].encode("utf-8")).hexdigest().lower()
@@ -80,14 +97,27 @@ class DeyeMCPClient:
         token_url = f"{self.base_url}/v1.0/account/token?appId={urllib.parse.quote(creds['app_id'])}"
         try:
             req = urllib.request.Request(token_url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with urllib.request.urlopen(req, timeout=8) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 if data.get("success") and "accessToken" in data:
                     self._cached_token = data["accessToken"]
-                    self._token_expiry = now + datetime.timedelta(hours=24)
+                    expires_sec = data.get("expiresIn")
+                    try:
+                        ttl = max(300, int(expires_sec)) - 60 if expires_sec else 86400
+                    except Exception:
+                        ttl = 86400
+                    self._token_expiry = now + datetime.timedelta(seconds=ttl)
+                    self._last_auth_error = None
                     return self._cached_token
-        except Exception:
-            return None
+                self._last_auth_error = data.get("msg") or "Deye authentication rejected"
+        except urllib.error.HTTPError as he:
+            try:
+                err_data = json.loads(he.read().decode("utf-8"))
+                self._last_auth_error = err_data.get("msg") or f"HTTP {he.code}: {he.reason}"
+            except Exception:
+                self._last_auth_error = f"HTTP {he.code}: {he.reason}"
+        except Exception as e:
+            self._last_auth_error = str(e)
         return None
 
     def execute_read_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -101,7 +131,10 @@ class DeyeMCPClient:
         station_id = arguments.get("station_id") or creds["station_id"]
 
         if tool_name == "get_station_latest":
-            return self.get_station_latest(station_id)
+            res = self.get_station_latest(station_id)
+            res.pop("token_used", None)
+            res.pop("token_expired", None)
+            return res
         elif tool_name == "station_history":
             start_at = arguments.get("start_at", datetime.datetime.now(MANILA_TZ).strftime("%Y-%m-%d"))
             end_at = arguments.get("end_at", start_at)
@@ -132,49 +165,109 @@ class DeyeMCPClient:
 
         return {"success": False, "error": "Unhandled tool execution"}
 
-    def get_station_latest(self, station_id: str) -> Dict[str, Any]:
-        token = self.get_auth_token()
-        if not token:
-            return {"success": False, "error": "Deye Cloud authentication unavailable"}
+    def _is_auth_failure(self, status_code: Optional[int], data: Optional[Dict[str, Any]]) -> bool:
+        if status_code in (401, 403):
+            return True
+        if not data:
+            return False
+        code_str = str(data.get("code") or "")
+        msg_str = str(data.get("msg") or "").lower()
+        return code_str in {"2101001", "2101002", "2101003", "2101014", "1001"} or any(
+            k in msg_str for k in ("token", "unauthorized", "auth", "expire")
+        )
 
+    def get_station_latest(self, station_id: str, access_token_override: Optional[str] = None) -> Dict[str, Any]:
+        override_clean = (access_token_override or "").strip() or None
+        token = override_clean or self.get_auth_token()
+        if not token:
+            return {
+                "success": False,
+                "error": self._last_auth_error or "Deye Cloud authentication unavailable",
+                "token_used": None
+            }
+
+        creds = self._get_credentials()
+        has_server_creds = self._has_server_credentials(creds)
         st_id = int(station_id) if str(station_id).isdigit() else 62805884
         url = f"{self.base_url}/v1.0/station/latest"
         payload = json.dumps({"stationId": st_id}).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
-            method="POST"
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                if not data.get("success"):
-                    return {"success": False, "error": data.get("msg", "Unknown error"), "raw": data}
 
-                pv_w = data.get("generationPower")
-                load_w = data.get("consumptionPower")
-                grid_w = data.get("wirePower") if data.get("wirePower") is not None else data.get("purchasePower")
-                batt_w = data.get("batteryPower")
-                soc = data.get("batterySOC")
+        for attempt in range(2):
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+                method="POST"
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if data.get("success") is False:
+                        if attempt == 0 and has_server_creds and self._is_auth_failure(None, data):
+                            refreshed = self.get_auth_token(force_refresh=True)
+                            if refreshed:
+                                token = refreshed
+                                continue
+                        return {
+                            "success": False,
+                            "error": data.get("msg", "Unknown error"),
+                            "token_expired": self._is_auth_failure(None, data) and not has_server_creds,
+                            "raw": data
+                        }
 
+                    pv_w = data.get("generationPower")
+                    load_w = data.get("consumptionPower")
+                    grid_w = data.get("wirePower")
+                    if grid_w is None:
+                        grid_w = data.get("purchasePower")
+                    if grid_w is None and data.get("gridPower") is not None:
+                        grid_w = -abs(float(data.get("gridPower")))
+
+                    if data.get("chargePower") is not None and float(data.get("chargePower")) > 0:
+                        batt_w = -abs(float(data.get("chargePower")))
+                    elif data.get("dischargePower") is not None and float(data.get("dischargePower")) > 0:
+                        batt_w = abs(float(data.get("dischargePower")))
+                    else:
+                        batt_w = data.get("batteryPower")
+
+                    soc = data.get("batterySOC")
+
+                    return {
+                        "success": True,
+                        "station_id": str(st_id),
+                        "connection_status": data.get("connectionStatus", "NORMAL"),
+                        "last_update_time": data.get("lastUpdateTime"),
+                        "measurements": {
+                            "pv_power_kw": round(float(pv_w) / 1000.0, 3) if pv_w is not None else None,
+                            "household_load_kw": round(float(load_w) / 1000.0, 3) if load_w is not None else None,
+                            "grid_power_kw": round(float(grid_w) / 1000.0, 3) if grid_w is not None else None,
+                            "battery_power_kw": round(float(batt_w) / 1000.0, 3) if batt_w is not None else None,
+                            "battery_charge_level_percent": float(soc) if soc is not None else None
+                        },
+                        "missing_fields": [k for k, v in [("pv", pv_w), ("load", load_w), ("grid", grid_w), ("battery", batt_w), ("soc", soc)] if v is None],
+                        "raw": data,
+                        "token_used": token
+                    }
+            except urllib.error.HTTPError as he:
+                err_data = None
+                try:
+                    err_data = json.loads(he.read().decode("utf-8"))
+                except Exception:
+                    err_data = None
+                if attempt == 0 and has_server_creds and self._is_auth_failure(he.code, err_data):
+                    refreshed = self.get_auth_token(force_refresh=True)
+                    if refreshed:
+                        token = refreshed
+                        continue
+                err_msg = (err_data.get("msg") if err_data else None) or f"HTTP {he.code}: {he.reason}"
                 return {
-                    "success": True,
-                    "station_id": str(st_id),
-                    "connection_status": data.get("connectionStatus", "NORMAL"),
-                    "last_update_time": data.get("lastUpdateTime"),
-                    "measurements": {
-                        "pv_power_kw": round((pv_w or 0.0) / 1000.0, 3) if pv_w is not None else None,
-                        "household_load_kw": round((load_w or 0.0) / 1000.0, 3) if load_w is not None else None,
-                        "grid_power_kw": round((grid_w or 0.0) / 1000.0, 3) if grid_w is not None else None,
-                        "battery_power_kw": round((batt_w or 0.0) / 1000.0, 3) if batt_w is not None else None,
-                        "battery_charge_level_percent": float(soc) if soc is not None else None
-                    },
-                    "missing_fields": [k for k, v in [("pv", pv_w), ("load", load_w), ("grid", grid_w), ("battery", batt_w), ("soc", soc)] if v is None],
-                    "raw": data
+                    "success": False,
+                    "error": err_msg,
+                    "token_expired": self._is_auth_failure(he.code, err_data) and not has_server_creds
                 }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+        return {"success": False, "error": "Deye station query failed"}
 
     def get_station_history(self, station_id: str, start_at: str, end_at: str, granularity: int = 2) -> Dict[str, Any]:
         token = self.get_auth_token()
@@ -265,8 +358,8 @@ class DeyeMCPClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def get_device_latest(self, device_sn: str) -> Dict[str, Any]:
-        token = self.get_auth_token()
+    def get_device_latest(self, device_sn: str, access_token_override: Optional[str] = None) -> Dict[str, Any]:
+        token = (access_token_override or "").strip() or self.get_auth_token()
         if not token:
             return {"success": False, "error": "Deye Cloud authentication unavailable"}
 
@@ -279,7 +372,7 @@ class DeyeMCPClient:
             method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with urllib.request.urlopen(req, timeout=8) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return {"success": True, "device_data": data.get("deviceDataList", []), "raw": data}
         except Exception as e:
@@ -310,10 +403,10 @@ class DeyeMCPClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def get_device_alerts(self, device_sn: str, start_timestamp: int, end_timestamp: int) -> Dict[str, Any]:
-        token = self.get_auth_token()
+    def get_device_alerts(self, device_sn: str, start_timestamp: int, end_timestamp: int, access_token_override: Optional[str] = None) -> Dict[str, Any]:
+        token = (access_token_override or "").strip() or self.get_auth_token()
         if not token:
-            return {"success": False, "error": "Deye Cloud authentication unavailable"}
+            return {"success": False, "error": "Deye Cloud authentication unavailable", "alerts": []}
 
         url = f"{self.base_url}/v1.0/device/alertList"
         payload = json.dumps({
@@ -330,7 +423,7 @@ class DeyeMCPClient:
             method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with urllib.request.urlopen(req, timeout=8) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 alerts = data.get("alertList", [])
                 return {
@@ -342,10 +435,10 @@ class DeyeMCPClient:
         except Exception as e:
             return {"success": False, "error": str(e), "alerts": []}
 
-    def get_station_alerts(self, station_id: str, start_timestamp: int, end_timestamp: int) -> Dict[str, Any]:
-        token = self.get_auth_token()
+    def get_station_alerts(self, station_id: str, start_timestamp: int, end_timestamp: int, access_token_override: Optional[str] = None) -> Dict[str, Any]:
+        token = (access_token_override or "").strip() or self.get_auth_token()
         if not token:
-            return {"success": False, "error": "Deye Cloud authentication unavailable"}
+            return {"success": False, "error": "Deye Cloud authentication unavailable", "alerts": []}
 
         st_id = int(station_id) if str(station_id).isdigit() else 62805884
         url = f"{self.base_url}/v1.0/station/alertList"
@@ -363,7 +456,7 @@ class DeyeMCPClient:
             method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with urllib.request.urlopen(req, timeout=8) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 alerts = data.get("alertList", [])
                 return {
@@ -375,43 +468,147 @@ class DeyeMCPClient:
         except Exception as e:
             return {"success": False, "error": str(e), "alerts": []}
 
-    def get_station_health(self) -> Dict[str, Any]:
+    def _parse_last_update_time(self, raw_ts: Any) -> str:
+        fallback = datetime.datetime.now(MANILA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        if raw_ts is None or raw_ts == "":
+            return fallback
+        try:
+            val = float(raw_ts)
+            if val > 1e12:
+                val = val / 1000.0
+            if val > 1e8:
+                return datetime.datetime.fromtimestamp(val, tz=MANILA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            pass
+        if isinstance(raw_ts, str):
+            try:
+                dt = datetime.datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=MANILA_TZ)
+                else:
+                    dt = dt.astimezone(MANILA_TZ)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                pass
+        return fallback
+
+    def _get_dataset_summary_metrics(self) -> Dict[str, Any]:
+        from backend.app.api.endpoints import get_historical_daily
+        try:
+            sums = get_historical_daily("historical")
+        except Exception:
+            sums = []
+        if not sums:
+            return {
+                "summary": {
+                    "accumulative_production_kwh": 0.0,
+                    "accumulative_consumption_kwh": 0.0,
+                    "daily_production_kwh": 0.0,
+                    "weather_temp_c": 28.0
+                },
+                "utilization": {
+                    "consumption_total_kwh": 0.0,
+                    "consumption_breakdown": [
+                        {"label": "Import", "kwh": 0.0, "pct": 0.0, "color": "#818CF8"},
+                        {"label": "Discharge", "kwh": 0.0, "pct": 0.0, "color": "#06B6D4"},
+                        {"label": "PV", "kwh": 0.0, "pct": 0.0, "color": "#10B981"}
+                    ],
+                    "production_total_kwh": 0.0,
+                    "production_breakdown": [
+                        {"label": "Charge", "kwh": 0.0, "pct": 0.0, "color": "#F59E0B"},
+                        {"label": "Consumption", "kwh": 0.0, "pct": 0.0, "color": "#EAB308"}
+                    ]
+                }
+            }
+
+        tot_pv = sum(d.get("pv_kwh", 0.0) for d in sums)
+        tot_load = sum(d.get("load_kwh", 0.0) for d in sums)
+        tot_import = sum(d.get("grid_import_kwh", 0.0) for d in sums)
+        tot_discharge = sum(d.get("battery_discharge_kwh", 0.0) for d in sums)
+        tot_charge = sum(d.get("battery_charge_kwh", 0.0) for d in sums)
+        tot_pv_self = round(max(0.0, tot_load - tot_import - tot_discharge), 2)
+        today_pv = sums[-1].get("pv_kwh", 0.0)
+
+        cons_denom = max(0.01, tot_import + tot_discharge + tot_pv_self) if tot_load > 0 else 1.0
+        prod_denom = max(0.01, tot_charge + tot_pv_self) if tot_pv > 0 else 1.0
+
+        return {
+            "summary": {
+                "accumulative_production_kwh": round(tot_pv, 2),
+                "accumulative_consumption_kwh": round(tot_load, 2),
+                "daily_production_kwh": round(today_pv, 2),
+                "weather_temp_c": 28.0
+            },
+            "utilization": {
+                "consumption_total_kwh": round(tot_load, 2),
+                "consumption_breakdown": [
+                    {"label": "Import", "kwh": round(tot_import, 2), "pct": round(tot_import / cons_denom * 100.0, 1) if tot_load > 0 else 0.0, "color": "#818CF8"},
+                    {"label": "Discharge", "kwh": round(tot_discharge, 2), "pct": round(tot_discharge / cons_denom * 100.0, 1) if tot_load > 0 else 0.0, "color": "#06B6D4"},
+                    {"label": "PV", "kwh": round(tot_pv_self, 2), "pct": round(tot_pv_self / cons_denom * 100.0, 1) if tot_load > 0 else 0.0, "color": "#10B981"}
+                ],
+                "production_total_kwh": round(tot_pv, 2),
+                "production_breakdown": [
+                    {"label": "Charge", "kwh": round(tot_charge, 2), "pct": round(tot_charge / prod_denom * 100.0, 1) if tot_pv > 0 else 0.0, "color": "#F59E0B"},
+                    {"label": "Consumption", "kwh": round(tot_pv_self, 2), "pct": round(tot_pv_self / prod_denom * 100.0, 1) if tot_pv > 0 else 0.0, "color": "#EAB308"}
+                ]
+            }
+        }
+
+    def get_station_health(self, access_token_override: Optional[str] = None, station_id_override: Optional[str] = None, mode_override: Optional[str] = None) -> Dict[str, Any]:
         creds = self._get_credentials()
-        station_id = creds["station_id"]
-        latest_res = self.get_station_latest(station_id)
+        station_id = (station_id_override or "").strip() or creds["station_id"]
+        is_demo = (mode_override == "demo") or (not access_token_override and (creds["app_id"] == "demo" or creds["username"] == "demo"))
 
-        now_sec = int(datetime.datetime.now(MANILA_TZ).timestamp())
-        day_ago_sec = now_sec - 86400
-        alert_res = self.get_device_alerts(creds["inverter_sn"], day_ago_sec, now_sec)
-
-        if latest_res.get("success"):
-            m = latest_res.get("measurements", {})
-            pv_kw = m.get("pv_power_kw") or 0.0
-            load_kw = m.get("household_load_kw") or 0.0
-            batt_kw = m.get("battery_power_kw") or 0.0
-            grid_kw = m.get("grid_power_kw") or 0.0
-            soc = m.get("battery_charge_level_percent") or 0.0
-            conn_status = latest_res.get("connection_status", "NORMAL")
-            alerts = alert_res.get("alerts", [])
-            is_healthy = conn_status == "NORMAL" and soc >= 20.0 and len(alerts) == 0
-        else:
-            pv_kw = 0.0
-            load_kw = 0.65
-            batt_kw = 0.25
-            grid_kw = 0.40
-            soc = 72.0
+        if is_demo:
+            pv_kw = 2.45
+            load_kw = 0.85
+            batt_kw = -1.60
+            grid_kw = 0.0
+            soc = 78.0
             conn_status = "NORMAL"
             alerts = []
             is_healthy = True
+        else:
+            latest_res = self.get_station_latest(station_id, access_token_override=access_token_override)
+            token_for_alerts = latest_res.get("token_used") or access_token_override
+            now_sec = int(datetime.datetime.now(MANILA_TZ).timestamp())
+            day_ago_sec = now_sec - 86400
+            alert_res = self.get_device_alerts(creds["inverter_sn"], day_ago_sec, now_sec, access_token_override=token_for_alerts)
 
-        status_badge = "Healthy" if is_healthy else "Attention Needed"
-        if soc <= 20.0:
+            if latest_res.get("success"):
+                m = latest_res.get("measurements", {})
+                pv_kw = m.get("pv_power_kw") or 0.0
+                load_kw = m.get("household_load_kw") or 0.0
+                batt_kw = m.get("battery_power_kw") or 0.0
+                grid_kw = m.get("grid_power_kw") or 0.0
+                soc = m.get("battery_charge_level_percent") if m.get("battery_charge_level_percent") is not None else 0.0
+                conn_status = latest_res.get("connection_status", "NORMAL")
+                alerts = alert_res.get("alerts", [])
+                is_healthy = conn_status == "NORMAL" and soc >= 20.0 and len(alerts) == 0
+            else:
+                pv_kw = 0.0
+                load_kw = 0.0
+                batt_kw = 0.0
+                grid_kw = 0.0
+                soc = 0.0
+                conn_status = "OFFLINE"
+                alerts = []
+                is_healthy = False
+
+        if conn_status == "OFFLINE":
+            status_badge = "Offline"
+            rec = "Live Deye Cloud telemetry is not connected in this session. Configure credentials in Data Library & Cloud."
+        elif soc <= 20.0:
+            status_badge = "Healthy" if is_healthy else "Attention Needed"
             rec = "Battery charge level is at or below the 20% reserve threshold. Household is drawing power from TEI."
         elif len(alerts) > 0:
+            status_badge = "Healthy" if is_healthy else "Attention Needed"
             rec = f"Inverter alert recorded: {alerts[0].get('alertName', 'Warning')}. Inspect device status."
         elif conn_status != "NORMAL":
+            status_badge = "Healthy" if is_healthy else "Attention Needed"
             rec = "Logger or inverter communication anomaly detected. Inspect local network connection."
         else:
+            status_badge = "Healthy" if is_healthy else "Attention Needed"
             rec = "All devices operating normally within safe electrical parameters. No action required."
 
         return {
@@ -431,19 +628,19 @@ class DeyeMCPClient:
             "device_health": {
                 "logger": {
                     "serial": creds["logger_sn"],
-                    "status": "Online",
+                    "status": "Online" if conn_status == "NORMAL" else "Offline",
                     "reporting_interval_min": 5
                 },
                 "inverter": {
                     "serial": creds["inverter_sn"],
                     "model": "SUN-6K-SG06LP1-EU-CM2",
-                    "status": "Operational",
+                    "status": "Operational" if conn_status == "NORMAL" else "Offline",
                     "rated_output_kw": 6.0
                 },
                 "battery": {
                     "model": "MENRED ESS 16.08 kWh",
                     "soc_percent": soc,
-                    "status": "Nominal" if soc >= 20.0 else "At Reserve"
+                    "status": "Nominal" if soc >= 20.0 else ("Standby" if conn_status == "OFFLINE" else "At Reserve")
                 }
             },
             "alerts_count": len(alerts),
@@ -451,50 +648,26 @@ class DeyeMCPClient:
             "recommendation": rec
         }
 
-    def get_live_flow(self) -> Dict[str, Any]:
-        now_ts = datetime.datetime.now().timestamp()
-        if self._cached_live_flow is not None and (now_ts - self._cached_live_flow_time) < 10.0:
-            return self._cached_live_flow
-
-        creds = self._get_credentials()
-        station_id = creds["station_id"]
-        latest_res = self.get_station_latest(station_id)
-
-        pv_w = 0.0
-        load_w = 0.0
-        batt_w = 0.0
-        grid_w = 0.0
-        soc = 63.0
-        ups_w = 0.0
-        conn_status = "NORMAL"
-        last_update_str = datetime.datetime.now(MANILA_TZ).strftime("%Y-%m-%d %H:%M:%S")
-
-        if latest_res.get("success"):
-            raw = latest_res.get("raw", {})
-            pv_w = float(raw.get("generationPower") or 0.0)
-            load_w = float(raw.get("consumptionPower") or 0.0)
-            batt_w = float(raw.get("batteryPower") or raw.get("dischargePower") or 0.0)
-            if raw.get("chargePower") and float(raw.get("chargePower")) > 0:
-                batt_w = -abs(float(raw.get("chargePower")))
-            grid_w = float(raw.get("wirePower") or raw.get("purchasePower") or 0.0)
-            soc = float(raw.get("batterySOC") or 63.0)
-            conn_status = latest_res.get("connection_status", "NORMAL")
-            last_ts = raw.get("lastUpdateTime")
-            if last_ts:
-                try:
-                    last_update_str = datetime.datetime.fromtimestamp(float(last_ts), tz=MANILA_TZ).strftime("%Y-%m-%d %H:%M:%S")
-                except Exception:
-                    pass
-        else:
-            pv_w = 0.0
-            batt_w = 1216.0
-            load_w = 1117.0
-            grid_w = 10.0
-            soc = 63.0
-
-        if load_w > 0:
-            ups_w = round(load_w * 0.98, 1)
-
+    def _build_flow_payload(
+        self,
+        success: bool,
+        is_live: bool,
+        data_source: str,
+        error: Optional[str],
+        token_expired: bool,
+        station_id: str,
+        inverter_sn: str,
+        conn_status: str,
+        last_update_str: str,
+        pv_w: float,
+        load_w: float,
+        batt_w: float,
+        grid_w: float,
+        soc: float,
+        ups_w: float,
+        dataset_metrics: Dict[str, Any],
+        access_token: Optional[str] = None
+    ) -> Dict[str, Any]:
         batt_state = "IDLE"
         if batt_w > 10.0:
             batt_state = "DISCHARGING"
@@ -507,27 +680,19 @@ class DeyeMCPClient:
         elif grid_w < -5.0:
             grid_state = "EXPORT"
 
-        from backend.app.api.endpoints import get_historical_daily
-        try:
-            sums = get_historical_daily("historical")
-        except Exception:
-            sums = []
-        tot_pv = sum(d.get("pv_kwh", 0) for d in sums) if sums else 270.8
-        tot_load = sum(d.get("load_kwh", 0) for d in sums) if sums else 371.1
-        tot_import = sum(d.get("grid_import_kwh", 0) for d in sums) if sums else 110.0
-        tot_discharge = sum(d.get("battery_discharge_kwh", 0) for d in sums) if sums else 119.79
-        tot_charge = sum(d.get("battery_charge_kwh", 0) for d in sums) if sums else 128.7
-        tot_pv_self = round(max(0.0, tot_load - tot_import - tot_discharge), 2) if sums else 141.29
-        if tot_pv_self <= 0:
-            tot_pv_self = 141.29
-        today_pv = sums[-1].get("pv_kwh", 0) if sums else 15.9
+        grid_label = "Standby" if conn_status == "OFFLINE" else ("On grid" if conn_status == "NORMAL" else "Off grid")
+        inv_status = "OPERATIONAL" if (is_live or data_source in ("demo", "cached")) else "STANDBY"
 
-        flow_res = {
-            "success": True,
+        payload: Dict[str, Any] = {
+            "success": success,
+            "is_live": is_live,
+            "data_source": data_source,
+            "error": error,
+            "token_expired": token_expired,
             "station_name": "Mam Micah",
             "station_id": station_id,
             "inverter_model": "SUN-6K-SG06LP1-EU-CM2",
-            "inverter_serial": creds["inverter_sn"],
+            "inverter_serial": inverter_sn,
             "connection_status": conn_status,
             "is_on_grid": conn_status == "NORMAL",
             "last_update_time": last_update_str,
@@ -546,14 +711,14 @@ class DeyeMCPClient:
                     "is_discharging": batt_state == "DISCHARGING"
                 },
                 "inverter": {
-                    "status": "OPERATIONAL",
+                    "status": inv_status,
                     "throughput_w": max(pv_w, abs(batt_w), load_w),
                     "throughput_kw": round(max(pv_w, abs(batt_w), load_w) / 1000.0, 3)
                 },
                 "grid": {
                     "power_w": abs(grid_w),
                     "power_kw": round(abs(grid_w) / 1000.0, 3),
-                    "status_label": "On grid" if conn_status == "NORMAL" else "Off grid",
+                    "status_label": grid_label,
                     "state": grid_state,
                     "is_importing": grid_state == "IMPORT",
                     "is_exporting": grid_state == "EXPORT"
@@ -569,29 +734,157 @@ class DeyeMCPClient:
                     "is_active": ups_w > 10.0
                 }
             },
-            "summary": {
-                "accumulative_production_kwh": round(max(270.80, tot_pv), 2),
-                "accumulative_consumption_kwh": round(max(371.10, tot_load), 2),
-                "daily_production_kwh": round(today_pv, 2),
-                "weather_temp_c": 28.0
-            },
-            "utilization": {
-                "consumption_total_kwh": round(max(371.10, tot_load), 2),
-                "consumption_breakdown": [
-                    {"label": "Import", "kwh": round(tot_import, 2), "pct": round(tot_import / max(1.0, tot_load) * 100.0, 1), "color": "#818CF8"},
-                    {"label": "Discharge", "kwh": round(tot_discharge, 2), "pct": round(tot_discharge / max(1.0, tot_load) * 100.0, 1), "color": "#06B6D4"},
-                    {"label": "PV", "kwh": round(tot_pv_self, 2), "pct": round(tot_pv_self / max(1.0, tot_load) * 100.0, 1), "color": "#10B981"}
-                ],
-                "production_total_kwh": round(max(270.80, tot_pv), 2),
-                "production_breakdown": [
-                    {"label": "Charge", "kwh": round(tot_charge, 2), "pct": round(tot_charge / max(1.0, tot_pv) * 100.0, 1), "color": "#F59E0B"},
-                    {"label": "Consumption", "kwh": round(tot_pv_self, 2), "pct": round(tot_pv_self / max(1.0, tot_pv) * 100.0, 1), "color": "#EAB308"}
-                ]
-            }
+            "summary": dataset_metrics["summary"],
+            "utilization": dataset_metrics["utilization"]
         }
-        self._cached_live_flow = flow_res
-        self._cached_live_flow_time = datetime.datetime.now().timestamp()
-        return flow_res
+        if access_token:
+            payload["access_token"] = access_token
+        return payload
+
+    def get_live_flow(
+        self,
+        access_token_override: Optional[str] = None,
+        station_id_override: Optional[str] = None,
+        mode_override: Optional[str] = None
+    ) -> Dict[str, Any]:
+        creds = self._get_credentials()
+        token_override = (access_token_override or "").strip() or None
+        station_id = (station_id_override or "").strip() or creds["station_id"] or "62805884"
+        mode_clean = (mode_override or "").strip().lower()
+
+        if token_override and mode_clean != "demo":
+            is_demo = False
+        elif mode_clean == "demo":
+            is_demo = True
+        else:
+            is_demo = creds["app_id"] == "demo" or creds["username"] == "demo"
+
+        cache_key = f"{'demo' if is_demo else 'live'}:{station_id}"
+        now_ts = datetime.datetime.now().timestamp()
+
+        if not is_demo:
+            cached_flow = self._cached_live_flows.get(cache_key)
+            cached_time = self._cached_live_flow_times.get(cache_key, 0.0)
+            if cached_flow is not None and (now_ts - cached_time) < 12.0:
+                refreshed_copy = dict(cached_flow)
+                dataset_metrics = self._get_dataset_summary_metrics()
+                refreshed_copy["summary"] = dataset_metrics["summary"]
+                refreshed_copy["utilization"] = dataset_metrics["utilization"]
+                return refreshed_copy
+
+        dataset_metrics = self._get_dataset_summary_metrics()
+
+        if is_demo:
+            now_manila = datetime.datetime.now(MANILA_TZ)
+            h = now_manila.hour + now_manila.minute / 60.0
+            is_day = 6.0 <= h <= 17.5
+            pv_w = round(max(0.0, 3850.0 * (1.0 - ((h - 12.0) / 6.0) ** 2)), 1) if is_day else 0.0
+            load_w = round(920.0 if 7.0 <= h <= 22.0 else 580.0, 1)
+            batt_w = round(-(pv_w - load_w) if pv_w > load_w else load_w, 1)
+            grid_w = 0.0
+            soc = round(min(98.0, max(35.0, 42.0 + (pv_w / 100.0))), 1)
+            ups_w = round(load_w * 0.98, 1)
+            return self._build_flow_payload(
+                success=True,
+                is_live=False,
+                data_source="demo",
+                error=None,
+                token_expired=False,
+                station_id=station_id,
+                inverter_sn=creds["inverter_sn"],
+                conn_status="NORMAL",
+                last_update_str=now_manila.strftime("%Y-%m-%d %H:%M:%S"),
+                pv_w=pv_w,
+                load_w=load_w,
+                batt_w=batt_w,
+                grid_w=grid_w,
+                soc=soc,
+                ups_w=ups_w,
+                dataset_metrics=dataset_metrics
+            )
+
+        latest_res = self.get_station_latest(station_id, access_token_override=token_override)
+        if latest_res.get("success"):
+            raw = latest_res.get("raw", {})
+            pv_w = float(raw["generationPower"]) if raw.get("generationPower") is not None else 0.0
+            load_w = float(raw["consumptionPower"]) if raw.get("consumptionPower") is not None else 0.0
+
+            if raw.get("chargePower") is not None and float(raw["chargePower"]) > 0:
+                batt_w = -abs(float(raw["chargePower"]))
+            elif raw.get("dischargePower") is not None and float(raw["dischargePower"]) > 0:
+                batt_w = abs(float(raw["dischargePower"]))
+            elif raw.get("batteryPower") is not None:
+                batt_w = float(raw["batteryPower"])
+            else:
+                batt_w = 0.0
+
+            if raw.get("wirePower") is not None:
+                grid_w = float(raw["wirePower"])
+            elif raw.get("purchasePower") is not None:
+                grid_w = float(raw["purchasePower"])
+            elif raw.get("gridPower") is not None:
+                grid_w = -abs(float(raw["gridPower"]))
+            else:
+                grid_w = 0.0
+
+            soc = float(raw["batterySOC"]) if raw.get("batterySOC") is not None else 0.0
+            ups_w = float(raw["upsPower"]) if raw.get("upsPower") is not None else (round(load_w * 0.98, 1) if load_w > 0 else 0.0)
+            conn_status = latest_res.get("connection_status", "NORMAL")
+            last_update_str = self._parse_last_update_time(raw.get("lastUpdateTime"))
+
+            flow_res = self._build_flow_payload(
+                success=True,
+                is_live=True,
+                data_source="live",
+                error=None,
+                token_expired=False,
+                station_id=station_id,
+                inverter_sn=creds["inverter_sn"],
+                conn_status=conn_status,
+                last_update_str=last_update_str,
+                pv_w=pv_w,
+                load_w=load_w,
+                batt_w=batt_w,
+                grid_w=grid_w,
+                soc=soc,
+                ups_w=ups_w,
+                dataset_metrics=dataset_metrics,
+                access_token=latest_res.get("token_used")
+            )
+            self._cached_live_flows[cache_key] = flow_res
+            self._cached_live_flow_times[cache_key] = datetime.datetime.now().timestamp()
+            self._last_real_flows[cache_key] = flow_res
+            return flow_res
+
+        last_real = self._last_real_flows.get(cache_key)
+        if last_real is not None:
+            cached_copy = dict(last_real)
+            cached_copy["is_live"] = False
+            cached_copy["data_source"] = "cached"
+            cached_copy["error"] = latest_res.get("error") or "Deye Cloud telemetry temporarily unreachable"
+            cached_copy["token_expired"] = bool(latest_res.get("token_expired"))
+            cached_copy["summary"] = dataset_metrics["summary"]
+            cached_copy["utilization"] = dataset_metrics["utilization"]
+            return cached_copy
+
+        return self._build_flow_payload(
+            success=False,
+            is_live=False,
+            data_source="offline",
+            error=latest_res.get("error") or "Deye Cloud not configured or unreachable",
+            token_expired=bool(latest_res.get("token_expired")),
+            station_id=station_id,
+            inverter_sn=creds["inverter_sn"],
+            conn_status="OFFLINE",
+            last_update_str="",
+            pv_w=0.0,
+            load_w=0.0,
+            batt_w=0.0,
+            grid_w=0.0,
+            soc=0.0,
+            ups_w=0.0,
+            dataset_metrics=dataset_metrics
+        )
 
 deye_mcp_client = DeyeMCPClient()
 

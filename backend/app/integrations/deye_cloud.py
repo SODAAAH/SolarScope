@@ -14,6 +14,7 @@ from backend.app.storage.db import get_connection
 class DeyeCloudClient:
     def __init__(self, project_id: str = "default"):
         self.project_id = project_id
+        self._last_token: Optional[str] = None
         self._load_config()
 
     def _load_config(self):
@@ -162,6 +163,7 @@ class DeyeCloudClient:
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     if data.get("success") and "accessToken" in data:
+                        self._last_token = data["accessToken"]
                         return data["accessToken"]
                     elif data.get("msg"):
                         last_error = data["msg"]
@@ -181,11 +183,27 @@ class DeyeCloudClient:
             raise Exception(last_error)
         return None
 
+    def try_get_token(self) -> Optional[str]:
+        self._load_config()
+        if self.app_id == "demo" or self.username == "demo":
+            return None
+        if not (self.app_id and self.app_secret and self.username and self.password):
+            return None
+        try:
+            return self._get_auth_token()
+        except Exception:
+            return None
+
     def test_connection(self) -> Dict[str, Any]:
         self._load_config()
         if self.app_id == "demo" or self.username == "demo":
             self._update_status("CONNECTED", "Simulated connection to Deye Cloud Logger 1251892903 successful.")
-            return {"success": True, "message": "Demo mode: Simulated connection to Deye Logger 1251892903 successful."}
+            return {
+                "success": True,
+                "message": "Demo mode: Simulated connection to Deye Logger 1251892903 successful.",
+                "is_demo": True,
+                "station_id": self.station_id or "STATION-2026"
+            }
 
         if not (self.app_id and self.app_secret and self.username and self.password):
             return {
@@ -215,7 +233,13 @@ class DeyeCloudClient:
             soc = latest_data.get("batterySOC", 0.0) or 0.0
             msg = f"Connected to Mam Micah (Station {st_id}). Live Solar: {pv_w/1000.0:.2f} kW, Battery: {soc:.0f}% SOC."
             self._update_status("CONNECTED", msg)
-            return {"success": True, "message": msg}
+            return {
+                "success": True,
+                "message": msg,
+                "access_token": token,
+                "station_id": str(st_id),
+                "is_demo": False
+            }
         except Exception as e:
             msg = str(e)
             self._update_status("ERROR", msg)
@@ -509,7 +533,13 @@ class DeyeCloudClient:
         self._update_status("SYNCING", f"Fetching Deye Cloud telemetry for {start_date_str} to {end_date_str}...")
         try:
             records = self.fetch_range_from_cloud(start_date_str, end_date_str)
-            return self.persist_telemetry_dataset(records, start_date_str, end_date_str)
+            res = self.persist_telemetry_dataset(records, start_date_str, end_date_str)
+            is_demo = self.app_id == "demo" or self.username == "demo"
+            res["is_demo"] = is_demo
+            res["station_id"] = self.station_id or ("STATION-2026" if is_demo else "62805884")
+            if not is_demo and self._last_token:
+                res["access_token"] = self._last_token
+            return res
         except Exception as e:
             err = str(e)
             now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()

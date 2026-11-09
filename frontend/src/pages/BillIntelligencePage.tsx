@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import {
   api,
+  getStoredBillingProfile,
   type BillForecastResponse,
   type BillingProgressResponse,
   type StatementOfAccount,
@@ -85,17 +86,42 @@ export const BillIntelligencePage: React.FC = () => {
   const [sensitivityResult, setSensitivityResult] = useState<RateSensitivityResponse | null>(null);
   const [simulatingSensitivity, setSimulatingSensitivity] = useState(false);
 
-  const [settingsForm, setSettingsForm] = useState<TEIBillingProfile>({
-    customer_class: "Residential",
-    billing_cycle_day: 25,
-    connection_type: "behind_meter",
-    is_lifeline_eligible: false,
-    is_senior_eligible: false,
-    is_prompt_payment_eligible: false,
-    previous_unpaid_balance: 0.0,
-    payments_received: 0.0,
-    forecast_method: "7day"
+  const [settingsForm, setSettingsForm] = useState<TEIBillingProfile>(() => {
+    return getStoredBillingProfile() || {
+      customer_class: "Residential",
+      billing_cycle_day: 25,
+      connection_type: "behind_meter",
+      is_lifeline_eligible: false,
+      is_senior_eligible: false,
+      is_prompt_payment_eligible: false,
+      previous_unpaid_balance: 0.0,
+      payments_received: 0.0,
+      forecast_method: "7day"
+    };
   });
+  const [cycleDayInput, setCycleDayInput] = useState<string>(() => {
+    const stored = getStoredBillingProfile();
+    return String(stored?.billing_cycle_day || 25);
+  });
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+
+  const formatOrdinalDay = (day: number) => {
+    const d = Math.max(1, Math.min(31, Number(day) || 25));
+    if (d >= 11 && d <= 13) return `${d}th`;
+    switch (d % 10) {
+      case 1: return `${d}st`;
+      case 2: return `${d}nd`;
+      case 3: return `${d}rd`;
+      default: return `${d}th`;
+    }
+  };
+
+  const openSettingsModal = () => {
+    setCycleDayInput(String(settingsForm.billing_cycle_day || 25));
+    setSettingsError(null);
+    setIsSettingsOpen(true);
+  };
 
   const getCyclePreview = (day: number) => {
     const d = Math.max(1, Math.min(31, Number(day) || 25));
@@ -183,6 +209,7 @@ export const BillIntelligencePage: React.FC = () => {
       setForecast(fData);
       setProgressData(pData);
       setSettingsForm(prof);
+      setCycleDayInput(String(prof.billing_cycle_day || 25));
       setRates(rList);
       setHistoryBills(bList);
     } catch (err) {
@@ -212,12 +239,28 @@ export const BillIntelligencePage: React.FC = () => {
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    const parsedDay = parseInt(cycleDayInput, 10);
+    const finalDay = Number.isFinite(parsedDay)
+      ? Math.max(1, Math.min(31, parsedDay))
+      : Math.max(1, Math.min(31, settingsForm.billing_cycle_day || 25));
+    const payloadToSave: TEIBillingProfile = {
+      ...settingsForm,
+      billing_cycle_day: finalDay
+    };
+
+    setSavingSettings(true);
+    setSettingsError(null);
     try {
-      await api.updateBillingProfile(settingsForm);
+      const res = await api.updateBillingProfile(payloadToSave);
+      const savedProfile = res?.profile || payloadToSave;
+      setSettingsForm(savedProfile);
+      setCycleDayInput(String(savedProfile.billing_cycle_day || finalDay));
       setIsSettingsOpen(false);
       await loadData();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setSettingsError(err?.message || "Failed to save billing settings.");
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -317,7 +360,7 @@ export const BillIntelligencePage: React.FC = () => {
           html += `<span class="text-amber-600">-- Projected: ${item.cumulative_kwh_expected?.toFixed(1)} kWh (₱${item.cumulative_cost_expected?.toFixed(2)})</span><br/>`;
         }
         if (item.is_today) html += `<span class="text-blue-500 font-semibold">Today's Observation</span><br/>`;
-        if (item.is_meter_reading) html += `<span class="text-purple-600 font-semibold">Meter Reading Day</span><br/>`;
+        if (item.is_meter_reading) html += `<span class="text-amber-600 font-semibold">Meter Reading Day</span><br/>`;
         html += `</div>`;
         return html;
       }
@@ -411,7 +454,7 @@ export const BillIntelligencePage: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setIsSettingsOpen(true)}
+            onClick={openSettingsModal}
             className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-slate-200 text-white dark:text-slate-900 transition-colors flex items-center gap-1.5 shadow-xs"
           >
             <Settings className="w-3.5 h-3.5" />
@@ -1437,13 +1480,31 @@ export const BillIntelligencePage: React.FC = () => {
                     <span className="text-[10px] text-slate-500 font-mono">Day {settingsForm.billing_cycle_day || 25}</span>
                   </div>
                   <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={settingsForm.billing_cycle_day}
-                    onChange={(e) => setSettingsForm({ ...settingsForm, billing_cycle_day: Math.max(1, Math.min(31, Number(e.target.value))) })}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={2}
+                    value={cycleDayInput}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/[^0-9]/g, "");
+                      setCycleDayInput(digits);
+                      if (digits !== "") {
+                        const parsed = parseInt(digits, 10);
+                        if (Number.isFinite(parsed)) {
+                          const clamped = Math.max(1, Math.min(31, parsed));
+                          setSettingsForm((prev) => ({ ...prev, billing_cycle_day: clamped }));
+                        }
+                      }
+                    }}
+                    onBlur={() => {
+                      const parsed = parseInt(cycleDayInput, 10);
+                      const clamped = Number.isFinite(parsed)
+                        ? Math.max(1, Math.min(31, parsed))
+                        : Math.max(1, Math.min(31, settingsForm.billing_cycle_day || 25));
+                      setCycleDayInput(String(clamped));
+                      setSettingsForm((prev) => ({ ...prev, billing_cycle_day: clamped }));
+                    }}
                     className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono text-xs"
-                    placeholder="Enter day of month (e.g. 25)"
+                    placeholder="1-31 (e.g. 25)"
                   />
                 </div>
               </div>
@@ -1456,7 +1517,7 @@ export const BillIntelligencePage: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  All electricity purchases and solar savings will be integrated strictly from the <strong>{settingsForm.billing_cycle_day}th of the month</strong> to the <strong>{settingsForm.billing_cycle_day}th of the next month</strong>. Next meter reading: <strong>{getCyclePreview(settingsForm.billing_cycle_day).endFormatted}</strong>.
+                  All electricity purchases and solar savings will be integrated strictly from the <strong>{formatOrdinalDay(settingsForm.billing_cycle_day)} of the month</strong> to the <strong>{formatOrdinalDay(settingsForm.billing_cycle_day)} of the next month</strong>. Next meter reading: <strong>{getCyclePreview(settingsForm.billing_cycle_day).endFormatted}</strong>.
                 </p>
               </div>
 
@@ -1583,21 +1644,29 @@ export const BillIntelligencePage: React.FC = () => {
                 </div>
               </div>
 
+              {settingsError && (
+                <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-[11px] text-red-700 dark:text-red-300">
+                  {settingsError}
+                </div>
+              )}
+
               </div>
 
               <div className="px-6 py-3.5 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 shrink-0 bg-slate-50/60 dark:bg-slate-900/60">
                 <button
                   type="button"
                   onClick={() => setIsSettingsOpen(false)}
-                  className="px-3.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  disabled={savingSettings}
+                  className="px-3.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-sm transition-colors"
+                  disabled={savingSettings}
+                  className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-sm transition-colors disabled:opacity-50"
                 >
-                  Save Settings & Recalculate
+                  {savingSettings ? "Saving..." : "Save Settings & Recalculate"}
                 </button>
               </div>
             </form>

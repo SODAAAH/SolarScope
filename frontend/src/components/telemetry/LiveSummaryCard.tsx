@@ -13,11 +13,11 @@ interface LiveSummaryCardProps {
 }
 
 export const LiveSummaryCard: React.FC<LiveSummaryCardProps> = ({
-  accumulativeProductionKwh = 270.80,
-  accumulativeConsumptionKwh = 371.10,
-  dailyProductionKwh = 15.90,
-  dailyConsumptionKwh = 21.40,
-  selfConsumptionRate = 84.5,
+  accumulativeProductionKwh = 0,
+  accumulativeConsumptionKwh = 0,
+  dailyProductionKwh = 0,
+  dailyConsumptionKwh = 0,
+  selfConsumptionRate = 0,
   weatherTempC = 28
 }) => {
   const animAccumProd = useAnimatedNumber(accumulativeProductionKwh, 700, 2);

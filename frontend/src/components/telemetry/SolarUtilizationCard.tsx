@@ -49,9 +49,9 @@ const sliceDefinitions: Record<string, { title: string; content: string; provena
 };
 
 export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
-  consumptionTotalKwh = 371.10,
+  consumptionTotalKwh = 0,
   consumptionBreakdown,
-  productionTotalKwh = 270.80,
+  productionTotalKwh = 0,
   productionBreakdown,
   dateLabel = '11/2026',
   onPrevMonth,
@@ -59,19 +59,19 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
 }) => {
   const [period, setPeriod] = useState<'M' | 'Y' | 'T'>('M');
 
-  const defaultConsumption: UtilizationSlice[] = [
-    { label: 'Import', kwh: 110.0, pct: 29.6, color: '#6366F1' },
-    { label: 'Discharge', kwh: 119.79, pct: 32.3, color: '#06B6D4' },
-    { label: 'PV', kwh: 141.29, pct: 38.1, color: '#10B981' }
+  const emptyConsumption: UtilizationSlice[] = [
+    { label: 'Import', kwh: 0, pct: 0, color: '#6366F1' },
+    { label: 'Discharge', kwh: 0, pct: 0, color: '#06B6D4' },
+    { label: 'PV', kwh: 0, pct: 0, color: '#10B981' }
   ];
 
-  const defaultProduction: UtilizationSlice[] = [
-    { label: 'Charge', kwh: 128.70, pct: 47.7, color: '#F59E0B' },
-    { label: 'Consumption', kwh: 141.29, pct: 52.3, color: '#EAB308' }
+  const emptyProduction: UtilizationSlice[] = [
+    { label: 'Charge', kwh: 0, pct: 0, color: '#F59E0B' },
+    { label: 'Consumption', kwh: 0, pct: 0, color: '#EAB308' }
   ];
 
-  const rawConsSlices = consumptionBreakdown && consumptionBreakdown.length > 0 ? consumptionBreakdown : defaultConsumption;
-  const rawProdSlices = productionBreakdown && productionBreakdown.length > 0 ? productionBreakdown : defaultProduction;
+  const rawConsSlices = consumptionBreakdown && consumptionBreakdown.length > 0 ? consumptionBreakdown : emptyConsumption;
+  const rawProdSlices = productionBreakdown && productionBreakdown.length > 0 ? productionBreakdown : emptyProduction;
 
   const normalizeSlices = (slices: UtilizationSlice[]): UtilizationSlice[] => {
     const total = slices.reduce((acc, s) => acc + s.kwh, 0);

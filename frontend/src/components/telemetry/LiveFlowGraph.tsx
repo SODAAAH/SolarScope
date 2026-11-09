@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Sun, Zap, Battery, Home, ShieldCheck, RefreshCw, CheckCircle2, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import { Sun, Zap, Battery, Home, ShieldCheck, RefreshCw, CheckCircle2, WifiOff } from 'lucide-react';
 import type { LiveFlowResponse } from '../../lib/api';
 import { api } from '../../lib/api';
 import { format12HourTime } from '../../lib/formatters';
@@ -7,63 +8,133 @@ import { Tooltip } from '../common/Tooltip';
 
 interface LiveFlowGraphProps {
   initialData?: LiveFlowResponse | null;
+  onFlowUpdate?: (flow: LiveFlowResponse) => void;
   onRefreshRequested?: () => void;
 }
 
-export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRefreshRequested }) => {
-  const [data, setData] = useState<LiveFlowResponse | null>(initialData || null);
+const LIVE_FLOW_CACHE_KEY = 'solarscope_cached_live_flow';
+const REFRESH_INTERVAL_SEC = 15;
+
+const NEUTRAL_NODES: LiveFlowResponse['nodes'] = {
+  solar: { power_w: 0.0, power_kw: 0.0, is_active: false },
+  battery: { soc_percent: 0, power_w: 0.0, power_kw: 0.0, state: 'IDLE', is_charging: false, is_discharging: false },
+  inverter: { status: 'STANDBY', throughput_w: 0.0, throughput_kw: 0.0 },
+  grid: { power_w: 0.0, power_kw: 0.0, status_label: 'Standby', state: 'IDLE', is_importing: false, is_exporting: false },
+  load: { power_w: 0.0, power_kw: 0.0, is_active: false },
+  ups: { power_w: 0.0, power_kw: 0.0, is_active: false }
+};
+
+export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
+  initialData,
+  onFlowUpdate,
+  onRefreshRequested
+}) => {
+  const [data, setData] = useState<LiveFlowResponse | null>(() => {
+    if (initialData && (initialData.is_live || initialData.data_source === 'demo')) {
+      return initialData;
+    }
+    try {
+      const saved = sessionStorage.getItem(LIVE_FLOW_CACHE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as LiveFlowResponse;
+        if (parsed && (parsed.is_live || parsed.data_source === 'demo')) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  });
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [dataMode, setDataMode] = useState<'plant' | 'live'>('plant');
-  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(15);
+  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(REFRESH_INTERVAL_SEC);
 
-  const fetchFlowData = async () => {
+  const isFetchingRef = useRef(false);
+  const onFlowUpdateRef = useRef(onFlowUpdate);
+  const onRefreshRequestedRef = useRef(onRefreshRequested);
+
+  useEffect(() => {
+    onFlowUpdateRef.current = onFlowUpdate;
+  }, [onFlowUpdate]);
+
+  useEffect(() => {
+    onRefreshRequestedRef.current = onRefreshRequested;
+  }, [onRefreshRequested]);
+
+  const fetchFlowData = useCallback(async (triggerSummaryRefresh = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     setLoading(true);
     try {
       const res = await api.getDeyeLiveFlow();
-      if (res && res.success) {
-        setData(res);
+      if (res) {
+        const hasRealData = Boolean(
+          res.is_live || res.data_source === 'demo' || res.data_source === 'cached'
+        );
+        if (hasRealData) {
+          setData(res);
+          try {
+            if (res.is_live || res.data_source === 'demo') {
+              sessionStorage.setItem(LIVE_FLOW_CACHE_KEY, JSON.stringify(res));
+            }
+          } catch {}
+          if (onFlowUpdateRef.current) {
+            onFlowUpdateRef.current(res);
+          }
+        } else {
+          setData((prev) => {
+            if (prev && (prev.is_live || prev.data_source === 'demo' || prev.data_source === 'cached')) {
+              return {
+                ...prev,
+                is_live: false,
+                data_source: 'cached',
+                error: res.error || 'Live telemetry temporarily unreachable'
+              };
+            }
+            return res;
+          });
+          if (onFlowUpdateRef.current) {
+            onFlowUpdateRef.current(res);
+          }
+        }
       }
     } catch {
     } finally {
+      isFetchingRef.current = false;
       setLoading(false);
-      setSecondsUntilRefresh(15);
-      if (onRefreshRequested) {
-        onRefreshRequested();
+      setSecondsUntilRefresh(REFRESH_INTERVAL_SEC);
+      if (triggerSummaryRefresh && onRefreshRequestedRef.current) {
+        onRefreshRequestedRef.current();
       }
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (initialData) {
+    if (initialData && (initialData.is_live || initialData.data_source === 'demo')) {
       setData(initialData);
-    } else {
-      fetchFlowData();
     }
   }, [initialData]);
 
   useEffect(() => {
+    fetchFlowData(false);
+  }, [fetchFlowData]);
+
+  useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
-      setSecondsUntilRefresh((prev) => {
-        if (prev <= 1) {
-          fetchFlowData();
-          return 15;
-        }
-        return prev - 1;
-      });
+      if (typeof document !== 'undefined' && document.hidden) return;
+      setSecondsUntilRefresh((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
     return () => clearInterval(interval);
   }, [autoRefresh]);
 
-  const nodes = data?.nodes || {
-    solar: { power_w: 0.0, power_kw: 0.0, is_active: false },
-    battery: { soc_percent: 63, power_w: 1210, power_kw: 1.21, state: 'DISCHARGING', is_charging: false, is_discharging: true },
-    inverter: { status: 'OPERATIONAL', throughput_w: 1210, throughput_kw: 1.21 },
-    grid: { power_w: 10, power_kw: 0.01, status_label: 'On grid', state: 'IMPORT', is_importing: true, is_exporting: false },
-    load: { power_w: 10, power_kw: 0.01, is_active: true },
-    ups: { power_w: 1100, power_kw: 1.10, is_active: true }
-  };
+  useEffect(() => {
+    if (autoRefresh && secondsUntilRefresh === 0) {
+      fetchFlowData(false);
+    }
+  }, [autoRefresh, secondsUntilRefresh, fetchFlowData]);
+
+  const nodes = data?.nodes || NEUTRAL_NODES;
+  const sourceState = data?.data_source || (data?.is_live ? 'live' : 'offline');
 
   const formatPower = (watts: number, kw: number) => {
     if (watts >= 1000) {
@@ -113,31 +184,75 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
           >
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-help">Flow Graph</h3>
           </Tooltip>
-          <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
-            {data?.last_update_time ? format12HourTime(data.last_update_time, true) : ''}
-          </span>
+          {data?.last_update_time && (
+            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+              {format12HourTime(data.last_update_time, true)}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
-          <Tooltip
-            title="Telemetry Channel"
-            content="Station cloud telemetry stream synchronized with inverter registers."
-            position="bottom"
-          >
-            <div className="relative">
-              <button
-                onClick={() => setDataMode(dataMode === 'plant' ? 'live' : 'plant')}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors"
+          {sourceState === 'live' && (
+            <Tooltip
+              title="Deye Cloud Synchronized"
+              content="Connected directly to Deye OpenAPI station telemetry."
+              position="bottom"
+            >
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live
+              </span>
+            </Tooltip>
+          )}
+
+          {sourceState === 'demo' && (
+            <Tooltip
+              title="Simulated Demo Stream"
+              content="Running in Demo Mode. Configure your Deye Cloud credentials in Data Library & Cloud for real station telemetry."
+              position="bottom"
+            >
+              <Link
+                to="/library?tab=cloud"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
               >
-                <span>{dataMode === 'plant' ? 'Plant data' : 'Live Telemetry'}</span>
-                <ChevronDown className="h-3 w-3 text-slate-400" />
-              </button>
-            </div>
-          </Tooltip>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                Demo
+              </Link>
+            </Tooltip>
+          )}
+
+          {sourceState === 'cached' && (
+            <Tooltip
+              title="Showing Cached Snapshot"
+              content={data?.error || 'Live telemetry temporarily unreachable; retaining your last verified reading until next refresh.'}
+              position="bottom"
+            >
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 cursor-help">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                Cached
+              </span>
+            </Tooltip>
+          )}
+
+          {sourceState === 'offline' && (
+            <Tooltip
+              title="Live Telemetry Offline"
+              content={data?.error || 'Open Data Library & Cloud and click Test API Connection to stream live Deye telemetry.'}
+              position="bottom"
+            >
+              <Link
+                to="/library?tab=cloud"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                <WifiOff className="h-3 w-3 text-slate-400" />
+                <span>Offline</span>
+              </Link>
+            </Tooltip>
+          )}
 
           <Tooltip
             title="Auto Refresh Rate"
-            content={autoRefresh ? `Telemetry polls live registers every 15 seconds. Next refresh in ${secondsUntilRefresh}s.` : 'Polling paused. Click to resume auto-refresh.'}
+            content={autoRefresh ? `Telemetry polls live registers every ${REFRESH_INTERVAL_SEC} seconds. Next refresh in ${secondsUntilRefresh}s.` : 'Polling paused. Click to resume auto-refresh.'}
             position="bottom"
           >
             <button
@@ -153,7 +268,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
           </Tooltip>
 
           <button
-            onClick={() => fetchFlowData()}
+            onClick={() => fetchFlowData(true)}
             disabled={loading}
             title={autoRefresh ? `Auto-refresh in ${secondsUntilRefresh}s` : 'Manual refresh'}
             className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
@@ -308,7 +423,13 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
                   <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
                     {formatPower(nodes.grid.power_w, nodes.grid.power_kw)}
                   </span>
-                  <div className="mt-1 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                  <div className={`mt-1 flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[10px] font-medium ${
+                    nodes.grid.status_label === 'On grid'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400'
+                      : nodes.grid.status_label === 'Off grid'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400'
+                        : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
+                  }`}>
                     <CheckCircle2 className="h-2.5 w-2.5" />
                     <span>{nodes.grid.status_label}</span>
                   </div>
@@ -327,7 +448,13 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({ initialData, onRef
             >
               <div className="w-full h-full rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-sm flex flex-col items-center justify-center p-1.5 cursor-help">
                 <div className="w-6 h-4 rounded-sm border border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-1">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <div className={`w-2 h-2 rounded-full ${
+                    sourceState === 'live'
+                      ? 'bg-emerald-500 animate-pulse'
+                      : sourceState === 'demo' || sourceState === 'cached'
+                        ? 'bg-amber-500 animate-pulse'
+                        : 'bg-slate-400'
+                  }`} />
                 </div>
                 <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">Inverter</span>
               </div>

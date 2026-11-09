@@ -120,14 +120,6 @@ export const OverviewPage: React.FC = () => {
         }
       })
       .catch(() => {});
-
-    api.getDeyeLiveFlow()
-      .then((flowRes) => {
-        if (flowRes && flowRes.success) {
-          setLiveFlow(flowRes);
-        }
-      })
-      .catch(() => {});
   };
 
   useEffect(() => {
@@ -497,35 +489,60 @@ export const OverviewPage: React.FC = () => {
 
   const sol = summary?.solar || {};
   const solarKwh = summary?.balance?.pv_kwh ?? sol.total_generation_kwh ?? 0;
+  const loadKwh = summary?.balance?.household_demand_kwh ?? summary?.consumption?.total_consumption_kwh ?? 0;
+  const allDailyPvTotal = dailySummaries.reduce((acc, d) => acc + d.pv_kwh, 0);
+  const allDailyLoadTotal = dailySummaries.reduce((acc, d) => acc + d.load_kwh, 0);
+  const hasRealFlow = Boolean(liveFlow && (liveFlow.is_live || liveFlow.data_source === 'demo' || liveFlow.data_source === 'cached'));
+
+  const accumProdKwh = allDailyPvTotal > 0
+    ? allDailyPvTotal
+    : (solarKwh > 0 ? solarKwh : (hasRealFlow ? (liveFlow?.summary.accumulative_production_kwh ?? 0) : 0));
+  const accumConsKwh = allDailyLoadTotal > 0
+    ? allDailyLoadTotal
+    : (loadKwh > 0 ? loadKwh : (hasRealFlow ? (liveFlow?.summary.accumulative_consumption_kwh ?? 0) : 0));
+  const dailyProdKwh = todaySummary
+    ? todaySummary.pv_kwh
+    : (activeDatasetId !== 'all' ? solarKwh : (hasRealFlow ? (liveFlow?.summary.daily_production_kwh ?? 0) : 0));
+  const dailyConsKwh = todaySummary
+    ? todaySummary.load_kwh
+    : (activeDatasetId !== 'all' ? loadKwh : 0);
+
+  const balanceSelfConsRaw = summary?.balance?.solar_self_consumption_ratio;
+  const balanceSelfConsPct = typeof balanceSelfConsRaw === 'number'
+    ? (balanceSelfConsRaw <= 1 ? balanceSelfConsRaw * 100 : balanceSelfConsRaw)
+    : 0;
+  const selfConsPct = todaySummary && todaySummary.pv_kwh > 0
+    ? Math.min(100, Math.max(0, ((todaySummary.pv_kwh - (todaySummary.grid_export_kwh || 0)) / todaySummary.pv_kwh) * 100))
+    : balanceSelfConsPct;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-8">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
             <div className="md:col-span-12 lg:col-span-5 flex flex-col card-stagger-1">
-              <LiveFlowGraph initialData={liveFlow} onRefreshRequested={fetchOverviewData} />
+              <LiveFlowGraph
+                initialData={liveFlow}
+                onFlowUpdate={setLiveFlow}
+                onRefreshRequested={fetchOverviewData}
+              />
             </div>
 
             <div className="md:col-span-6 lg:col-span-3 flex flex-col card-stagger-2">
               <LiveSummaryCard
-                accumulativeProductionKwh={liveFlow?.summary.accumulative_production_kwh ?? 270.80}
-                accumulativeConsumptionKwh={liveFlow?.summary.accumulative_consumption_kwh ?? 371.10}
-                dailyProductionKwh={liveFlow?.summary.daily_production_kwh ?? (solarKwh > 0 ? solarKwh : 15.90)}
-                dailyConsumptionKwh={todaySummary?.load_kwh ?? 21.40}
-                selfConsumptionRate={
-                  todaySummary && todaySummary.pv_kwh > 0
-                    ? Math.min(100, Math.max(0, ((todaySummary.pv_kwh - (todaySummary.grid_export_kwh || 0)) / todaySummary.pv_kwh) * 100))
-                    : 84.5
-                }
+                accumulativeProductionKwh={accumProdKwh}
+                accumulativeConsumptionKwh={accumConsKwh}
+                dailyProductionKwh={dailyProdKwh}
+                dailyConsumptionKwh={dailyConsKwh}
+                selfConsumptionRate={selfConsPct}
                 weatherTempC={liveFlow?.summary.weather_temp_c ?? 28}
               />
             </div>
 
             <div className="md:col-span-6 lg:col-span-4 flex flex-col card-stagger-3">
               <SolarUtilizationCard
-                consumptionTotalKwh={currentMonthLoadTotal > 0 ? currentMonthLoadTotal : (liveFlow?.utilization?.consumption_total_kwh ?? 371.10)}
-                consumptionBreakdown={currentMonthLoadTotal > 0 ? monthConsBreakdown : liveFlow?.utilization?.consumption_breakdown}
-                productionTotalKwh={currentMonthPvTotal > 0 ? currentMonthPvTotal : (liveFlow?.utilization?.production_total_kwh ?? 270.80)}
-                productionBreakdown={currentMonthPvTotal > 0 ? monthProdBreakdown : liveFlow?.utilization?.production_breakdown}
+                consumptionTotalKwh={currentMonthLoadTotal > 0 ? currentMonthLoadTotal : (hasRealFlow ? (liveFlow?.utilization?.consumption_total_kwh ?? 0) : 0)}
+                consumptionBreakdown={currentMonthLoadTotal > 0 ? monthConsBreakdown : (hasRealFlow ? liveFlow?.utilization?.consumption_breakdown : undefined)}
+                productionTotalKwh={currentMonthPvTotal > 0 ? currentMonthPvTotal : (hasRealFlow ? (liveFlow?.utilization?.production_total_kwh ?? 0) : 0)}
+                productionBreakdown={currentMonthPvTotal > 0 ? monthProdBreakdown : (hasRealFlow ? liveFlow?.utilization?.production_breakdown : undefined)}
                 dateLabel={selectedHistoryMonthDisplay}
                 onPrevMonth={handlePrevMonth}
                 onNextMonth={handleNextMonth}

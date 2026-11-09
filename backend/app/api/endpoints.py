@@ -1,10 +1,11 @@
 import os
 import uuid
 import json
+import urllib.parse
 import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query, Body
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query, Body, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -72,6 +73,7 @@ from backend.app.billing import (
     insert_historical_bill,
     remove_historical_bill
 )
+from backend.app.billing.billing_profile import compute_cycle_dates
 from backend.app.integrations.deye_cloud import DeyeCloudClient
 from backend.app.integrations.weather import get_weather_intelligence
 from backend.app.ingestion.multi_preview import inspect_file_for_preview
@@ -1085,29 +1087,54 @@ def download_report(report_id: str):
         media_type="application/octet-stream"
     )
 
+def _resolve_billing_profile(conn: Any, request: Optional[Request] = None) -> TEIBillingProfile:
+    raw_profile = None
+    if request is not None:
+        raw_profile = request.headers.get("X-Billing-Profile") or request.cookies.get("solarscope_billing_profile")
+    if raw_profile:
+        try:
+            decoded = urllib.parse.unquote(raw_profile)
+            parsed = json.loads(decoded)
+            if isinstance(parsed, dict):
+                profile = TEIBillingProfile(**parsed)
+                cycle_day = max(1, min(31, int(profile.billing_cycle_day or 25)))
+                start_dt, end_dt = compute_cycle_dates(cycle_day)
+                profile.billing_cycle_day = cycle_day
+                profile.cycle_start_date = start_dt.strftime("%Y-%m-%d")
+                profile.cycle_end_date = end_dt.strftime("%Y-%m-%d")
+                save_billing_profile(profile, conn)
+                conn.commit()
+                return get_billing_profile(conn)
+        except Exception:
+            pass
+    return get_billing_profile(conn)
+
 @router.get("/billing/overview")
-def get_billing_overview(dataset_id: Optional[str] = None):
+def get_billing_overview(request: Request, response: Response, dataset_id: Optional[str] = None):
+    response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     sched = get_active_rate_schedule(conn)
-    profile = get_billing_profile(conn)
+    profile = _resolve_billing_profile(conn, request)
     conn.close()
     records = _get_records("all")
     return forecast_tei_bill(records, sched, profile, last_rate_check_cache)
 
 @router.get("/billing/progress")
-def get_billing_progress(dataset_id: Optional[str] = None):
+def get_billing_progress(request: Request, response: Response, dataset_id: Optional[str] = None):
+    response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     sched = get_active_rate_schedule(conn)
-    profile = get_billing_profile(conn)
+    profile = _resolve_billing_profile(conn, request)
     conn.close()
     records = _get_records("all")
     return calculate_billing_progress_series(records, sched, profile)
 
 @router.get("/billing/statement")
-def get_billing_statement(mode: str = "expected", dataset_id: Optional[str] = None):
+def get_billing_statement(request: Request, response: Response, mode: str = "expected", dataset_id: Optional[str] = None):
+    response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     sched = get_active_rate_schedule(conn)
-    profile = get_billing_profile(conn)
+    profile = _resolve_billing_profile(conn, request)
     conn.close()
     records = _get_records("all")
     forecast = forecast_tei_bill(records, sched, profile, last_rate_check_cache)
@@ -1120,22 +1147,34 @@ def get_billing_statement(mode: str = "expected", dataset_id: Optional[str] = No
     return forecast.expected_estimate.statement
 
 @router.get("/billing/profile")
-def get_billing_profile_endpoint():
+def get_billing_profile_endpoint(request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
-    prof = get_billing_profile(conn)
+    prof = _resolve_billing_profile(conn, request)
     conn.close()
     return prof.model_dump()
 
 @router.put("/billing/profile")
-def update_billing_profile_endpoint(profile: TEIBillingProfile):
+def update_billing_profile_endpoint(profile: TEIBillingProfile, response: Response):
+    response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     save_billing_profile(profile, conn)
     conn.commit()
+    saved = get_billing_profile(conn)
     conn.close()
-    return {"status": "updated", "profile": profile.model_dump()}
+    encoded = urllib.parse.quote(json.dumps(saved.model_dump()))
+    response.set_cookie(
+        key="solarscope_billing_profile",
+        value=encoded,
+        max_age=31536000,
+        path="/",
+        samesite="lax"
+    )
+    return {"status": "updated", "profile": saved.model_dump()}
 
 @router.get("/billing/rates")
-def get_billing_rates():
+def get_billing_rates(response: Response):
+    response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     rates = get_rate_history(conn)
     conn.close()
@@ -1200,10 +1239,11 @@ def add_manual_billing_rate(payload: ManualRateScheduleRequest):
     return {"status": "created", "schedule_id": new_sched.id}
 
 @router.post("/billing/sensitivity")
-def calculate_sensitivity_endpoint(payload: SensitivityRequest, dataset_id: Optional[str] = None):
+def calculate_sensitivity_endpoint(request: Request, response: Response, payload: SensitivityRequest, dataset_id: Optional[str] = None):
+    response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     sched = get_active_rate_schedule(conn)
-    profile = get_billing_profile(conn)
+    profile = _resolve_billing_profile(conn, request)
     conn.close()
     records = _get_records(dataset_id or "all")
     forecast = forecast_tei_bill(records, sched, profile, last_rate_check_cache)
@@ -1220,7 +1260,8 @@ def calculate_sensitivity_endpoint(payload: SensitivityRequest, dataset_id: Opti
     )
 
 @router.get("/billing/history")
-def get_historical_bills_endpoint():
+def get_historical_bills_endpoint(response: Response):
+    response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     bills = get_historical_bills_summary(conn)
     conn.close()
@@ -1263,18 +1304,41 @@ class DeyeConfigPayload(BaseModel):
     reconciliation_policy: Optional[str] = "MERGE"
 
 @router.get("/deye/status")
-def get_deye_status_endpoint():
+def get_deye_status_endpoint(request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
     client = DeyeCloudClient()
-    return client.get_status()
+    status = client.get_status()
+    hdr_mode = (request.headers.get("X-Deye-Mode") or "").strip().lower()
+    hdr_token = (request.headers.get("X-Deye-Token") or "").strip()
+    hdr_station = (request.headers.get("X-Deye-Station-Id") or "").strip()
+    if not status.get("is_configured") and (hdr_token or hdr_mode == "demo"):
+        status["is_configured"] = True
+        status["is_demo"] = hdr_mode == "demo"
+        if hdr_station and not status.get("station_id"):
+            status["station_id"] = hdr_station
+        if status.get("device_hierarchy", {}).get("station"):
+            status["device_hierarchy"]["station"]["status"] = "CONFIGURED"
+            if hdr_station:
+                status["device_hierarchy"]["station"]["station_id"] = hdr_station
+    return status
 
 @router.post("/deye/config")
-def save_deye_config_endpoint(payload: DeyeConfigPayload):
+def save_deye_config_endpoint(payload: DeyeConfigPayload, response: Response):
+    response.headers["Cache-Control"] = "no-store"
     client = DeyeCloudClient()
     client.save_config(payload.model_dump())
-    return client.get_status()
+    status = client.get_status()
+    is_demo = status.get("app_id") == "demo" or status.get("username") == "demo"
+    status["is_demo"] = is_demo
+    if not is_demo and status.get("is_configured"):
+        token = client.try_get_token()
+        if token:
+            status["access_token"] = token
+    return status
 
 @router.post("/deye/test")
-def test_deye_connection_endpoint(payload: Optional[DeyeConfigPayload] = Body(default=None)):
+def test_deye_connection_endpoint(response: Response, payload: Optional[DeyeConfigPayload] = Body(default=None)):
+    response.headers["Cache-Control"] = "no-store"
     client = DeyeCloudClient()
     if payload and any([payload.station_id, payload.app_id, payload.app_secret, payload.username, payload.password]):
         client.save_config(payload.model_dump())
@@ -1323,14 +1387,24 @@ def sync_deye_missing_endpoint():
     return res
 
 @router.get("/deye/live_flow")
-def get_deye_live_flow_endpoint():
+def get_deye_live_flow_endpoint(request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
     from backend.app.integrations.deye_mcp import deye_mcp_client
-    return deye_mcp_client.get_live_flow()
+    return deye_mcp_client.get_live_flow(
+        access_token_override=request.headers.get("X-Deye-Token"),
+        station_id_override=request.headers.get("X-Deye-Station-Id"),
+        mode_override=request.headers.get("X-Deye-Mode")
+    )
 
 @router.get("/deye/health")
-def get_deye_health_endpoint():
+def get_deye_health_endpoint(request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
     from backend.app.integrations.deye_mcp import deye_mcp_client
-    return deye_mcp_client.get_station_health()
+    return deye_mcp_client.get_station_health(
+        access_token_override=request.headers.get("X-Deye-Token"),
+        station_id_override=request.headers.get("X-Deye-Station-Id"),
+        mode_override=request.headers.get("X-Deye-Mode")
+    )
 
 @router.get("/weather/intelligence")
 def get_weather_endpoint():
