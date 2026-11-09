@@ -1,3 +1,4 @@
+import os
 import json
 import csv
 import hashlib
@@ -5,6 +6,7 @@ import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import urllib.request
+import urllib.parse
 import urllib.error
 from backend.app.config import settings
 from backend.app.storage.db import get_connection
@@ -19,11 +21,11 @@ class DeyeCloudClient:
         row = conn.execute("SELECT * FROM deye_cloud_configs WHERE project_id = ?", (self.project_id,)).fetchone()
         conn.close()
         if row:
-            self.station_id = (row["station_id"] or "").strip()
-            self.app_id = (row["app_id"] or "").strip()
-            self.app_secret = (row["app_secret"] or "").strip()
-            self.username = (row["username"] or "").strip()
-            self.password = (row["password_encrypted"] or "").strip()
+            self.station_id = (row["station_id"] or "").strip() or os.environ.get("DEYE_STATION_ID", "").strip()
+            self.app_id = (row["app_id"] or "").strip() or os.environ.get("DEYE_APP_ID", "").strip()
+            self.app_secret = (row["app_secret"] or "").strip() or os.environ.get("DEYE_APP_SECRET", "").strip()
+            self.username = (row["username"] or "").strip() or os.environ.get("DEYE_USERNAME", "").strip()
+            self.password = (row["password_encrypted"] or "").strip() or os.environ.get("DEYE_PASSWORD", "").strip()
             self.auto_sync = bool(row["auto_sync"])
             self.sync_interval_min = row["sync_interval_min"] or 5
             self.last_sync_time = row["last_sync_time"]
@@ -31,11 +33,11 @@ class DeyeCloudClient:
             self.sync_message = row["sync_message"] or ""
             self.reconciliation_policy = row["reconciliation_policy"] or "MERGE"
         else:
-            self.station_id = ""
-            self.app_id = ""
-            self.app_secret = ""
-            self.username = ""
-            self.password = ""
+            self.station_id = os.environ.get("DEYE_STATION_ID", "").strip()
+            self.app_id = os.environ.get("DEYE_APP_ID", "").strip()
+            self.app_secret = os.environ.get("DEYE_APP_SECRET", "").strip()
+            self.username = os.environ.get("DEYE_USERNAME", "").strip()
+            self.password = os.environ.get("DEYE_PASSWORD", "").strip()
             self.auto_sync = False
             self.sync_interval_min = 5
             self.last_sync_time = None
@@ -56,7 +58,8 @@ class DeyeCloudClient:
         ).fetchone()
         conn.close()
 
-        is_configured = bool(self.app_id and self.app_secret) or bool(self.username and self.password)
+        is_demo = self.app_id == "demo" or self.username == "demo"
+        is_configured = is_demo or bool(self.app_id and self.app_secret and self.username and self.password)
 
         device_hierarchy = {
             "installation_name": "Mam Micah (Teresa, Tibag, Tarlac City)",
@@ -80,6 +83,8 @@ class DeyeCloudClient:
 
         return {
             "is_configured": is_configured,
+            "has_app_secret": bool(self.app_secret),
+            "has_password": bool(self.password),
             "station_id": self.station_id,
             "app_id": self.app_id,
             "username": self.username,
@@ -102,10 +107,10 @@ class DeyeCloudClient:
                 auto_sync, sync_interval_min, reconciliation_policy, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id) DO UPDATE SET
-                station_id = excluded.station_id,
-                app_id = excluded.app_id,
+                station_id = CASE WHEN excluded.station_id != '' THEN excluded.station_id ELSE deye_cloud_configs.station_id END,
+                app_id = CASE WHEN excluded.app_id != '' THEN excluded.app_id ELSE deye_cloud_configs.app_id END,
                 app_secret = CASE WHEN excluded.app_secret != '' THEN excluded.app_secret ELSE deye_cloud_configs.app_secret END,
-                username = excluded.username,
+                username = CASE WHEN excluded.username != '' THEN excluded.username ELSE deye_cloud_configs.username END,
                 password_encrypted = CASE WHEN excluded.password_encrypted != '' THEN excluded.password_encrypted ELSE deye_cloud_configs.password_encrypted END,
                 auto_sync = excluded.auto_sync,
                 sync_interval_min = excluded.sync_interval_min,
@@ -115,11 +120,11 @@ class DeyeCloudClient:
             (
                 f"deye-{self.project_id}",
                 self.project_id,
-                config_data.get("station_id", ""),
-                config_data.get("app_id", ""),
-                config_data.get("app_secret", ""),
-                config_data.get("username", ""),
-                config_data.get("password", ""),
+                (config_data.get("station_id") or "").strip(),
+                (config_data.get("app_id") or "").strip(),
+                (config_data.get("app_secret") or "").strip(),
+                (config_data.get("username") or "").strip(),
+                (config_data.get("password") or "").strip(),
                 1 if config_data.get("auto_sync") else 0,
                 config_data.get("sync_interval_min", 5),
                 config_data.get("reconciliation_policy", "MERGE"),
@@ -132,13 +137,19 @@ class DeyeCloudClient:
 
     def _get_auth_token(self) -> Optional[str]:
         if not (self.app_id and self.app_secret):
-            return None
-        pwd_hash = hashlib.sha256(self.password.encode("utf-8")).hexdigest().lower() if self.password else ""
-        payload = json.dumps({
+            raise Exception("Missing App ID or App Secret.")
+        if not (self.username and self.password):
+            raise Exception("Missing Account Email/Username or Account Password. Deye Cloud requires both your Developer App credentials and your Deye Cloud account login.")
+        pwd_hash = hashlib.sha256(self.password.encode("utf-8")).hexdigest().lower()
+        auth_body: Dict[str, Any] = {
             "appSecret": self.app_secret,
-            "email": self.username,
             "password": pwd_hash
-        }).encode("utf-8")
+        }
+        if "@" in self.username:
+            auth_body["email"] = self.username
+        else:
+            auth_body["username"] = self.username
+        payload = json.dumps(auth_body).encode("utf-8")
 
         endpoints = [
             f"https://eu1-developer.deyecloud.com/v1.0/account/token?appId={urllib.parse.quote(self.app_id)}",
@@ -156,6 +167,14 @@ class DeyeCloudClient:
                         last_error = data["msg"]
                         if "deyecloud.com" in endpoint:
                             break
+            except urllib.error.HTTPError as he:
+                try:
+                    err_data = json.loads(he.read().decode("utf-8"))
+                    last_error = err_data.get("msg") or f"HTTP {he.code}: {he.reason}"
+                except Exception:
+                    last_error = f"HTTP {he.code}: {he.reason}"
+                if "deyecloud.com" in endpoint:
+                    break
             except Exception as e:
                 last_error = str(e)
         if last_error:
@@ -168,16 +187,16 @@ class DeyeCloudClient:
             self._update_status("CONNECTED", "Simulated connection to Deye Cloud Logger 1251892903 successful.")
             return {"success": True, "message": "Demo mode: Simulated connection to Deye Logger 1251892903 successful."}
 
-        if not (self.app_id and self.app_secret):
+        if not (self.app_id and self.app_secret and self.username and self.password):
             return {
                 "success": False,
-                "message": "Missing credentials. Enter your Deye Developer App ID and App Secret."
+                "message": "Incomplete credentials. Enter Station ID, App ID, App Secret, Account Email/Username, and Account Password."
             }
 
         try:
             token = self._get_auth_token()
             if not token:
-                return {"success": False, "message": "Authentication failed. Check your App ID, App Secret, or account password."}
+                return {"success": False, "message": "Authentication failed. Check your App ID, App Secret, email/username, or account password."}
 
             st_id = int(self.station_id) if (self.station_id and self.station_id.isdigit()) else 62805884
             req = urllib.request.Request(
@@ -189,9 +208,12 @@ class DeyeCloudClient:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 latest_data = json.loads(resp.read().decode("utf-8"))
 
+            if latest_data.get("success") is False:
+                raise Exception(latest_data.get("msg") or "Station query failed")
+
             pv_w = latest_data.get("generationPower", 0.0) or 0.0
             soc = latest_data.get("batterySOC", 0.0) or 0.0
-            msg = f"Connected to Mam Micah (Station 62805884). Live Solar: {pv_w/1000.0:.2f} kW, Battery: {soc:.0f}% SOC."
+            msg = f"Connected to Mam Micah (Station {st_id}). Live Solar: {pv_w/1000.0:.2f} kW, Battery: {soc:.0f}% SOC."
             self._update_status("CONNECTED", msg)
             return {"success": True, "message": msg}
         except Exception as e:
@@ -299,6 +321,7 @@ class DeyeCloudClient:
         st_id = int(self.station_id) if (self.station_id and self.station_id.isdigit()) else 62805884
         all_records = []
         seen_timestamps = set()
+        last_api_error = None
 
         chunk_start = d_start
         while chunk_start <= d_end:
@@ -322,7 +345,10 @@ class DeyeCloudClient:
             try:
                 with urllib.request.urlopen(req, timeout=15) as resp:
                     res = json.loads(resp.read().decode("utf-8"))
-            except Exception:
+                if res.get("success") is False and res.get("msg"):
+                    last_api_error = res["msg"]
+            except Exception as e:
+                last_api_error = str(e)
                 chunk_start = chunk_end + datetime.timedelta(days=1)
                 continue
 
@@ -361,6 +387,9 @@ class DeyeCloudClient:
                     "Grid-tied Inverter Power(kW)": 0.0
                 })
             chunk_start = chunk_end + datetime.timedelta(days=1)
+
+        if not all_records and last_api_error:
+            raise Exception(last_api_error)
 
         all_records.sort(key=lambda r: r["Time"])
         return all_records

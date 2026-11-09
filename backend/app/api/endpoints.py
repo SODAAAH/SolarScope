@@ -4,7 +4,7 @@ import json
 import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query, Body
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -1274,18 +1274,23 @@ def save_deye_config_endpoint(payload: DeyeConfigPayload):
     return client.get_status()
 
 @router.post("/deye/test")
-def test_deye_connection_endpoint():
+def test_deye_connection_endpoint(payload: Optional[DeyeConfigPayload] = Body(default=None)):
     client = DeyeCloudClient()
+    if payload and any([payload.station_id, payload.app_id, payload.app_secret, payload.username, payload.password]):
+        client.save_config(payload.model_dump())
     return client.test_connection()
 
 class DeyeSyncRangePayload(BaseModel):
     start_date: str
     end_date: str
+    credentials: Optional[DeyeConfigPayload] = None
 
 @router.post("/deye/sync")
-def sync_deye_endpoint():
+def sync_deye_endpoint(payload: Optional[DeyeConfigPayload] = Body(default=None)):
     try:
         client = DeyeCloudClient()
+        if payload and any([payload.station_id, payload.app_id, payload.app_secret, payload.username, payload.password]):
+            client.save_config(payload.model_dump())
         res = client.sync_now()
         invalidate_all_caches()
         return res
@@ -1296,6 +1301,8 @@ def sync_deye_endpoint():
 def sync_deye_range_endpoint(payload: DeyeSyncRangePayload):
     try:
         client = DeyeCloudClient()
+        if payload.credentials and any([payload.credentials.station_id, payload.credentials.app_id, payload.credentials.app_secret, payload.credentials.username, payload.credentials.password]):
+            client.save_config(payload.credentials.model_dump())
         res = client.sync_range(payload.start_date, payload.end_date)
         invalidate_all_caches()
         return res

@@ -110,9 +110,9 @@ export const HistoricalLibraryPage: React.FC = () => {
       const data = await api.getDeyeStatus();
       setDeyeStatus(data);
       if (data) {
-        setConfigStationId(data.station_id || "62805884");
-        setConfigAppId(data.app_id || "");
-        setConfigUsername(data.username || "dy_YyWnmwcU");
+        setConfigStationId(prev => data.station_id || prev || "62805884");
+        setConfigAppId(prev => data.app_id || prev || "");
+        setConfigUsername(prev => data.username || prev || "");
         setConfigAutoSync(data.auto_sync || false);
         setConfigInterval(data.sync_interval_min || 5);
       }
@@ -123,21 +123,27 @@ export const HistoricalLibraryPage: React.FC = () => {
     }
   };
 
+  const getPendingCredentialsPayload = () => ({
+    station_id: configStationId.trim(),
+    app_id: configAppId.trim(),
+    app_secret: configAppSecret.trim(),
+    username: configUsername.trim(),
+    password: configPassword.trim(),
+    auto_sync: configAutoSync,
+    sync_interval_min: configInterval
+  });
+
   const handleSaveDeyeConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingConfig(true);
     try {
-      const res = await api.saveDeyeConfig({
-        station_id: configStationId,
-        app_id: configAppId,
-        app_secret: configAppSecret,
-        username: configUsername,
-        password: configPassword,
-        auto_sync: configAutoSync,
-        sync_interval_min: configInterval
-      });
+      const res = await api.saveDeyeConfig(getPendingCredentialsPayload());
       setDeyeStatus(res);
-      setDeyeMessage("Deye Cloud credentials saved successfully.");
+      if (res.is_configured) {
+        setDeyeMessage("Deye Cloud credentials saved successfully.");
+      } else {
+        setDeyeMessage("Saved partial configuration. Enter App ID, App Secret, Account Email/Username, and Account Password for live Deye Cloud authentication.");
+      }
     } catch (err: any) {
       setDeyeMessage(`Failed to save credentials: ${err.message}`);
     } finally {
@@ -192,7 +198,7 @@ export const HistoricalLibraryPage: React.FC = () => {
     setDeyeTesting(true);
     setDeyeMessage(null);
     try {
-      const res = await api.testDeyeConnection();
+      const res = await api.testDeyeConnection(getPendingCredentialsPayload());
       setDeyeMessage(res.message);
       await fetchDeyeStatus();
     } catch (err: any) {
@@ -206,7 +212,7 @@ export const HistoricalLibraryPage: React.FC = () => {
     setDeyeSyncing(true);
     setDeyeMessage(null);
     try {
-      const res = await api.syncDeyeNow();
+      const res = await api.syncDeyeNow(getPendingCredentialsPayload());
       setDeyeMessage(`Sync result: ${res.message} (${res.records_inserted} rows inserted)`);
       await fetchDeyeStatus();
       await fetchSources();
@@ -225,7 +231,7 @@ export const HistoricalLibraryPage: React.FC = () => {
     setRangeSyncing(true);
     setDeyeMessage(null);
     try {
-      const res = await api.syncDeyeRange(s, e);
+      const res = await api.syncDeyeRange(s, e, getPendingCredentialsPayload());
       setDeyeMessage(`Range sync result: ${res.message} (${res.records_inserted} records partitioned into individual daily datasets)`);
       if (res.datasets_created && res.datasets_created.length > 0) {
         setActiveDatasetId(res.datasets_created[res.datasets_created.length - 1]);
@@ -1171,7 +1177,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                 </label>
                 <input
                   type="password"
-                  placeholder="App Secret Key"
+                  placeholder={deyeStatus?.has_app_secret ? "Saved (leave blank to keep)" : "App Secret Key"}
                   value={configAppSecret}
                   onChange={(e) => setConfigAppSecret(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
@@ -1180,11 +1186,11 @@ export const HistoricalLibraryPage: React.FC = () => {
 
               <div>
                 <label className="block font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  Account Email / Username (Optional)
+                  Account Email / Username
                 </label>
                 <input
                   type="text"
-                  placeholder="user@example.com"
+                  placeholder="Deye Cloud Email or Username"
                   value={configUsername}
                   onChange={(e) => setConfigUsername(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
@@ -1193,11 +1199,11 @@ export const HistoricalLibraryPage: React.FC = () => {
 
               <div>
                 <label className="block font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  Account Password (Optional)
+                  Account Password
                 </label>
                 <input
                   type="password"
-                  placeholder="Account Password"
+                  placeholder={deyeStatus?.has_password ? "Saved (leave blank to keep)" : "Deye Cloud Account Password"}
                   value={configPassword}
                   onChange={(e) => setConfigPassword(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"

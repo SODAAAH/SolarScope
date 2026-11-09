@@ -359,21 +359,25 @@ export const api = {
       body: JSON.stringify(payload)
     });
   },
-  testDeyeConnection: () => {
+  testDeyeConnection: (credentials?: DeyeConfigPayload) => {
     return fetchJson<{ success: boolean; message: string }>("/deye/test", {
-      method: "POST"
+      method: "POST",
+      headers: credentials ? { "Content-Type": "application/json" } : undefined,
+      body: credentials ? JSON.stringify(credentials) : undefined
     });
   },
-  syncDeyeNow: () => {
+  syncDeyeNow: (credentials?: DeyeConfigPayload) => {
     return fetchJson<{ status: string; message: string; records_fetched: number; records_inserted: number }>("/deye/sync", {
-      method: "POST"
+      method: "POST",
+      headers: credentials ? { "Content-Type": "application/json" } : undefined,
+      body: credentials ? JSON.stringify(credentials) : undefined
     });
   },
-  syncDeyeRange: (startDate: string, endDate: string) => {
+  syncDeyeRange: (startDate: string, endDate: string, credentials?: DeyeConfigPayload) => {
     return fetchJson<{ status: string; message: string; records_inserted: number; datasets_created?: string[]; days_count?: number; dataset_id?: string; filename?: string }>("/deye/sync_range", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start_date: startDate, end_date: endDate })
+      body: JSON.stringify({ start_date: startDate, end_date: endDate, credentials })
     });
   },
   getDeyeMissingDates: () => {
@@ -652,6 +656,8 @@ export interface DeyeConfigPayload {
 
 export interface DeyeStatusResponse {
   is_configured: boolean;
+  has_app_secret?: boolean;
+  has_password?: boolean;
   station_id: string;
   app_id: string;
   username?: string;

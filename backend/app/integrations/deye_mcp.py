@@ -1,3 +1,4 @@
+import os
 import json
 import urllib.request
 import urllib.parse
@@ -34,14 +35,14 @@ class DeyeMCPClient:
         sys_row = conn.execute("SELECT * FROM system_settings WHERE project_id = ?", (self.project_id,)).fetchone()
         conn.close()
 
-        station_id = (cfg["station_id"] or "").strip() if cfg else ""
+        station_id = ((cfg["station_id"] or "").strip() if cfg else "") or os.environ.get("DEYE_STATION_ID", "").strip()
         if not station_id:
             station_id = "62805884"
 
-        app_id = (cfg["app_id"] or "").strip() if cfg else ""
-        app_secret = (cfg["app_secret"] or "").strip() if cfg else ""
-        username = (cfg["username"] or "").strip() if cfg else ""
-        password = (cfg["password_encrypted"] or "").strip() if cfg else ""
+        app_id = ((cfg["app_id"] or "").strip() if cfg else "") or os.environ.get("DEYE_APP_ID", "").strip()
+        app_secret = ((cfg["app_secret"] or "").strip() if cfg else "") or os.environ.get("DEYE_APP_SECRET", "").strip()
+        username = ((cfg["username"] or "").strip() if cfg else "") or os.environ.get("DEYE_USERNAME", "").strip()
+        password = ((cfg["password_encrypted"] or "").strip() if cfg else "") or os.environ.get("DEYE_PASSWORD", "").strip()
 
         inverter_sn = (sys_row["inverter_serial"] or "2604282202").strip() if sys_row else "2604282202"
         logger_sn = (sys_row["logger_serial"] or "1251892903").strip() if sys_row else "1251892903"
@@ -62,15 +63,19 @@ class DeyeMCPClient:
             return self._cached_token
 
         creds = self._get_credentials()
-        if not (creds["app_id"] and creds["app_secret"]):
+        if not (creds["app_id"] and creds["app_secret"] and creds["username"] and creds["password"]):
             return None
 
-        pwd_hash = hashlib.sha256(creds["password"].encode("utf-8")).hexdigest().lower() if creds["password"] else ""
-        payload = json.dumps({
+        pwd_hash = hashlib.sha256(creds["password"].encode("utf-8")).hexdigest().lower()
+        auth_body: Dict[str, Any] = {
             "appSecret": creds["app_secret"],
-            "email": creds["username"],
             "password": pwd_hash
-        }).encode("utf-8")
+        }
+        if "@" in creds["username"]:
+            auth_body["email"] = creds["username"]
+        else:
+            auth_body["username"] = creds["username"]
+        payload = json.dumps(auth_body).encode("utf-8")
 
         token_url = f"{self.base_url}/v1.0/account/token?appId={urllib.parse.quote(creds['app_id'])}"
         try:
