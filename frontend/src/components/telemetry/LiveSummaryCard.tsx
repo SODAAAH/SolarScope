@@ -9,7 +9,7 @@ interface LiveSummaryCardProps {
   dailyProductionKwh?: number;
   dailyConsumptionKwh?: number;
   selfConsumptionRate?: number;
-  weatherTempC?: number;
+  weatherTempC?: number | null;
 }
 
 export const LiveSummaryCard: React.FC<LiveSummaryCardProps> = ({
@@ -18,7 +18,7 @@ export const LiveSummaryCard: React.FC<LiveSummaryCardProps> = ({
   dailyProductionKwh = 0,
   dailyConsumptionKwh = 0,
   selfConsumptionRate = 0,
-  weatherTempC = 28
+  weatherTempC = null
 }) => {
   const animAccumProd = useAnimatedNumber(accumulativeProductionKwh, 700, 2);
   const animAccumCons = useAnimatedNumber(accumulativeConsumptionKwh, 700, 2);
@@ -147,7 +147,9 @@ export const LiveSummaryCard: React.FC<LiveSummaryCardProps> = ({
             </Tooltip>
             <div className="flex items-center gap-1.5 mt-0.5">
               <CloudSun className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-              <span className="text-sm font-bold text-slate-900 dark:text-slate-100">{weatherTempC.toFixed(0)} ℃</span>
+              <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                {weatherTempC !== null && weatherTempC !== undefined ? `${weatherTempC.toFixed(0)} ℃` : '--'}
+              </span>
             </div>
           </div>
         </div>

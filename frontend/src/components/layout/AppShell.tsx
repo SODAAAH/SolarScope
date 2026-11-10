@@ -17,7 +17,7 @@ import {
   Menu,
   X
 } from 'lucide-react';
-import { api, type SourceItem } from '../../lib/api';
+import { api, type SourceItem, type SystemSettings, type DeyeStatusResponse } from '../../lib/api';
 import type { ViewMode } from '../../lib/terminology';
 import { formatDateMMDDYYYY } from '../../lib/formatters';
 
@@ -40,6 +40,8 @@ export const AppShell: React.FC = () => {
   });
   const [viewMode, setViewMode] = useState<ViewMode>('simple');
   const [sources, setSources] = useState<SourceItem[]>([]);
+  const [sysSettings, setSysSettings] = useState<SystemSettings | null>(null);
+  const [deyeStatus, setDeyeStatus] = useState<DeyeStatusResponse | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [isDark, setIsDark] = useState<boolean>(() => {
     return localStorage.getItem('solarscope_theme') === 'dark';
@@ -61,15 +63,41 @@ export const AppShell: React.FC = () => {
   }, [mobileNavOpen]);
 
   useEffect(() => {
-    api.listSources()
-      .then((data) => {
-        setSources(data);
-        if (activeDatasetId !== 'all' && data.length > 0 && !data.some((s) => s.id === activeDatasetId)) {
-          setActiveDatasetId('all');
-        }
-      })
-      .catch(() => {});
+    const loadSources = () => {
+      api.listSources()
+        .then((data) => {
+          setSources(data);
+          if (data.length === 0) {
+            if (activeDatasetId !== 'all') {
+              setActiveDatasetId('all');
+            }
+            try {
+              localStorage.removeItem('solarscope_dataset_id');
+            } catch {}
+          } else if (activeDatasetId !== 'all' && !data.some((s) => s.id === activeDatasetId)) {
+            setActiveDatasetId('all');
+          }
+        })
+        .catch(() => {});
+    };
+    loadSources();
+    window.addEventListener('solarscope:sources-updated', loadSources);
+    return () => window.removeEventListener('solarscope:sources-updated', loadSources);
   }, [location.pathname, activeDatasetId]);
+
+  useEffect(() => {
+    const loadMeta = () => {
+      api.getSettings().then(setSysSettings).catch(() => {});
+      api.getDeyeStatus().then(setDeyeStatus).catch(() => {});
+    };
+    loadMeta();
+    window.addEventListener('solarscope:settings-updated', loadMeta);
+    window.addEventListener('solarscope:deye-updated', loadMeta);
+    return () => {
+      window.removeEventListener('solarscope:settings-updated', loadMeta);
+      window.removeEventListener('solarscope:deye-updated', loadMeta);
+    };
+  }, [location.pathname]);
 
   useEffect(() => {
     if (isDark) {
@@ -178,7 +206,7 @@ export const AppShell: React.FC = () => {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="min-h-14 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-2 px-3 sm:px-6 py-2 shrink-0 z-10">
-          <div className="flex items-center gap-2 sm:gap-2.5 text-xs min-w-0">
+          <div className="flex flex-1 items-center gap-2 sm:gap-2.5 text-xs min-w-0">
             <button
               type="button"
               onClick={() => setMobileNavOpen(true)}
@@ -191,19 +219,38 @@ export const AppShell: React.FC = () => {
               {currentPageLabel}
             </span>
             <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">/</span>
-            <span className="text-slate-600 dark:text-slate-300 font-medium hidden sm:inline truncate">Mam Micah</span>
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="hidden min-[380px]:inline">Online</span>
+            <span className="text-slate-600 dark:text-slate-300 font-medium hidden sm:inline truncate">
+              {sysSettings?.station_name?.trim() || 'Station Not Set'}
             </span>
-            <span className="text-slate-400 text-[11px] hidden lg:inline shrink-0">6.2 kWp</span>
+            {deyeStatus?.is_demo ? (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60 shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                <span className="hidden min-[380px]:inline">Demo</span>
+              </span>
+            ) : deyeStatus?.is_configured ? (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span className="hidden min-[380px]:inline">Online</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                <span className="hidden min-[380px]:inline">Offline</span>
+              </span>
+            )}
+            {sysSettings && sysSettings.pv_capacity_kwp > 0 && (
+              <span className="text-slate-400 text-[11px] hidden lg:inline shrink-0">
+                {sysSettings.pv_capacity_kwp.toFixed(1)} kWp
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-            <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-100 dark:bg-slate-800/80 px-2 sm:px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 max-w-[138px] sm:max-w-[260px]">
+            <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-100 dark:bg-slate-800/80 px-2 sm:px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 max-w-[132px] sm:max-w-[260px]">
               <Calendar className="w-3.5 h-3.5 text-amber-600 shrink-0" />
               <span className="text-xs text-slate-500 font-medium hidden md:inline shrink-0">Scope:</span>
               <select
+                aria-label="Dataset Scope"
                 value={activeDatasetId || 'all'}
                 onChange={(e) => setActiveDatasetId(e.target.value)}
                 className="text-xs bg-transparent text-slate-800 dark:text-slate-200 font-medium focus:outline-none cursor-pointer pr-1 w-full min-w-0 truncate"

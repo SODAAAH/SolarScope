@@ -50,7 +50,7 @@ def _private_blob_url(store_id: str, pathname: str, no_cache: bool = True) -> st
     clean = pathname.lstrip("/")
     quoted = urllib.parse.quote(clean, safe="/")
     base = f"https://{store_id}.private.blob.vercel-storage.com/{quoted}"
-    return f"{base}?cache=0" if no_cache else base
+    return f"{base}?t={int(time.time() * 1000)}" if no_cache else base
 
 def _api_headers(token: str, store_id: str, extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     headers = {
@@ -73,12 +73,23 @@ def _upload_bytes(pathname: str, data: bytes, content_type: str = "application/o
         "x-vercel-blob-access": "private",
         "x-add-random-suffix": "0",
         "x-allow-overwrite": "1",
+        "x-cache-control-max-age": "0",
         "x-content-type": content_type,
         "content-type": content_type,
     })
-    req = urllib.request.Request(url, data=data, headers=headers, method="PUT")
-    with urllib.request.urlopen(req, timeout=25) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    last_err: Optional[Exception] = None
+    for attempt in range(2):
+        req = urllib.request.Request(url, data=data, headers=headers, method="PUT")
+        try:
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            last_err = exc
+            if attempt == 0:
+                time.sleep(0.25)
+    if last_err is not None:
+        raise last_err
+    return None
 
 def _download_bytes(pathname: str) -> Optional[bytes]:
     auth = _get_auth()
@@ -86,7 +97,14 @@ def _download_bytes(pathname: str) -> Optional[bytes]:
         return None
     token, store_id = auth
     url = _private_blob_url(store_id, pathname, no_cache=True)
-    req = urllib.request.Request(url, headers={"authorization": f"Bearer {token}"}, method="GET")
+    req = urllib.request.Request(
+        url,
+        headers={
+            "authorization": f"Bearer {token}",
+            "cache-control": "no-cache, no-store, max-age=0",
+        },
+        method="GET",
+    )
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
             return resp.read()

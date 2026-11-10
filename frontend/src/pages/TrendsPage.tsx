@@ -19,10 +19,10 @@ export const TrendsPage: React.FC = () => {
   const [dailyData, setDailyData] = useState<DailySummaryItem[]>([]);
   const [hourlyProfiles, setHourlyProfiles] = useState<any[]>([]);
 
-  const [dateAStart, setDateAStart] = useState("2026-10-21");
-  const [dateAEnd, setDateAEnd] = useState("2026-10-21");
-  const [dateBStart, setDateBStart] = useState("2026-11-03");
-  const [dateBEnd, setDateBEnd] = useState("2026-11-03");
+  const [dateAStart, setDateAStart] = useState("");
+  const [dateAEnd, setDateAEnd] = useState("");
+  const [dateBStart, setDateBStart] = useState("");
+  const [dateBEnd, setDateBEnd] = useState("");
   const [compareResult, setCompareResult] = useState<any>(null);
   const [comparing, setComparing] = useState(false);
 
@@ -36,26 +36,35 @@ export const TrendsPage: React.FC = () => {
     Promise.all([
       api.getHistoricalDaily(activeDatasetId || undefined),
       api.getHistoricalHourlyProfile(activeDatasetId || undefined),
-      api.compareHistoricalPeriods(dateAStart, dateAEnd, dateBStart, dateBEnd),
       api.getStatistics(activeDatasetId || "all")
     ])
-      .then(([daily, hourly, comp, stats]) => {
-        setDailyData(daily || []);
+      .then(async ([daily, hourly, stats]) => {
+        const list = daily || [];
+        setDailyData(list);
         setHourlyProfiles(hourly || []);
-        setCompareResult(comp);
         setStatsData(stats);
 
-        if (daily && daily.length >= 2) {
-          const firstDate = daily[0].date;
-          const latestDate = daily[daily.length - 1].date;
-          if (!dateAStart || dateAStart < firstDate) {
-            setDateAStart(firstDate);
-            setDateAEnd(firstDate);
+        if (list.length >= 1) {
+          const firstDate = list[0].date;
+          const latestDate = list[list.length - 1].date;
+          const nextA = dateAStart && dateAStart >= firstDate && dateAStart <= latestDate ? dateAStart : firstDate;
+          const nextB = dateBStart && dateBStart >= firstDate && dateBStart <= latestDate ? dateBStart : latestDate;
+          setDateAStart(nextA);
+          setDateAEnd(nextA);
+          setDateBStart(nextB);
+          setDateBEnd(nextB);
+          try {
+            const comp = await api.compareHistoricalPeriods(nextA, nextA, nextB, nextB);
+            setCompareResult(comp);
+          } catch (err) {
+            console.error(err);
           }
-          if (!dateBStart || dateBStart > latestDate) {
-            setDateBStart(latestDate);
-            setDateBEnd(latestDate);
-          }
+        } else {
+          setDateAStart("");
+          setDateAEnd("");
+          setDateBStart("");
+          setDateBEnd("");
+          setCompareResult(null);
         }
       })
       .catch(console.error);
@@ -63,6 +72,11 @@ export const TrendsPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    const handleSourcesUpdated = () => loadData();
+    window.addEventListener("solarscope:sources-updated", handleSourcesUpdated);
+    return () => {
+      window.removeEventListener("solarscope:sources-updated", handleSourcesUpdated);
+    };
   }, [activeDatasetId]);
 
   const runComparison = async (startA = dateAStart, endA = dateAEnd, startB = dateBStart, endB = dateBEnd) => {
@@ -171,8 +185,8 @@ export const TrendsPage: React.FC = () => {
     ]
   } : {};
 
-  const minDate = dailyData.length > 0 ? dailyData[0].date : "2026-10-21";
-  const maxDate = dailyData.length > 0 ? dailyData[dailyData.length - 1].date : "2026-11-03";
+  const minDate = dailyData.length > 0 ? dailyData[0].date : "";
+  const maxDate = dailyData.length > 0 ? dailyData[dailyData.length - 1].date : "";
 
   const periodADays = compareResult?.period_a?.days_count ?? 0;
   const periodBDays = compareResult?.period_b?.days_count ?? 0;
@@ -191,6 +205,7 @@ export const TrendsPage: React.FC = () => {
 
         <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-full sm:w-fit max-w-full overflow-x-auto no-scrollbar">
           <button
+            type="button"
             onClick={() => setTab("summaries")}
             className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
               currentTab === "summaries"
@@ -203,6 +218,7 @@ export const TrendsPage: React.FC = () => {
           </button>
 
           <button
+            type="button"
             onClick={() => setTab("compare")}
             className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
               currentTab === "compare"
@@ -215,6 +231,7 @@ export const TrendsPage: React.FC = () => {
           </button>
 
           <button
+            type="button"
             onClick={() => setTab("statistics")}
             className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
               currentTab === "statistics"
@@ -272,19 +289,27 @@ export const TrendsPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono">
-                  {dailyData.map((d) => (
-                    <tr key={d.date} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                      <td className="px-3 sm:px-4 py-2.5 font-sans font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">{formatDateMMDDYYYY(d.date)}</td>
-                      <td className="px-3 sm:px-4 py-2.5 text-right text-amber-600 dark:text-amber-400 font-bold whitespace-nowrap">{d.pv_kwh.toFixed(2)}</td>
-                      <td className="px-3 sm:px-4 py-2.5 text-right text-rose-600 dark:text-rose-400 whitespace-nowrap">{d.load_kwh.toFixed(2)}</td>
-                      <td className="px-3 sm:px-4 py-2.5 text-right text-blue-600 dark:text-blue-400 whitespace-nowrap">{d.grid_import_kwh.toFixed(2)}</td>
-                      <td className="px-3 sm:px-4 py-2.5 text-right whitespace-nowrap">{d.battery_charge_kwh.toFixed(2)}</td>
-                      <td className="px-3 sm:px-4 py-2.5 text-right whitespace-nowrap">{d.battery_discharge_kwh.toFixed(2)}</td>
-                      <td className="px-3 sm:px-4 py-2.5 text-right font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                        {((d.self_sufficiency_ratio || 0) * 100).toFixed(0)}%
+                  {dailyData.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center font-sans text-slate-500">
+                        No observation days recorded yet. Upload datasets or sync telemetry in Data Library & Cloud.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    dailyData.map((d) => (
+                      <tr key={d.date} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <td className="px-3 sm:px-4 py-2.5 font-sans font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">{formatDateMMDDYYYY(d.date)}</td>
+                        <td className="px-3 sm:px-4 py-2.5 text-right text-amber-600 dark:text-amber-400 font-bold whitespace-nowrap">{d.pv_kwh.toFixed(2)}</td>
+                        <td className="px-3 sm:px-4 py-2.5 text-right text-rose-600 dark:text-rose-400 whitespace-nowrap">{d.load_kwh.toFixed(2)}</td>
+                        <td className="px-3 sm:px-4 py-2.5 text-right text-blue-600 dark:text-blue-400 whitespace-nowrap">{d.grid_import_kwh.toFixed(2)}</td>
+                        <td className="px-3 sm:px-4 py-2.5 text-right whitespace-nowrap">{d.battery_charge_kwh.toFixed(2)}</td>
+                        <td className="px-3 sm:px-4 py-2.5 text-right whitespace-nowrap">{d.battery_discharge_kwh.toFixed(2)}</td>
+                        <td className="px-3 sm:px-4 py-2.5 text-right font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                          {((d.self_sufficiency_ratio || 0) * 100).toFixed(0)}%
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -305,17 +330,18 @@ export const TrendsPage: React.FC = () => {
                 </p>
               </div>
               <span className="text-[11px] font-mono text-slate-500">
-                Library Range: {formatDateMMDDYYYY(minDate)} to {formatDateMMDDYYYY(maxDate)}
+                {dailyData.length > 0 ? `Library Range: ${formatDateMMDDYYYY(minDate)} to ${formatDateMMDDYYYY(maxDate)}` : "No observation days recorded"}
               </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end pt-2">
               <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Period A Date</label>
+                <label htmlFor="trends-period-a" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Period A Date</label>
                 <input
+                  id="trends-period-a"
                   type="date"
-                  min={minDate}
-                  max={maxDate}
+                  min={minDate || undefined}
+                  max={maxDate || undefined}
                   value={dateAStart}
                   onChange={(e) => {
                     setDateAStart(e.target.value);
@@ -326,11 +352,12 @@ export const TrendsPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Period B Date</label>
+                <label htmlFor="trends-period-b" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Period B Date</label>
                 <input
+                  id="trends-period-b"
                   type="date"
-                  min={minDate}
-                  max={maxDate}
+                  min={minDate || undefined}
+                  max={maxDate || undefined}
                   value={dateBStart}
                   onChange={(e) => {
                     setDateBStart(e.target.value);
@@ -342,6 +369,7 @@ export const TrendsPage: React.FC = () => {
 
               <div>
                 <button
+                  type="button"
                   onClick={() => runComparison()}
                   disabled={comparing || !dateAStart || !dateBStart}
                   className="w-full md:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
@@ -352,7 +380,14 @@ export const TrendsPage: React.FC = () => {
               </div>
             </div>
 
-            {(periodADays === 0 || periodBDays === 0) && (
+            {dailyData.length === 0 ? (
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-slate-400 shrink-0" />
+                <span>
+                  No historical observation days recorded yet. Upload datasets or sync telemetry in Data Library & Cloud to compare periods.
+                </span>
+              </div>
+            ) : (periodADays === 0 || periodBDays === 0) && (
               <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400 flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
                 <span>
@@ -454,12 +489,12 @@ export const TrendsPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <Tooltip
                     title="Comparative Utility Grid Purchases"
-                    content="Total electricity imported from the TEI utility grid during Period A compared to Period B."
+                    content="Total electricity imported from the utility grid during Period A compared to Period B."
                     provenance="Calculated"
                     underline
                   >
                     <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">
-                      Grid Purchases (TEI)
+                      Grid Purchases (Utility)
                     </span>
                   </Tooltip>
                   <span className="text-[11px] font-mono text-slate-400">

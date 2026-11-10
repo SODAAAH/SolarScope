@@ -12,7 +12,7 @@ interface LiveFlowGraphProps {
   onRefreshRequested?: () => void;
 }
 
-const LIVE_FLOW_CACHE_KEY = 'solarscope_cached_live_flow_v2';
+const LIVE_FLOW_CACHE_KEY = 'solarscope_cached_live_flow_v3';
 const REFRESH_INTERVAL_SEC = 15;
 
 const NEUTRAL_NODES: LiveFlowResponse['nodes'] = {
@@ -47,10 +47,32 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(REFRESH_INTERVAL_SEC);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   const isFetchingRef = useRef(false);
+  const isMountedRef = useRef(true);
   const onFlowUpdateRef = useRef(onFlowUpdate);
   const onRefreshRequestedRef = useRef(onRefreshRequested);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    try {
+      localStorage.removeItem('solarscope_cached_live_flow_v2');
+    } catch {}
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+      setPrefersReducedMotion(mq.matches);
+      const onChange = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+      mq.addEventListener('change', onChange);
+      return () => {
+        isMountedRef.current = false;
+        mq.removeEventListener('change', onChange);
+      };
+    }
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     onFlowUpdateRef.current = onFlowUpdate;
@@ -66,7 +88,24 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
     setLoading(true);
     try {
       const res = await api.getDeyeLiveFlow();
+      if (!isMountedRef.current) return;
       if (res) {
+        const isUnconfigured =
+          res.data_source === 'offline' &&
+          typeof res.error === 'string' &&
+          res.error.toLowerCase().includes('not configured');
+
+        if (isUnconfigured) {
+          try {
+            localStorage.removeItem(LIVE_FLOW_CACHE_KEY);
+          } catch {}
+          setData(res);
+          if (onFlowUpdateRef.current) {
+            onFlowUpdateRef.current(res);
+          }
+          return;
+        }
+
         const hasRealData = Boolean(
           res.is_live || res.data_source === 'demo' || res.data_source === 'cached'
         );
@@ -99,9 +138,13 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
       }
     } catch {
     } finally {
-      isFetchingRef.current = false;
-      setLoading(false);
-      setSecondsUntilRefresh(REFRESH_INTERVAL_SEC);
+      if (isMountedRef.current) {
+        isFetchingRef.current = false;
+        setLoading(false);
+        setSecondsUntilRefresh(REFRESH_INTERVAL_SEC);
+      } else {
+        isFetchingRef.current = false;
+      }
       if (triggerSummaryRefresh && onRefreshRequestedRef.current) {
         onRefreshRequestedRef.current();
       }
@@ -109,13 +152,23 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
   }, []);
 
   useEffect(() => {
-    if (initialData && (initialData.is_live || initialData.data_source === 'demo')) {
+    if (!initialData) return;
+    const isUnconfigured =
+      initialData.data_source === 'offline' &&
+      typeof initialData.error === 'string' &&
+      initialData.error.toLowerCase().includes('not configured');
+    if (isUnconfigured) {
+      setData(initialData);
+    } else if (initialData.is_live || initialData.data_source === 'demo') {
       setData(initialData);
     }
   }, [initialData]);
 
   useEffect(() => {
     fetchFlowData(false);
+    const onDeyeUpdated = () => fetchFlowData(true);
+    window.addEventListener('solarscope:deye-updated', onDeyeUpdated);
+    return () => window.removeEventListener('solarscope:deye-updated', onDeyeUpdated);
   }, [fetchFlowData]);
 
   useEffect(() => {
@@ -199,7 +252,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
               position="bottom"
             >
               <span className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-[11px] font-medium rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 Live
               </span>
             </Tooltip>
@@ -309,76 +362,98 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
 
           {pvActive && (
             <>
-              <path d={pathPvToInv} fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.2s_linear_infinite]" filter="url(#glow-solar)" />
-              <circle r="4" fill="#F59E0B">
-                <animateMotion path={pathPvToInv} dur={pvSpeed.dur} repeatCount="indefinite" />
-              </circle>
-              <circle r="3" fill="#FCD34D">
-                <animateMotion path={pathPvToInv} dur={pvSpeed.dur} begin={pvSpeed.half} repeatCount="indefinite" />
-              </circle>
+              <path d={pathPvToInv} fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeDasharray="6 6" className={prefersReducedMotion ? '' : 'flow-line-active'} filter="url(#glow-solar)" />
+              {!prefersReducedMotion && (
+                <>
+                  <circle r="4" fill="#F59E0B">
+                    <animateMotion path={pathPvToInv} dur={pvSpeed.dur} repeatCount="indefinite" />
+                  </circle>
+                  <circle r="3" fill="#FCD34D">
+                    <animateMotion path={pathPvToInv} dur={pvSpeed.dur} begin={pvSpeed.half} repeatCount="indefinite" />
+                  </circle>
+                </>
+              )}
             </>
           )}
 
           {battDischarging && (
             <>
-              <path d={pathBattToInv} fill="none" stroke="#10B981" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.2s_linear_infinite]" filter="url(#glow-batt)" />
-              <circle r="4" fill="#10B981">
-                <animateMotion path={pathBattToInv} dur={battSpeed.dur} repeatCount="indefinite" />
-              </circle>
-              <circle r="3" fill="#6EE7B7">
-                <animateMotion path={pathBattToInv} dur={battSpeed.dur} begin={battSpeed.half} repeatCount="indefinite" />
-              </circle>
+              <path d={pathBattToInv} fill="none" stroke="#10B981" strokeWidth="2.5" strokeDasharray="6 6" className={prefersReducedMotion ? '' : 'flow-line-active'} filter="url(#glow-batt)" />
+              {!prefersReducedMotion && (
+                <>
+                  <circle r="4" fill="#10B981">
+                    <animateMotion path={pathBattToInv} dur={battSpeed.dur} repeatCount="indefinite" />
+                  </circle>
+                  <circle r="3" fill="#6EE7B7">
+                    <animateMotion path={pathBattToInv} dur={battSpeed.dur} begin={battSpeed.half} repeatCount="indefinite" />
+                  </circle>
+                </>
+              )}
             </>
           )}
 
           {battCharging && (
             <>
-              <path d={pathInvToBatt} fill="none" stroke="#3B82F6" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.2s_linear_infinite]" filter="url(#glow-batt)" />
-              <circle r="4" fill="#3B82F6">
-                <animateMotion path={pathInvToBatt} dur={battSpeed.dur} repeatCount="indefinite" />
-              </circle>
-              <circle r="3" fill="#93C5FD">
-                <animateMotion path={pathInvToBatt} dur={battSpeed.dur} begin={battSpeed.half} repeatCount="indefinite" />
-              </circle>
+              <path d={pathInvToBatt} fill="none" stroke="#0EA5E9" strokeWidth="2.5" strokeDasharray="6 6" className={prefersReducedMotion ? '' : 'flow-line-active'} filter="url(#glow-batt)" />
+              {!prefersReducedMotion && (
+                <>
+                  <circle r="4" fill="#0EA5E9">
+                    <animateMotion path={pathInvToBatt} dur={battSpeed.dur} repeatCount="indefinite" />
+                  </circle>
+                  <circle r="3" fill="#7DD3FC">
+                    <animateMotion path={pathInvToBatt} dur={battSpeed.dur} begin={battSpeed.half} repeatCount="indefinite" />
+                  </circle>
+                </>
+              )}
             </>
           )}
 
           {gridImporting && (
             <>
-              <path d={pathGridToInv} fill="none" stroke="#6366F1" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.5s_linear_infinite]" filter="url(#glow-grid)" />
-              <circle r="4" fill="#6366F1">
-                <animateMotion path={pathGridToInv} dur={gridSpeed.dur} repeatCount="indefinite" />
-              </circle>
+              <path d={pathGridToInv} fill="none" stroke="#0284C7" strokeWidth="2.5" strokeDasharray="6 6" className={prefersReducedMotion ? '' : 'flow-line-active'} filter="url(#glow-grid)" />
+              {!prefersReducedMotion && (
+                <circle r="4" fill="#0284C7">
+                  <animateMotion path={pathGridToInv} dur={gridSpeed.dur} repeatCount="indefinite" />
+                </circle>
+              )}
             </>
           )}
 
           {gridExporting && (
             <>
-              <path d={pathInvToGrid} fill="none" stroke="#10B981" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.5s_linear_infinite]" filter="url(#glow-grid)" />
-              <circle r="4" fill="#10B981">
-                <animateMotion path={pathInvToGrid} dur={gridSpeed.dur} repeatCount="indefinite" />
-              </circle>
+              <path d={pathInvToGrid} fill="none" stroke="#10B981" strokeWidth="2.5" strokeDasharray="6 6" className={prefersReducedMotion ? '' : 'flow-line-active'} filter="url(#glow-grid)" />
+              {!prefersReducedMotion && (
+                <circle r="4" fill="#10B981">
+                  <animateMotion path={pathInvToGrid} dur={gridSpeed.dur} repeatCount="indefinite" />
+                </circle>
+              )}
             </>
           )}
 
           {upsActive && (
             <>
-              <path d={pathInvToUps} fill="none" stroke="#0EA5E9" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.2s_linear_infinite]" filter="url(#glow-load)" />
-              <circle r="4" fill="#0EA5E9">
-                <animateMotion path={pathInvToUps} dur={upsSpeed.dur} repeatCount="indefinite" />
-              </circle>
-              <circle r="3" fill="#7DD3FC">
-                <animateMotion path={pathInvToUps} dur={upsSpeed.dur} begin={upsSpeed.half} repeatCount="indefinite" />
-              </circle>
+              <path d={pathInvToUps} fill="none" stroke="#0EA5E9" strokeWidth="2.5" strokeDasharray="6 6" className={prefersReducedMotion ? '' : 'flow-line-active'} filter="url(#glow-load)" />
+              {!prefersReducedMotion && (
+                <>
+                  <circle r="4" fill="#0EA5E9">
+                    <animateMotion path={pathInvToUps} dur={upsSpeed.dur} repeatCount="indefinite" />
+                  </circle>
+                  <circle r="3" fill="#7DD3FC">
+                    <animateMotion path={pathInvToUps} dur={upsSpeed.dur} begin={upsSpeed.half} repeatCount="indefinite" />
+                  </circle>
+                </>
+              )}
             </>
           )}
 
           {loadActive && (
             <>
-              <path d={pathInvToLoad} fill="none" stroke="#F97316" strokeWidth="2.5" strokeDasharray="6 6" className="animate-[dash_1.4s_linear_infinite]" filter="url(#glow-load)" />
-              <circle r="4" fill="#F97316">
-                <animateMotion path={pathInvToLoad} dur={loadSpeed.dur} repeatCount="indefinite" />
-              </circle>
+              <path d={pathInvToLoad} fill="none" stroke="#F97316" strokeWidth="2.5" strokeDasharray="6 6" className={prefersReducedMotion ? '' : 'flow-line-active'} filter="url(#glow-load)" />
+              {!prefersReducedMotion && (
+                <circle r="4" fill="#F97316">
+                  <animateMotion path={pathInvToLoad} dur={loadSpeed.dur} repeatCount="indefinite" />
+                </circle>
+              )}
             </>
           )}
         </svg>
@@ -408,18 +483,18 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
 
           <div style={{ left: '85%', top: '18.75%' }} className="absolute -translate-x-1/2 -mt-5 min-[400px]:-mt-6 sm:-mt-7 pointer-events-auto">
             <Tooltip
-              title="Utility Grid Connection (TEI)"
-              content="Current power exchange with the TEI electric grid. Positive watts indicate importing power; negative watts indicate exporting surplus solar."
+              title="Utility Grid Connection"
+              content="Current power exchange with the utility electric grid. Positive watts indicate importing power; negative watts indicate exporting surplus solar."
               provenance="Measured"
               position="bottom"
             >
               <div className="flex flex-col items-center cursor-help">
                 <div className={`w-10 h-10 min-[400px]:w-12 min-[400px]:h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center border transition-all ${
                   gridImporting
-                    ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-500 shadow-sm shadow-indigo-500/20'
+                    ? 'bg-sky-500/10 border-sky-500/40 text-sky-600 shadow-sm shadow-sky-500/20'
                     : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
                 }`}>
-                  <Zap className={`h-4 w-4 sm:h-6 sm:w-6 ${gridImporting ? 'text-indigo-500' : 'text-slate-400'}`} />
+                  <Zap className={`h-4 w-4 sm:h-6 sm:w-6 ${gridImporting ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400'}`} />
                 </div>
                 <span className="mt-1 text-[10px] sm:text-xs font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                   {formatPower(nodes.grid.power_w, nodes.grid.power_kw)}
@@ -441,7 +516,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
           <div style={{ left: '50%', top: '42.2%' }} className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto">
             <Tooltip
               title="Hybrid Inverter"
-              content="Central bi-directional inverter managing power conversion between solar DC, battery storage, and 230V AC home appliances."
+              content="Central bi-directional inverter managing power conversion between solar DC, battery storage, and AC home appliances."
               provenance="Measured"
               position="top"
             >
@@ -449,9 +524,9 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
                 <div className="w-5 h-3.5 sm:w-6 sm:h-4 rounded-sm border border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-0.5 sm:mb-1">
                   <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${
                     sourceState === 'live'
-                      ? 'bg-emerald-500 animate-pulse'
+                      ? 'bg-emerald-500'
                       : sourceState === 'demo' || sourceState === 'cached'
-                        ? 'bg-amber-500 animate-pulse'
+                        ? 'bg-amber-500'
                         : 'bg-slate-400'
                   }`} />
                 </div>
@@ -462,8 +537,8 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
 
           <div style={{ left: '15%', top: '68.75%' }} className="absolute -translate-x-1/2 -mt-5 min-[400px]:-mt-6 sm:-mt-7 pointer-events-auto">
             <Tooltip
-              title="Battery Storage (LiFePO4)"
-              content="State of Charge (SOC) and real-time charging or discharging rate of your lithium iron phosphate home battery system."
+              title="Home Battery Storage"
+              content="State of Charge (SOC) and real-time charging or discharging rate of your home battery energy storage system."
               formula="SOC(t) = Q_rem(t) / Q_nominal × 100%"
               provenance="Measured"
               position="top"

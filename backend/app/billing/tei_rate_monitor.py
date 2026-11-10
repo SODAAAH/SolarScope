@@ -7,8 +7,8 @@ import datetime
 from typing import Dict, Any, Optional, Tuple, List
 from backend.app.billing.tariff_models import TEIRateSchedule, TEIRateComponent
 from backend.app.billing.tariff_defaults import (
-    get_default_october_2026_schedule,
-    get_default_october_2026_components
+    get_default_tei_schedule,
+    get_default_tei_components
 )
 
 OFFICIAL_TEI_URL = "https://tarlacelectric.com/rate-schedule-customer-class"
@@ -30,11 +30,11 @@ def get_active_rate_schedule(conn) -> TEIRateSchedule:
             publication_date=row["publication_date"] or "",
             source_url=row["source_url"] or OFFICIAL_TEI_URL,
             document_hash=row["document_hash"] or "",
-            verification_status=row["verification_status"] or "verified",
+            verification_status=row["verification_status"] or "unconfigured",
             components=comps,
             created_at=row["created_at"]
         )
-    default_sched = get_default_october_2026_schedule()
+    default_sched = get_default_tei_schedule()
     save_rate_schedule(default_sched, conn)
     return default_sched
 
@@ -65,7 +65,7 @@ def get_rate_history(conn) -> List[Dict[str, Any]]:
     results = []
     for r in rows:
         comps = json.loads(r["schedule_data_json"])
-        gen_rate = next((c["rate_per_kwh"] for c in comps if c["component_id"] == "gen_charge"), 6.7489)
+        gen_rate = next((c["rate_per_kwh"] for c in comps if c["component_id"] == "gen_charge"), 0.0)
         results.append({
             "id": r["id"],
             "effective_month": r["effective_month"],
@@ -85,7 +85,7 @@ def check_official_tei_rates(conn, force_fetch: bool = False) -> Dict[str, Any]:
     active_sched = get_active_rate_schedule(conn)
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-    prev_gen_rate = 6.74890
+    prev_gen_rate = 0.0
     for c in active_sched.components:
         if c.component_id == "gen_charge":
             prev_gen_rate = c.rate_per_kwh
@@ -127,6 +127,10 @@ def check_official_tei_rates(conn, force_fetch: bool = False) -> Dict[str, Any]:
 
                 diff = round(extracted_gen - prev_gen_rate, 5)
                 direction = "increased" if diff > 0 else "decreased"
+                if prev_gen_rate > 0:
+                    summary_msg = f"TEI published a new electricity rate. Generation Charge {direction} by ₱{abs(diff):.5f}/kWh to ₱{extracted_gen:.5f}/kWh. SolarScope updated your estimated bill."
+                else:
+                    summary_msg = f"Loaded TEI Generation Charge of ₱{extracted_gen:.5f}/kWh from official rate schedule."
                 alert = {
                     "has_changed": True,
                     "previous_rate": prev_gen_rate,
@@ -134,7 +138,7 @@ def check_official_tei_rates(conn, force_fetch: bool = False) -> Dict[str, Any]:
                     "difference_per_kwh": diff,
                     "effective_month": effective_month,
                     "publication_date": new_sched.publication_date,
-                    "summary": f"TEI published a new electricity rate. Generation Charge {direction} by ₱{abs(diff):.5f}/kWh to ₱{extracted_gen:.5f}/kWh. SolarScope updated your estimated bill."
+                    "summary": summary_msg
                 }
                 return {
                     "status": "updated",

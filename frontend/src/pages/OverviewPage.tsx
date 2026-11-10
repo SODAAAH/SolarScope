@@ -1,5 +1,5 @@
 import { Tooltip } from '../components/common/Tooltip';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { LiveFlowResponse, DailySummaryItem } from '../lib/api';
@@ -26,8 +26,9 @@ export const OverviewPage: React.FC = () => {
   }>();
 
   const [summary, setSummary] = useState<any>(() => {
+    if (!activeDatasetId) return null;
     try {
-      const saved = sessionStorage.getItem(`solarscope_cached_summary_${activeDatasetId || 'all'}`);
+      const saved = sessionStorage.getItem(`solarscope_cached_summary_${activeDatasetId}`);
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -44,8 +45,9 @@ export const OverviewPage: React.FC = () => {
     }
   });
   const [loading, setLoading] = useState<boolean>(() => {
+    if (!activeDatasetId) return false;
     try {
-      return !sessionStorage.getItem(`solarscope_cached_summary_${activeDatasetId || 'all'}`);
+      return !sessionStorage.getItem(`solarscope_cached_summary_${activeDatasetId}`);
     } catch {
       return true;
     }
@@ -57,32 +59,44 @@ export const OverviewPage: React.FC = () => {
       const saved = sessionStorage.getItem('solarscope_cached_daily');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed[parsed.length - 1].date.slice(0, 7);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[parsed.length - 1]?.date) {
+          return String(parsed[parsed.length - 1].date).slice(0, 7);
         }
       }
     } catch {}
-    return '2026-11';
+    return '';
   });
   const [powerProfileDate, setPowerProfileDate] = useState<string>(() => {
     try {
       const saved = sessionStorage.getItem('solarscope_cached_daily');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed[parsed.length - 1].date;
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[parsed.length - 1]?.date) {
+          return String(parsed[parsed.length - 1].date);
         }
       }
     } catch {}
-    return '2026-11-04';
+    return '';
   });
   const [timelineLoading, setTimelineLoading] = useState<boolean>(false);
   const navigate = useNavigate();
 
-  const fetchOverviewData = () => {
-    if (!activeDatasetId) return;
-    if (!summary) {
-      setLoading(true);
+  const clearDailyCache = () => {
+    setDailySummaries([]);
+    setPowerProfileDate('');
+    setSelectedHistoryMonth('');
+    setTimeline(null);
+    try {
+      sessionStorage.removeItem('solarscope_cached_daily');
+    } catch {}
+  };
+
+  const fetchOverviewData = useCallback(() => {
+    if (!activeDatasetId) {
+      setSummary(null);
+      setLoading(false);
+      clearDailyCache();
+      return;
     }
     setError(null);
 
@@ -90,7 +104,6 @@ export const OverviewPage: React.FC = () => {
       .then((sumRes) => {
         if (sumRes) {
           setSummary(sumRes);
-          setLoading(false);
           try {
             sessionStorage.setItem(`solarscope_cached_summary_${activeDatasetId}`, JSON.stringify(sumRes));
           } catch {}
@@ -112,22 +125,47 @@ export const OverviewPage: React.FC = () => {
           try {
             sessionStorage.setItem('solarscope_cached_daily', JSON.stringify(dailyRes));
           } catch {}
-          if (!powerProfileDate || !dailyRes.some(d => d.date === powerProfileDate)) {
-            setPowerProfileDate(dailyRes[dailyRes.length - 1].date);
-          }
+          setPowerProfileDate((prev) =>
+            prev && dailyRes.some((d) => d.date === prev)
+              ? prev
+              : dailyRes[dailyRes.length - 1].date
+          );
           const latestMonth = dailyRes[dailyRes.length - 1].date.slice(0, 7);
           setSelectedHistoryMonth((prev) => (prev ? prev : latestMonth));
+        } else {
+          clearDailyCache();
         }
       })
       .catch(() => {});
-  };
-
-  useEffect(() => {
-    fetchOverviewData();
   }, [activeDatasetId]);
 
   useEffect(() => {
-    if (!activeDatasetId || !powerProfileDate) return;
+    fetchOverviewData();
+  }, [fetchOverviewData]);
+
+  useEffect(() => {
+    const onSourcesUpdated = () => {
+      try {
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+          const key = sessionStorage.key(i);
+          if (key && (key.startsWith('solarscope_cached_summary_') || key === 'solarscope_cached_daily')) {
+            sessionStorage.removeItem(key);
+          }
+        }
+      } catch {}
+      fetchOverviewData();
+    };
+    window.addEventListener('solarscope:sources-updated', onSourcesUpdated);
+    return () => {
+      window.removeEventListener('solarscope:sources-updated', onSourcesUpdated);
+    };
+  }, [fetchOverviewData]);
+
+  useEffect(() => {
+    if (!activeDatasetId || !powerProfileDate) {
+      setTimeline(null);
+      return;
+    }
     setTimelineLoading(true);
     api.getTimeline(activeDatasetId, powerProfileDate)
       .then((res) => {
@@ -149,30 +187,13 @@ export const OverviewPage: React.FC = () => {
   };
 
   const handleNextDate = () => {
-    if (currentDateIndex < availableDates.length - 1) {
+    if (currentDateIndex >= 0 && currentDateIndex < availableDates.length - 1) {
       setPowerProfileDate(availableDates[currentDateIndex + 1]);
     }
   };
 
   const isFirstDate = currentDateIndex <= 0;
   const isLastDate = currentDateIndex >= availableDates.length - 1 || currentDateIndex === -1;
-
-  if (!activeDatasetId) {
-    return (
-      <div className="max-w-xl mx-auto mt-10 sm:mt-20 p-6 sm:p-8 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-center">
-        <h2 className="text-base font-semibold mb-2">No Active Dataset</h2>
-        <p className="text-xs text-slate-500 mb-6">
-          Import your inverter export files in the Historical Library or connect Deye Cloud to inspect energy analytics.
-        </p>
-        <button
-          onClick={() => navigate('/library')}
-          className="bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-medium px-4 py-2 rounded-md transition-colors"
-        >
-          Go to Data Library
-        </button>
-      </div>
-    );
-  }
 
   const baseOpt = getBaseEChartsOption();
 
@@ -185,7 +206,8 @@ export const OverviewPage: React.FC = () => {
       formatter: (params: any) => {
         if (!params || params.length === 0) return '';
         const timeLabel = params[0].axisValueLabel || params[0].name;
-        let res = `<div class="font-sans text-xs font-semibold pb-1 mb-1 border-b border-slate-200 dark:border-slate-700">${timeLabel} (${formatDateMMDDYYYY(powerProfileDate)})</div>`;
+        const dateSuffix = powerProfileDate ? ` (${formatDateMMDDYYYY(powerProfileDate)})` : '';
+        let res = `<div class="font-sans text-xs font-semibold pb-1 mb-1 border-b border-slate-200 dark:border-slate-700">${timeLabel}${dateSuffix}</div>`;
         params.forEach((p: any) => {
           if (p.value !== null && p.value !== undefined) {
             const unit = p.seriesName === 'SOC' ? '%' : 'kW';
@@ -256,7 +278,7 @@ export const OverviewPage: React.FC = () => {
         type: 'line',
         smooth: true,
         showSymbol: false,
-        lineStyle: { width: 1.5, color: '#6366F1' },
+        lineStyle: { width: 1.5, color: '#0284C7' },
         data: timeline.grid_power_kw
       },
       {
@@ -281,7 +303,7 @@ export const OverviewPage: React.FC = () => {
         yAxisIndex: 1,
         smooth: true,
         showSymbol: false,
-        lineStyle: { width: 1.5, color: '#3B82F6', type: 'dashed' },
+        lineStyle: { width: 1.5, color: '#0EA5E9', type: 'dashed' },
         data: timeline.soc_percent
       }
     ]
@@ -297,18 +319,21 @@ export const OverviewPage: React.FC = () => {
   };
 
   const handleNextMonth = () => {
-    if (currentMonthIdx < availableMonths.length - 1) {
+    if (currentMonthIdx >= 0 && currentMonthIdx < availableMonths.length - 1) {
       setSelectedHistoryMonth(availableMonths[currentMonthIdx + 1]);
     }
   };
 
-  const [selYearStr, selMonthStr] = (selectedHistoryMonth || '2026-11').split('-');
-  const selYear = parseInt(selYearStr, 10) || 2026;
-  const selMonth = parseInt(selMonthStr, 10) || 11;
-  const daysInSelMonth = new Date(selYear, selMonth, 0).getDate();
+  const hasValidMonth = /^\d{4}-\d{2}$/.test(selectedHistoryMonth);
+  const [selYearStr, selMonthStr] = hasValidMonth ? selectedHistoryMonth.split('-') : ['', ''];
+  const selYear = parseInt(selYearStr, 10) || 0;
+  const selMonth = parseInt(selMonthStr, 10) || 0;
+  const daysInSelMonth = hasValidMonth ? new Date(selYear, selMonth, 0).getDate() : 30;
   const monthDays = Array.from({ length: daysInSelMonth }, (_, i) => i + 1);
 
-  const currentMonthSummaries = dailySummaries.filter((d) => d.date.startsWith(selectedHistoryMonth));
+  const currentMonthSummaries = hasValidMonth
+    ? dailySummaries.filter((d) => d.date.startsWith(selectedHistoryMonth))
+    : [];
   const daySummaryMap = new Map<number, DailySummaryItem>();
   currentMonthSummaries.forEach((d) => {
     try {
@@ -317,11 +342,12 @@ export const OverviewPage: React.FC = () => {
         const dayNum = parseInt(parts[2], 10);
         daySummaryMap.set(dayNum, d);
       }
-    } catch {
-    }
+    } catch {}
   });
 
-  const selectedHistoryMonthDisplay = `${String(selMonth).padStart(2, '0')}/${selYear}`;
+  const selectedHistoryMonthDisplay = hasValidMonth
+    ? `${String(selMonth).padStart(2, '0')}/${selYear}`
+    : '--';
 
   const currentMonthPvTotal = currentMonthSummaries.reduce((acc, d) => acc + d.pv_kwh, 0);
   const currentMonthLoadTotal = currentMonthSummaries.reduce((acc, d) => acc + d.load_kwh, 0);
@@ -331,7 +357,7 @@ export const OverviewPage: React.FC = () => {
   const currentMonthDirectPv = Math.max(0, currentMonthLoadTotal - currentMonthImportTotal - currentMonthDischargeTotal);
 
   const monthConsBreakdown = [
-    { label: 'Import', kwh: currentMonthImportTotal, pct: currentMonthLoadTotal > 0 ? (currentMonthImportTotal / currentMonthLoadTotal) * 100 : 33.3, color: '#6366F1' },
+    { label: 'Import', kwh: currentMonthImportTotal, pct: currentMonthLoadTotal > 0 ? (currentMonthImportTotal / currentMonthLoadTotal) * 100 : 33.3, color: '#0284C7' },
     { label: 'Discharge', kwh: currentMonthDischargeTotal, pct: currentMonthLoadTotal > 0 ? (currentMonthDischargeTotal / currentMonthLoadTotal) * 100 : 33.3, color: '#06B6D4' },
     { label: 'PV', kwh: currentMonthDirectPv, pct: currentMonthLoadTotal > 0 ? (currentMonthDirectPv / currentMonthLoadTotal) * 100 : 33.4, color: '#10B981' }
   ];
@@ -352,7 +378,8 @@ export const OverviewPage: React.FC = () => {
       formatter: (params: any) => {
         if (!params || params.length === 0) return '';
         const day = params[0].axisValueLabel || params[0].name;
-        let res = `<div class="font-sans text-xs font-semibold pb-1 mb-1 border-b border-slate-200 dark:border-slate-700">${selectedHistoryMonthDisplay} - Day ${day}</div>`;
+        const headerLabel = hasValidMonth ? `${selectedHistoryMonthDisplay} - Day ${day}` : `Day ${day}`;
+        let res = `<div class="font-sans text-xs font-semibold pb-1 mb-1 border-b border-slate-200 dark:border-slate-700">${headerLabel}</div>`;
         let hasData = false;
         params.forEach((p: any) => {
           if (p.value !== null && p.value !== undefined && p.value !== 0) {
@@ -434,7 +461,7 @@ export const OverviewPage: React.FC = () => {
         type: 'bar',
         stack: 'positive',
         barMaxWidth: 16,
-        itemStyle: { color: '#6366F1' },
+        itemStyle: { color: '#0284C7' },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
           return item ? item.grid_import_kwh : 0;
@@ -456,7 +483,7 @@ export const OverviewPage: React.FC = () => {
         type: 'bar',
         stack: 'negative',
         barMaxWidth: 16,
-        itemStyle: { color: '#3B82F6' },
+        itemStyle: { color: '#38BDF8' },
         data: monthDays.map((d) => {
           const item = daySummaryMap.get(d);
           return item ? -Math.abs(item.battery_charge_kwh) : 0;
@@ -491,10 +518,10 @@ export const OverviewPage: React.FC = () => {
     : (loadKwh > 0 ? loadKwh : (hasRealFlow ? (liveFlow?.summary.accumulative_consumption_kwh ?? 0) : 0));
   const dailyProdKwh = todaySummary
     ? todaySummary.pv_kwh
-    : (activeDatasetId !== 'all' ? solarKwh : (hasRealFlow ? (liveFlow?.summary.daily_production_kwh ?? 0) : 0));
+    : (activeDatasetId && activeDatasetId !== 'all' ? solarKwh : (hasRealFlow ? (liveFlow?.summary.daily_production_kwh ?? 0) : 0));
   const dailyConsKwh = todaySummary
     ? todaySummary.load_kwh
-    : (activeDatasetId !== 'all' ? loadKwh : 0);
+    : (activeDatasetId && activeDatasetId !== 'all' ? loadKwh : 0);
 
   const balanceSelfConsRaw = summary?.balance?.solar_self_consumption_ratio;
   const balanceSelfConsPct = typeof balanceSelfConsRaw === 'number'
@@ -506,207 +533,245 @@ export const OverviewPage: React.FC = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-8">
-          {error && !summary && (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs text-amber-800 dark:text-amber-300" role="alert">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span>{error}</span>
-              </div>
-              <button
-                type="button"
-                onClick={fetchOverviewData}
-                className="px-3 py-1.5 rounded-md bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 font-medium text-amber-800 dark:text-amber-200 hover:bg-amber-100/60 dark:hover:bg-amber-900/40 transition-colors self-start sm:self-auto"
-              >
-                Retry
-              </button>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
-            <div className="md:col-span-12 lg:col-span-5 flex flex-col card-stagger-1">
-              <LiveFlowGraph
-                initialData={liveFlow}
-                onFlowUpdate={setLiveFlow}
-                onRefreshRequested={fetchOverviewData}
-              />
-            </div>
-
-            <div className="md:col-span-6 lg:col-span-3 flex flex-col card-stagger-2">
-              <LiveSummaryCard
-                accumulativeProductionKwh={accumProdKwh}
-                accumulativeConsumptionKwh={accumConsKwh}
-                dailyProductionKwh={dailyProdKwh}
-                dailyConsumptionKwh={dailyConsKwh}
-                selfConsumptionRate={selfConsPct}
-                weatherTempC={liveFlow?.summary.weather_temp_c ?? 28}
-              />
-            </div>
-
-            <div className="md:col-span-6 lg:col-span-4 flex flex-col card-stagger-3">
-              <SolarUtilizationCard
-                consumptionTotalKwh={currentMonthLoadTotal > 0 ? currentMonthLoadTotal : (hasRealFlow ? (liveFlow?.utilization?.consumption_total_kwh ?? 0) : 0)}
-                consumptionBreakdown={currentMonthLoadTotal > 0 ? monthConsBreakdown : (hasRealFlow ? liveFlow?.utilization?.consumption_breakdown : undefined)}
-                productionTotalKwh={currentMonthPvTotal > 0 ? currentMonthPvTotal : (hasRealFlow ? (liveFlow?.utilization?.production_total_kwh ?? 0) : 0)}
-                productionBreakdown={currentMonthPvTotal > 0 ? monthProdBreakdown : (hasRealFlow ? liveFlow?.utilization?.production_breakdown : undefined)}
-                dateLabel={selectedHistoryMonthDisplay}
-                onPrevMonth={handlePrevMonth}
-                onNextMonth={handleNextMonth}
-              />
-            </div>
+      {error && !summary && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs text-amber-800 dark:text-amber-300" role="alert">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>{error}</span>
           </div>
+          <button
+            type="button"
+            onClick={fetchOverviewData}
+            className="px-3 py-1.5 rounded-md bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 font-medium text-amber-800 dark:text-amber-200 hover:bg-amber-100/60 dark:hover:bg-amber-900/40 transition-colors self-start sm:self-auto"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 shadow-xs card-stagger-4 interactive-card">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-                <div className="flex items-center gap-2">
-                  <Tooltip
-                    title="24-Hour Power Profile"
-                    content="High-resolution time series of solar generation, battery power and state-of-charge, grid power exchange, and total household consumption."
-                    position="bottom"
-                  >
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-help">Power Profile</h3>
-                  </Tooltip>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">24-Hour</span>
-                  {timelineLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />}
-                </div>
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
+        <div className="md:col-span-12 lg:col-span-5 flex flex-col card-stagger-1">
+          <LiveFlowGraph
+            initialData={liveFlow}
+            onFlowUpdate={setLiveFlow}
+            onRefreshRequested={fetchOverviewData}
+          />
+        </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+        <div className="md:col-span-6 lg:col-span-3 flex flex-col card-stagger-2">
+          <LiveSummaryCard
+            accumulativeProductionKwh={accumProdKwh}
+            accumulativeConsumptionKwh={accumConsKwh}
+            dailyProductionKwh={dailyProdKwh}
+            dailyConsumptionKwh={dailyConsKwh}
+            selfConsumptionRate={selfConsPct}
+            weatherTempC={liveFlow?.summary.weather_temp_c ?? null}
+          />
+        </div>
+
+        <div className="md:col-span-6 lg:col-span-4 flex flex-col card-stagger-3">
+          <SolarUtilizationCard
+            consumptionTotalKwh={currentMonthLoadTotal > 0 ? currentMonthLoadTotal : (hasRealFlow ? (liveFlow?.utilization?.consumption_total_kwh ?? 0) : 0)}
+            consumptionBreakdown={currentMonthLoadTotal > 0 ? monthConsBreakdown : (hasRealFlow ? liveFlow?.utilization?.consumption_breakdown : undefined)}
+            productionTotalKwh={currentMonthPvTotal > 0 ? currentMonthPvTotal : (hasRealFlow ? (liveFlow?.utilization?.production_total_kwh ?? 0) : 0)}
+            productionBreakdown={currentMonthPvTotal > 0 ? monthProdBreakdown : (hasRealFlow ? liveFlow?.utilization?.production_breakdown : undefined)}
+            dateLabel={selectedHistoryMonthDisplay}
+            onPrevMonth={handlePrevMonth}
+            onNextMonth={handleNextMonth}
+          />
+        </div>
+      </div>
+
+      {!activeDatasetId ? (
+        <div className="p-6 sm:p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-center shadow-xs">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 mb-2">
+            No Historical Datasets Loaded
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-5">
+            Import your inverter CSV or Excel export files, or synchronize historical days from Deye Cloud in the Data Library to populate power profiles and daily breakdowns.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate('/library')}
+            className="bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-medium px-4 py-2 rounded-md transition-colors"
+          >
+            Open Data Library
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 shadow-xs card-stagger-4 interactive-card">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <Tooltip
+                  title="24-Hour Power Profile"
+                  content="High-resolution time series of solar generation, battery power and state-of-charge, grid power exchange, and total household consumption."
+                  position="bottom"
+                >
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-help">Power Profile</h3>
+                </Tooltip>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">24-Hour</span>
+                {timelineLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!timeline}
+                  onClick={() => {
+                    if (!timeline) return;
+                    const blob = new Blob([JSON.stringify(timeline, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `power_profile_${powerProfileDate || 'data'}.json`;
+                    a.click();
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-40"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Export</span>
+                </button>
+
+                <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-200 dark:border-slate-700 text-xs">
                   <button
-                    onClick={() => {
-                      const blob = new Blob([JSON.stringify(timeline, null, 2)], { type: 'application/json' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `power_profile_${powerProfileDate || 'data'}.json`;
-                      a.click();
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                    type="button"
+                    onClick={handlePrevDate}
+                    disabled={isFirstDate}
+                    className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:hover:bg-transparent"
+                    title="Previous Day"
+                    aria-label="Previous Day"
                   >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>Export</span>
+                    <ChevronLeft className="h-3.5 w-3.5" />
                   </button>
 
-                  <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-200 dark:border-slate-700 text-xs">
-                    <button
-                      type="button"
-                      onClick={handlePrevDate}
-                      disabled={isFirstDate}
-                      className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:hover:bg-transparent"
-                      title="Previous Day"
+                  <div className="relative flex items-center px-1">
+                    <select
+                      aria-label="Power Profile Date"
+                      value={powerProfileDate}
+                      onChange={(e) => setPowerProfileDate(e.target.value)}
+                      disabled={availableDates.length === 0}
+                      className="bg-transparent text-slate-800 dark:text-slate-200 font-mono text-xs py-0.5 pl-1 pr-6 cursor-pointer focus:outline-none appearance-none disabled:opacity-50"
                     >
-                      <ChevronLeft className="h-3.5 w-3.5" />
-                    </button>
-
-                    <div className="relative flex items-center px-1">
-                      <select
-                        value={powerProfileDate}
-                        onChange={(e) => setPowerProfileDate(e.target.value)}
-                        className="bg-transparent text-slate-800 dark:text-slate-200 font-mono text-xs py-0.5 pl-1 pr-6 cursor-pointer focus:outline-none appearance-none"
-                      >
-                        {availableDates.map((dateStr) => (
+                      {availableDates.length === 0 ? (
+                        <option value="">--/--/----</option>
+                      ) : (
+                        availableDates.map((dateStr) => (
                           <option key={dateStr} value={dateStr} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-mono">
                             {formatDateMMDDYYYY(dateStr)}
                           </option>
-                        ))}
-                      </select>
-                      <Calendar className="h-3 w-3 text-slate-400 absolute right-2 pointer-events-none" />
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleNextDate}
-                      disabled={isLastDate}
-                      className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:hover:bg-transparent"
-                      title="Next Day"
-                    >
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </button>
+                        ))
+                      )}
+                    </select>
+                    <Calendar className="h-3 w-3 text-slate-400 absolute right-2 pointer-events-none" />
                   </div>
-                </div>
-              </div>
-              {powerProfileOption ? (
-                <EChartComponent option={powerProfileOption} height={280} />
-              ) : (
-                <div className="h-[280px] flex items-center justify-center text-xs text-slate-400 dark:text-slate-500 gap-2">
-                  {loading || timelineLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
-                      <span>Loading power profile...</span>
-                    </>
-                  ) : (
-                    <span>No timeline samples available for {formatDateMMDDYYYY(powerProfileDate)}</span>
-                  )}
-                </div>
-              )}
-            </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 shadow-xs card-stagger-5 interactive-card">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
-                <Tooltip
-                  title="Generation & Usage History"
-                  content="Stacked daily historical breakdown comparing rooftop solar generation, battery discharge/charge cycling, utility grid import, and household load."
-                  position="bottom"
-                >
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-help">Generation & Usage History</h3>
-                </Tooltip>
-                <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={() => {
-                      const csv = dailySummaries.map((d) => `${d.date},${d.pv_kwh},${d.load_kwh},${d.grid_import_kwh},${d.battery_discharge_kwh}`).join('\n');
-                      const blob = new Blob([`date,pv_kwh,load_kwh,grid_kwh,battery_kwh\n${csv}`], { type: 'text/csv' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = 'generation_usage_history.csv';
-                      a.click();
-                    }}
-                    className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                    type="button"
+                    onClick={handleNextDate}
+                    disabled={isLastDate}
+                    className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:hover:bg-transparent"
+                    title="Next Day"
+                    aria-label="Next Day"
                   >
-                    <Download className="h-3 w-3" />
-                    <span>Export</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
                   </button>
-
-                  <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded text-[11px] font-medium">
-                    {(['M', 'Y', 'T'] as const).map((p) => (
-                      <button
-                        key={p}
-                        onClick={() => setHistoryPeriod(p)}
-                        className={`px-1.5 py-0.5 rounded ${
-                          historyPeriod === p
-                            ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center gap-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
-                    <button
-                      type="button"
-                      onClick={handlePrevMonth}
-                      disabled={currentMonthIdx <= 0}
-                      className="p-0.5 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 disabled:hover:text-slate-500 cursor-pointer"
-                    >
-                      <ChevronLeft className="h-3 w-3" />
-                    </button>
-                    <span className="font-mono">{selectedHistoryMonthDisplay}</span>
-                    <button
-                      type="button"
-                      onClick={handleNextMonth}
-                      disabled={currentMonthIdx >= availableMonths.length - 1}
-                      className="p-0.5 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 disabled:hover:text-slate-500 cursor-pointer"
-                    >
-                      <ChevronRight className="h-3 w-3" />
-                    </button>
-                    <Calendar className="h-3 w-3 text-slate-400 ml-1" />
-                  </div>
                 </div>
               </div>
-              <EChartComponent option={historyOption} height={280} />
             </div>
+            {powerProfileOption ? (
+              <EChartComponent option={powerProfileOption} height={280} />
+            ) : (
+              <div className="h-[280px] flex items-center justify-center text-xs text-slate-400 dark:text-slate-500 gap-2">
+                {loading || timelineLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+                    <span>Loading power profile...</span>
+                  </>
+                ) : (
+                  <span>
+                    {powerProfileDate
+                      ? `No timeline samples available for ${formatDateMMDDYYYY(powerProfileDate)}`
+                      : 'No timeline samples recorded yet'}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
+
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 shadow-xs card-stagger-5 interactive-card">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
+              <Tooltip
+                title="Generation & Usage History"
+                content="Stacked daily historical breakdown comparing rooftop solar generation, battery discharge/charge cycling, utility grid import, and household load."
+                position="bottom"
+              >
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-help">Generation & Usage History</h3>
+              </Tooltip>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={dailySummaries.length === 0}
+                  onClick={() => {
+                    const csv = dailySummaries.map((d) => `${d.date},${d.pv_kwh},${d.load_kwh},${d.grid_import_kwh},${d.battery_discharge_kwh}`).join('\n');
+                    const blob = new Blob([`date,pv_kwh,load_kwh,grid_kwh,battery_kwh\n${csv}`], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'generation_usage_history.csv';
+                    a.click();
+                  }}
+                  className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors disabled:opacity-40"
+                >
+                  <Download className="h-3 w-3" />
+                  <span>Export</span>
+                </button>
+
+                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded text-[11px] font-medium">
+                  {(['M', 'Y', 'T'] as const).map((p) => (
+                    <button
+                      type="button"
+                      key={p}
+                      onClick={() => setHistoryPeriod(p)}
+                      className={`px-1.5 py-0.5 rounded ${
+                        historyPeriod === p
+                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+                  <button
+                    type="button"
+                    onClick={handlePrevMonth}
+                    disabled={currentMonthIdx <= 0}
+                    aria-label="Previous History Month"
+                    className="p-0.5 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 disabled:hover:text-slate-500 cursor-pointer"
+                  >
+                    <ChevronLeft className="h-3 w-3" />
+                  </button>
+                  <span className="font-mono">{selectedHistoryMonthDisplay}</span>
+                  <button
+                    type="button"
+                    onClick={handleNextMonth}
+                    disabled={currentMonthIdx < 0 || currentMonthIdx >= availableMonths.length - 1}
+                    aria-label="Next History Month"
+                    className="p-0.5 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 disabled:hover:text-slate-500 cursor-pointer"
+                  >
+                    <ChevronRight className="h-3 w-3" />
+                  </button>
+                  <Calendar className="h-3 w-3 text-slate-400 ml-1" />
+                </div>
+              </div>
+            </div>
+            <EChartComponent option={historyOption} height={280} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

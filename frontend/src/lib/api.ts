@@ -1,5 +1,5 @@
 const API_BASE = "/api";
-const BILLING_PROFILE_STORAGE_KEY = "solarscope_billing_profile";
+const BILLING_PROFILE_STORAGE_KEY = "solarscope_billing_profile_v2";
 const LEGACY_DEYE_KEYS = [
   "solarscope_deye_token",
   "solarscope_deye_station_id",
@@ -11,6 +11,8 @@ function clearLegacyDeyeStorage(): void {
     for (const k of LEGACY_DEYE_KEYS) {
       localStorage.removeItem(k);
     }
+    localStorage.removeItem("solarscope_billing_profile");
+    localStorage.removeItem("solarscope_cached_live_flow_v2");
     sessionStorage.removeItem("solarscope_cached_live_flow");
   } catch {}
 }
@@ -36,6 +38,14 @@ export function persistDeyeSession(): void {
   clearLegacyDeyeStorage();
 }
 
+function dispatchAppEvent(name: string): void {
+  try {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(name));
+    }
+  } catch {}
+}
+
 export async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
   try {
@@ -47,13 +57,17 @@ export async function fetchJson<T>(endpoint: string, options?: RequestInit): Pro
     return res.json();
   } catch (err: any) {
     if (err.name === "TypeError" && (err.message.includes("fetch") || err.message.includes("network") || err.message.includes("Failed"))) {
-      throw new Error("Cannot connect to SolarScope backend at http://127.0.0.1:8000. Ensure backend server is running.");
+      throw new Error("Cannot reach SolarScope API server. Please ensure the backend service is running.");
     }
     throw err;
   }
 }
 
 export interface SystemSettings {
+  station_name?: string;
+  location_name?: string;
+  latitude?: number;
+  longitude?: number;
   pv_capacity_kwp: number;
   num_modules: number;
   module_wattage: number;
@@ -171,45 +185,54 @@ export interface DailySummaryItem {
 export const api = {
   getHealth: () => fetchJson<{ status: string; app: string; version: string; currency: string; time_format: string }>("/health"),
   getSettings: () => fetchJson<SystemSettings>("/settings"),
-  updateSettings: (data: SystemSettings) => fetchJson<{ status: string; settings: SystemSettings }>("/settings", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  }),
+  updateSettings: async (data: SystemSettings) => {
+    const res = await fetchJson<{ status: string; settings: SystemSettings }>("/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    dispatchAppEvent("solarscope:settings-updated");
+    return res;
+  },
   uploadDataset: async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    return fetchJson<{ dataset_id: string; filename: string; file_hash?: string; is_duplicate?: boolean; duplicate_of?: string; available_sheets: string[]; selected_sheet: string | null }>("/datasets/upload", {
+    const res = await fetchJson<{ dataset_id: string; filename: string; file_hash?: string; is_duplicate?: boolean; duplicate_of?: string; available_sheets: string[]; selected_sheet: string | null }>("/datasets/upload", {
       method: "POST",
       body: formData,
     });
+    dispatchAppEvent("solarscope:sources-updated");
+    return res;
   },
   uploadDatasetsBatch: async (files: File[]) => {
     const formData = new FormData();
     files.forEach(f => formData.append("files", f));
-    return fetchJson<{ total_uploaded: number; files: any[] }>("/datasets/upload_batch", {
+    const res = await fetchJson<{ total_uploaded: number; files: any[] }>("/datasets/upload_batch", {
       method: "POST",
       body: formData,
     });
+    dispatchAppEvent("solarscope:sources-updated");
+    return res;
   },
   listSources: () => fetchJson<SourceItem[]>("/sources"),
-  updateSource: (sourceId: string, payload: { is_included?: boolean; sheet_name?: string }) => {
-    return fetchJson<{ status: string; source_id: string }>(`/sources/${sourceId}`, {
+  updateSource: async (sourceId: string, payload: { is_included?: boolean; sheet_name?: string }) => {
+    const res = await fetchJson<{ status: string; source_id: string }>(`/sources/${sourceId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
+    dispatchAppEvent("solarscope:sources-updated");
+    return res;
   },
-  deleteSource: (sourceId: string) => {
-    return fetchJson<{ status: string; source_id: string }>(`/sources/${sourceId}`, {
+  deleteSource: async (sourceId: string) => {
+    const res = await fetchJson<{ status: string; source_id: string }>(`/sources/${sourceId}`, {
       method: "DELETE"
     });
+    dispatchAppEvent("solarscope:sources-updated");
+    return res;
   },
-  loadSampleDataset: () => fetchJson<{ dataset_id: string; filename: string; available_sheets: string[]; selected_sheet: string }>("/datasets/load_sample", {
-    method: "POST"
-  }),
-  autoCommitDataset: (datasetId: string) => {
-    return fetchJson<{
+  autoCommitDataset: async (datasetId: string) => {
+    const res = await fetchJson<{
       status: string;
       dataset_id: string;
       filename: string;
@@ -221,18 +244,22 @@ export const api = {
     }>(`/datasets/${datasetId}/auto_commit`, {
       method: "POST"
     });
+    dispatchAppEvent("solarscope:sources-updated");
+    return res;
   },
-  autoCommitAllDatasets: () => {
-    return fetchJson<{ total_processed: number; committed: any[] }>("/datasets/auto_commit_all", {
+  autoCommitAllDatasets: async () => {
+    const res = await fetchJson<{ total_processed: number; committed: any[] }>("/datasets/auto_commit_all", {
       method: "POST"
     });
+    dispatchAppEvent("solarscope:sources-updated");
+    return res;
   },
   getPreview: (datasetId: string, sheetName?: string) => {
     const q = sheetName ? `?sheet_name=${encodeURIComponent(sheetName)}` : "";
     return fetchJson<DatasetPreview>(`/datasets/${datasetId}/preview${q}`);
   },
-  commitDataset: (datasetId: string, mappings: Record<string, string>, signConventions: Record<string, string>, selectedSheet: string) => {
-    return fetchJson<{ status: string; dataset_id: string; total_records: number; quality_score: number; quality_status: string; start_time_12h?: string; end_time_12h?: string }>(`/datasets/${datasetId}/commit`, {
+  commitDataset: async (datasetId: string, mappings: Record<string, string>, signConventions: Record<string, string>, selectedSheet: string) => {
+    const res = await fetchJson<{ status: string; dataset_id: string; total_records: number; quality_score: number; quality_status: string; start_time_12h?: string; end_time_12h?: string }>(`/datasets/${datasetId}/commit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -242,6 +269,8 @@ export const api = {
         sign_conventions: signConventions
       }),
     });
+    dispatchAppEvent("solarscope:sources-updated");
+    return res;
   },
   getSummary: (datasetId: string) => fetchJson<any>(`/datasets/${datasetId}/summary`),
   getTimeline: (datasetId: string, date?: string) => {
@@ -325,19 +354,31 @@ export const api = {
   getDownloadUrl: (reportId: string) => `${API_BASE}/reports/${reportId}/download`,
   getBillingOverview: (datasetId?: string) => {
     const q = datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : "";
-    return fetchJson<BillForecastResponse>(`/billing/overview${q}`);
+    const stored = getStoredBillingProfile();
+    const headers: Record<string, string> = {};
+    if (stored) headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(stored));
+    return fetchJson<BillForecastResponse>(`/billing/overview${q}`, { headers });
   },
   getBillingProgress: (datasetId?: string) => {
     const q = datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : "";
-    return fetchJson<BillingProgressResponse>(`/billing/progress${q}`);
+    const stored = getStoredBillingProfile();
+    const headers: Record<string, string> = {};
+    if (stored) headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(stored));
+    return fetchJson<BillingProgressResponse>(`/billing/progress${q}`, { headers });
   },
   getBillingStatement: (mode: "actual" | "expected" | "lower" | "higher" = "expected", datasetId?: string) => {
     let url = `/billing/statement?mode=${mode}`;
     if (datasetId) url += `&dataset_id=${encodeURIComponent(datasetId)}`;
-    return fetchJson<StatementOfAccount>(url);
+    const stored = getStoredBillingProfile();
+    const headers: Record<string, string> = {};
+    if (stored) headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(stored));
+    return fetchJson<StatementOfAccount>(url, { headers });
   },
   getBillingProfile: async () => {
-    const prof = await fetchJson<TEIBillingProfile>("/billing/profile");
+    const stored = getStoredBillingProfile();
+    const headers: Record<string, string> = {};
+    if (stored) headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(stored));
+    const prof = await fetchJson<TEIBillingProfile>("/billing/profile", { headers });
     if (prof) {
       setStoredBillingProfile(prof);
     }
@@ -374,9 +415,12 @@ export const api = {
   calculateRateSensitivity: (payload: { delta_gen_rate: number; delta_usage_pct: number; custom_kwh?: number }, datasetId?: string) => {
     let url = "/billing/sensitivity";
     if (datasetId) url += `?dataset_id=${encodeURIComponent(datasetId)}`;
+    const stored = getStoredBillingProfile();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (stored) headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(stored));
     return fetchJson<RateSensitivityResponse>(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(payload)
     });
   },
@@ -407,8 +451,20 @@ export const api = {
     });
     clearLegacyDeyeStorage();
     try {
-      localStorage.removeItem("solarscope_cached_live_flow_v2");
+      localStorage.removeItem("solarscope_cached_live_flow_v3");
     } catch {}
+    dispatchAppEvent("solarscope:deye-updated");
+    return res;
+  },
+  clearDeyeConfig: async () => {
+    const res = await fetchJson<DeyeStatusResponse>("/deye/config", {
+      method: "DELETE"
+    });
+    clearLegacyDeyeStorage();
+    try {
+      localStorage.removeItem("solarscope_cached_live_flow_v3");
+    } catch {}
+    dispatchAppEvent("solarscope:deye-updated");
     return res;
   },
   testDeyeConnection: async (credentials?: DeyeConfigPayload) => {
@@ -420,8 +476,9 @@ export const api = {
     if (res.success) {
       clearLegacyDeyeStorage();
       try {
-        localStorage.removeItem("solarscope_cached_live_flow_v2");
+        localStorage.removeItem("solarscope_cached_live_flow_v3");
       } catch {}
+      dispatchAppEvent("solarscope:deye-updated");
     }
     return res;
   },
@@ -431,6 +488,8 @@ export const api = {
       headers: credentials ? { "Content-Type": "application/json" } : undefined,
       body: credentials ? JSON.stringify(credentials) : undefined
     });
+    dispatchAppEvent("solarscope:sources-updated");
+    dispatchAppEvent("solarscope:deye-updated");
     return res;
   },
   syncDeyeRange: async (startDate: string, endDate: string, credentials?: DeyeConfigPayload) => {
@@ -439,15 +498,20 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ start_date: startDate, end_date: endDate, credentials })
     });
+    dispatchAppEvent("solarscope:sources-updated");
+    dispatchAppEvent("solarscope:deye-updated");
     return res;
   },
   getDeyeMissingDates: () => {
     return fetchJson<{ missing_dates: string[]; count: number }>("/deye/missing_dates");
   },
-  syncDeyeMissing: () => {
-    return fetchJson<{ status: string; message: string; records_inserted: number; backfilled_dates?: string[] }>("/deye/sync_missing", {
+  syncDeyeMissing: async () => {
+    const res = await fetchJson<{ status: string; message: string; records_inserted: number; backfilled_dates?: string[] }>("/deye/sync_missing", {
       method: "POST"
     });
+    dispatchAppEvent("solarscope:sources-updated");
+    dispatchAppEvent("solarscope:deye-updated");
+    return res;
   },
   getDeyeLiveFlow: async () => {
     clearLegacyDeyeStorage();
@@ -748,6 +812,9 @@ export interface DeyeStatusResponse {
 }
 
 export interface WeatherIntelligenceResponse {
+  configured?: boolean;
+  status?: string;
+  message?: string;
   location: string;
   latitude: number;
   longitude: number;
@@ -756,7 +823,7 @@ export interface WeatherIntelligenceResponse {
     cloud_cover_percent: number;
     solar_radiation_wm2: number;
     temperature_c: number;
-  };
+  } | null;
   tomorrow_forecast: {
     date: string;
     average_cloud_cover_percent: number;
@@ -767,7 +834,7 @@ export interface WeatherIntelligenceResponse {
     projected_sunset_soc_percent: number;
     projected_night_autonomy_hours: number;
     projected_night_autonomy_formatted: string;
-  };
+  } | null;
   hourly_forecast: Array<{
     time: string;
     hour: number;
@@ -933,7 +1000,7 @@ export interface LiveFlowResponse {
     accumulative_production_kwh: number;
     accumulative_consumption_kwh: number;
     daily_production_kwh: number;
-    weather_temp_c: number;
+    weather_temp_c: number | null;
   };
   utilization?: {
     consumption_total_kwh: number;

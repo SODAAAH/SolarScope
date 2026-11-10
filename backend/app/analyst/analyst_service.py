@@ -22,9 +22,10 @@ def analyze_energy_query(
     query_text: str = "",
     project_id: str = "default"
 ) -> Dict[str, Any]:
-    query_hash = hashlib.sha256(f"{query_key}:{query_text}:{len(records)}".encode("utf-8")).hexdigest()
-
     conn = get_connection()
+    sys_row = conn.execute("SELECT * FROM system_settings WHERE project_id = ?", (project_id,)).fetchone()
+    settings_stamp = (sys_row["updated_at"] or "") if sys_row else ""
+    query_hash = hashlib.sha256(f"{query_key}:{query_text}:{len(records)}:{settings_stamp}".encode("utf-8")).hexdigest()
     cached = conn.execute("SELECT response_json FROM analyst_cache WHERE query_hash = ?", (query_hash,)).fetchone()
     conn.close()
 
@@ -35,7 +36,29 @@ def analyze_energy_query(
             pass
 
     snapshot = extract_system_snapshot(records, project_id=project_id)
-    weather_info = get_weather_intelligence()
+    keys = sys_row.keys() if sys_row else []
+    lat = float(sys_row["latitude"] or 0.0) if "latitude" in keys else 0.0
+    lon = float(sys_row["longitude"] or 0.0) if "longitude" in keys else 0.0
+    loc_name = (sys_row["location_name"] or "").strip() if "location_name" in keys else ""
+    tz_str = (sys_row["timezone"] or "Asia/Manila").strip() if "timezone" in keys else "Asia/Manila"
+    pv_kwp = float(sys_row["pv_capacity_kwp"] or 0.0) if "pv_capacity_kwp" in keys else 0.0
+    batt_kwh = float(sys_row["battery_capacity_kwh"] or 0.0) if "battery_capacity_kwh" in keys else 0.0
+    reserve_soc = float(sys_row["reserve_soc"] if sys_row["reserve_soc"] is not None else 20.0) if "reserve_soc" in keys else 20.0
+
+    current_soc = records[-1].soc_percent if records else 0.0
+    daily_cons = snapshot.get("consumption", {}).get("consumed_energy_kwh", 0.0)
+
+    weather_info = get_weather_intelligence(
+        lat=lat,
+        lon=lon,
+        location_name=loc_name,
+        timezone_str=tz_str,
+        installed_kwp=pv_kwp,
+        battery_capacity_kwh=batt_kwh,
+        reserve_soc=reserve_soc,
+        current_soc=current_soc,
+        daily_consumption_kwh=daily_cons
+    )
     result = build_evidence_response(query_key, snapshot, weather_info)
 
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -64,7 +87,6 @@ def stream_analyst_response(
         fast_res = execute_fast_path({
             "metric": classification["metric"].lower(),
             "intent": classification["intent"],
-            "requires_llm": False,
             "target_period": classification["date_info"].get("date_str")
         }, project_id=project_id)
 
@@ -92,7 +114,7 @@ def stream_analyst_response(
             "title": "Inquiry Clarification",
             "content": (
                 "Please specify what you would like to analyze: solar generation, "
-                "battery charge levels, electricity purchases from TEI, or live station health."
+                "battery charge levels, utility electricity purchases, or live station health."
             )
         }
         yield {
@@ -112,18 +134,16 @@ def stream_analyst_response(
     yield {"type": "status", "message": "Inspecting local telemetry database..."}
     local_records_dicts = [r.dict() if hasattr(r, "dict") else dict(r) for r in records]
 
-    yield {"type": "status", "message": "Querying Deye Open MCP server for inverter state..."}
+    yield {"type": "status", "message": "Querying Deye Cloud telemetry state..."}
     diag = diagnostic_engine_instance.investigate(classification, local_records_dicts)
 
     yield {"type": "status", "message": "Evaluating energy-balance rules and alert registers..."}
     formatted_text = format_diagnostic_response(diag)
 
     words = formatted_text.split(" ")
-    accumulated = ""
     chunk_size = 4
     for i in range(0, len(words), chunk_size):
         chunk = " ".join(words[i:i+chunk_size]) + " "
-        accumulated += chunk
         yield {"type": "token", "token": chunk}
         time.sleep(0.01)
 
@@ -139,19 +159,41 @@ def stream_analyst_response(
         }
     }
 
-def get_performance_overview() -> Dict[str, Any]:
+def get_performance_overview(project_id: str = "default") -> Dict[str, Any]:
     creds = deye_mcp_client._get_credentials()
     has_creds = bool(creds["app_id"] and creds["app_secret"])
+    conn = get_connection()
+    sys_row = conn.execute("SELECT * FROM system_settings WHERE project_id = ?", (project_id,)).fetchone()
+    conn.close()
+
+    keys = sys_row.keys() if sys_row else []
+    station_name = (sys_row["station_name"] or "").strip() if "station_name" in keys else ""
+    loc_name = (sys_row["location_name"] or "").strip() if "location_name" in keys else ""
+    pv_kwp = float(sys_row["pv_capacity_kwp"] or 0.0) if "pv_capacity_kwp" in keys else 0.0
+    inv_kw = float(sys_row["inverter_power_kw"] or 0.0) if "inverter_power_kw" in keys else 0.0
+    batt_kwh = float(sys_row["battery_capacity_kwh"] or 0.0) if "battery_capacity_kwh" in keys else 0.0
+    panel_model = (sys_row["panel_model"] or "").strip() if "panel_model" in keys else ""
+    inverter_model = (sys_row["inverter_model"] or "").strip() if "inverter_model" in keys else ""
+    battery_model = (sys_row["battery_model"] or "").strip() if "battery_model" in keys else ""
+
+    hw_parts = []
+    if pv_kwp > 0:
+        hw_parts.append(f"{panel_model} {pv_kwp} kWp".strip() if panel_model else f"PV {pv_kwp} kWp")
+    if inv_kw > 0:
+        hw_parts.append(f"{inverter_model} {inv_kw} kW".strip() if inverter_model else f"Inverter {inv_kw} kW")
+    if batt_kwh > 0:
+        hw_parts.append(f"{battery_model} {batt_kwh} kWh".strip() if battery_model else f"Battery {batt_kwh} kWh")
+
     return {
         "mcp_connected": has_creds,
         "mcp_endpoint": deye_mcp_client.mcp_endpoint,
-        "station_name": "Mam Micah",
+        "station_name": station_name or "Station Not Configured",
         "station_id": creds["station_id"],
         "inverter_sn": creds["inverter_sn"],
         "read_only_enforced": True,
-        "inference_engine": "None (100% Deterministic Python & MCP Diagnostics)",
-        "hardware_profile": "Canadian Solar 6.2 kWp | Deye 6 kW | MENRED ESS 16.08 kWh",
-        "utility": "Tarlac Electric, Inc. (TEI)"
+        "inference_engine": "100% Deterministic Physics & Telemetry Rules",
+        "hardware_profile": " | ".join(hw_parts) if hw_parts else "Hardware profile not configured",
+        "utility": loc_name or "Utility Tariff Configured in Billing"
     }
 
 def get_preset_diagnostic_queries() -> List[Dict[str, str]]:
@@ -164,7 +206,7 @@ def get_preset_diagnostic_queries() -> List[Dict[str, str]]:
         {
             "id": "why_grid_purchased_with_battery",
             "category": "Grid Import Diagnostics",
-            "question": "Why did my system purchase electricity from TEI even though the battery had charge?"
+            "question": "Why did my system purchase electricity from the utility even though the battery had charge?"
         },
         {
             "id": "check_station_health",
@@ -179,7 +221,7 @@ def get_preset_diagnostic_queries() -> List[Dict[str, str]]:
         {
             "id": "bill_forecast",
             "category": "Utility Billing",
-            "question": "Calculate my estimated monthly TEI bill"
+            "question": "Calculate my estimated monthly electricity bill"
         },
         {
             "id": "inverter_alerts",

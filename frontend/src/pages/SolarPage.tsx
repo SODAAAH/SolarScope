@@ -1,8 +1,8 @@
 import { Tooltip } from '../components/common/Tooltip';
 import React, { useState, useEffect } from "react";
-import { useOutletContext, useSearchParams } from "react-router-dom";
-import { Sun, CloudSun, Calendar, Cloud, Thermometer } from "lucide-react";
-import { api, type WeatherIntelligenceResponse } from "../lib/api";
+import { Link, useOutletContext, useSearchParams } from "react-router-dom";
+import { Sun, CloudSun, Calendar, Cloud, Thermometer, MapPin } from "lucide-react";
+import { api, type WeatherIntelligenceResponse, type SystemSettings } from "../lib/api";
 import { EChartComponent } from "../components/charts/EChartComponent";
 import { getBaseEChartsOption, theme, PALETTE } from "../lib/theme";
 import { formatHourLabel12 } from "../lib/formatters";
@@ -18,22 +18,31 @@ export const SolarPage: React.FC = () => {
 
   const [solar, setSolar] = useState<any>(null);
   const [weather, setWeather] = useState<WeatherIntelligenceResponse | null>(null);
+  const [settings, setSettings] = useState<SystemSettings | null>(null);
 
   const setTab = (tab: "production" | "weather" | "forecast") => {
     setSearchParams({ tab });
   };
 
   useEffect(() => {
-    if (!activeDatasetId) return;
-    Promise.all([
-      api.getSolar(activeDatasetId),
-      api.getWeatherIntelligence()
-    ])
-      .then(([sData, wData]) => {
-        setSolar(sData);
-        setWeather(wData);
-      })
-      .catch(console.error);
+    const loadAll = () => {
+      if (activeDatasetId) {
+        api.getSolar(activeDatasetId).then(setSolar).catch(console.error);
+      } else {
+        setSolar(null);
+      }
+      api.getWeatherIntelligence().then(setWeather).catch(console.error);
+      api.getSettings().then(setSettings).catch(console.error);
+    };
+
+    loadAll();
+    const onRefresh = () => loadAll();
+    window.addEventListener("solarscope:settings-updated", onRefresh);
+    window.addEventListener("solarscope:sources-updated", onRefresh);
+    return () => {
+      window.removeEventListener("solarscope:settings-updated", onRefresh);
+      window.removeEventListener("solarscope:sources-updated", onRefresh);
+    };
   }, [activeDatasetId]);
 
   if (!activeDatasetId) {
@@ -45,6 +54,10 @@ export const SolarPage: React.FC = () => {
       </div>
     );
   }
+
+  const configuredPvKwp = Number(solar?.pv_capacity_kwp || settings?.pv_capacity_kwp || 0);
+  const configuredInverterKw = Number(settings?.inverter_power_kw || 0);
+  const panelTechLabel = settings?.panel_tech ? settings.panel_tech : "photovoltaic panels";
 
   const baseOpt = getBaseEChartsOption();
   const hourlyChartOption = solar?.hourly_breakdown ? {
@@ -66,7 +79,7 @@ export const SolarPage: React.FC = () => {
     ]
   } : {};
 
-  const forecastHourlyOption = weather?.hourly_forecast ? {
+  const forecastHourlyOption = weather?.hourly_forecast?.length ? {
     ...baseOpt,
     tooltip: { ...baseOpt.tooltip, trigger: "axis" },
     legend: {
@@ -105,6 +118,28 @@ export const SolarPage: React.FC = () => {
     ]
   } : {};
 
+  const renderWeatherNotConfigured = () => (
+    <div className="p-6 sm:p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-center space-y-3">
+      <MapPin className="w-10 h-10 text-slate-400 mx-auto" />
+      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+        Site Coordinates Not Configured
+      </h3>
+      <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+        {weather?.message || "Enter your station latitude and longitude in System Settings to fetch local irradiance, cloud cover, and next-day generation forecasts."}
+      </p>
+      <Link
+        to="/settings"
+        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-semibold transition-colors"
+      >
+        Configure Location in System Settings
+      </Link>
+    </div>
+  );
+
+  const coordsText = weather && weather.latitude !== undefined && weather.longitude !== undefined
+    ? `${Math.abs(weather.latitude).toFixed(2)}° ${weather.latitude >= 0 ? "N" : "S"}, ${Math.abs(weather.longitude).toFixed(2)}° ${weather.longitude >= 0 ? "E" : "W"}`
+    : "";
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -120,6 +155,7 @@ export const SolarPage: React.FC = () => {
 
       <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-full sm:w-fit max-w-full overflow-x-auto no-scrollbar">
         <button
+          type="button"
           onClick={() => setTab("production")}
           className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "production"
@@ -132,6 +168,7 @@ export const SolarPage: React.FC = () => {
         </button>
 
         <button
+          type="button"
           onClick={() => setTab("weather")}
           className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "weather"
@@ -144,6 +181,7 @@ export const SolarPage: React.FC = () => {
         </button>
 
         <button
+          type="button"
           onClick={() => setTab("forecast")}
           className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "forecast"
@@ -170,7 +208,7 @@ export const SolarPage: React.FC = () => {
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Total Solar Generated</span>
               </Tooltip>
               <span className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
-                {solar?.total_generation_kwh?.toFixed(2)} <span className="text-xs font-normal text-slate-500">kWh</span>
+                {(solar?.total_generation_kwh ?? 0).toFixed(2)} <span className="text-xs font-normal text-slate-500">kWh</span>
               </span>
               <span className="text-xs text-slate-500 block mt-1">Trapezoidal integration</span>
             </div>
@@ -178,7 +216,7 @@ export const SolarPage: React.FC = () => {
             <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-2 interactive-card">
               <Tooltip
                 title="Specific PV Yield"
-                content="Standard normalized metric measuring kilowatt-hours generated per kilowatt-peak of installed DC solar panel capacity (6.2 kWp)."
+                content="Standard normalized metric measuring kilowatt-hours generated per kilowatt-peak of installed DC solar panel capacity."
                 formula="Specific Yield = Total PV (kWh) / Installed Capacity (kWp)"
                 provenance="Calculated"
                 underline
@@ -186,9 +224,11 @@ export const SolarPage: React.FC = () => {
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Specific Yield</span>
               </Tooltip>
               <span className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
-                {solar?.specific_yield_kwh_per_kwp?.toFixed(2)} <span className="text-xs font-normal text-slate-500">kWh/kWp</span>
+                {(solar?.specific_yield_kwh_per_kwp ?? 0).toFixed(2)} <span className="text-xs font-normal text-slate-500">kWh/kWp</span>
               </span>
-              <span className="text-xs text-slate-500 block mt-1">Capacity: {solar?.pv_capacity_kwp || 6.2} kWp</span>
+              <span className="text-xs text-slate-500 block mt-1">
+                {configuredPvKwp > 0 ? `Capacity: ${configuredPvKwp} kWp` : "Capacity not configured"}
+              </span>
             </div>
 
             <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-3 interactive-card">
@@ -201,24 +241,32 @@ export const SolarPage: React.FC = () => {
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Peak PV Power</span>
               </Tooltip>
               <span className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
-                {solar?.peak_power_kw?.toFixed(2)} <span className="text-xs font-normal text-slate-500">kW</span>
+                {(solar?.peak_power_kw ?? 0).toFixed(2)} <span className="text-xs font-normal text-slate-500">kW</span>
               </span>
-              <span className="text-xs text-slate-500 block mt-1">At {solar?.peak_power_time_12h || "12:15 PM"}</span>
+              <span className="text-xs text-slate-500 block mt-1">
+                {solar?.peak_power_time_12h ? `At ${solar.peak_power_time_12h}` : "No peak timestamp"}
+              </span>
             </div>
 
             <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-4 interactive-card">
               <Tooltip
                 title="Inverter AC Saturation & Clipping"
-                content="Energy lost when DC array production exceeds the continuous AC inverter threshold (6.0 kW). System operates safely within continuous ratings."
+                content={
+                  configuredInverterKw > 0
+                    ? `Energy lost when DC array production exceeds the continuous AC inverter threshold (${configuredInverterKw} kW).`
+                    : "Energy lost when DC array production exceeds the configured continuous AC inverter rating."
+                }
                 provenance="Estimated"
                 underline
               >
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Inverter Saturation</span>
               </Tooltip>
               <span className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                {solar?.estimated_clipping_kwh ? `${solar.estimated_clipping_kwh.toFixed(2)} kWh` : "None"}
+                {solar?.estimated_clipping_kwh ? `${Number(solar.estimated_clipping_kwh).toFixed(2)} kWh` : "None"}
               </span>
-              <span className="text-xs text-slate-500 block mt-1">Operating below 6.0 kW limit</span>
+              <span className="text-xs text-slate-500 block mt-1">
+                {configuredInverterKw > 0 ? `Limit: ${configuredInverterKw} kW continuous` : "Set inverter rating in Settings"}
+              </span>
             </div>
           </div>
 
@@ -232,29 +280,32 @@ export const SolarPage: React.FC = () => {
       )}
 
       {currentTab === "weather" && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
-              <Cloud className="w-8 h-8 text-slate-400 shrink-0" />
-              <div>
-                <Tooltip
+        !weather?.configured || !weather.current_conditions ? (
+          renderWeatherNotConfigured()
+        ) : (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <Cloud className="w-8 h-8 text-slate-400 shrink-0" />
+                <div>
+                  <Tooltip
                     title="Atmospheric Cloud Cover"
-                    content="Fraction of sky obscured by clouds according to local meteorological radar and satellite observation for Central Luzon."
+                    content="Fraction of sky obscured by clouds according to local meteorological satellite observation for your configured site coordinates."
                     underline
                   >
                     <span className="text-xs text-slate-500 block cursor-help">Cloud Cover</span>
                   </Tooltip>
-                <span className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                  {weather?.current_conditions.cloud_cover_percent || 25}%
-                </span>
-                <span className="text-xs text-slate-500">Central Luzon atmospheric model</span>
+                  <span className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                    {weather.current_conditions.cloud_cover_percent ?? 0}%
+                  </span>
+                  <span className="text-xs text-slate-500 block">{weather.location || "Site atmospheric model"}</span>
+                </div>
               </div>
-            </div>
 
-            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
-              <Sun className="w-8 h-8 text-amber-500 shrink-0" />
-              <div>
-                <Tooltip
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <Sun className="w-8 h-8 text-amber-500 shrink-0" />
+                <div>
+                  <Tooltip
                     title="Solar Irradiance (GHI)"
                     content="Global Horizontal Irradiance measuring total direct and diffuse solar power incident on a horizontal surface in W/m²."
                     provenance="Measured"
@@ -262,17 +313,17 @@ export const SolarPage: React.FC = () => {
                   >
                     <span className="text-xs text-slate-500 block cursor-help">Solar Radiation</span>
                   </Tooltip>
-                <span className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
-                  {weather?.current_conditions.solar_radiation_wm2 || 650} W/m²
-                </span>
-                <span className="text-xs text-slate-500">Surface solar irradiance</span>
+                  <span className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+                    {weather.current_conditions.solar_radiation_wm2 ?? 0} W/m²
+                  </span>
+                  <span className="text-xs text-slate-500 block">Surface solar irradiance</span>
+                </div>
               </div>
-            </div>
 
-            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
-              <Thermometer className="w-8 h-8 text-rose-500 shrink-0" />
-              <div>
-                <Tooltip
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <Thermometer className="w-8 h-8 text-rose-500 shrink-0" />
+                <div>
+                  <Tooltip
                     title="Outdoor Ambient Temperature"
                     content="Ambient dry-bulb temperature. Rooftop photovoltaic panels experience a thermal coefficient loss of ~0.4% per °C rise above 25°C."
                     provenance="Measured"
@@ -280,92 +331,101 @@ export const SolarPage: React.FC = () => {
                   >
                     <span className="text-xs text-slate-500 block cursor-help">Ambient Temperature</span>
                   </Tooltip>
-                <span className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                  {weather?.current_conditions.temperature_c || 31}°C
-                </span>
-                <span className="text-xs text-slate-500">Panel temperature coefficient applied</span>
+                  <span className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                    {weather.current_conditions.temperature_c ?? 0}°C
+                  </span>
+                  <span className="text-xs text-slate-500 block">Panel temperature coefficient applied</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400">
-            <span className="font-semibold text-slate-800 dark:text-slate-200 block mb-1">Weather Context for Tarlac City (15.48° N, 120.60° E):</span>
-            Solar generation closely mirrors local cloud cover. Moderate cloud cover reduces direct radiation but allows diffuse light absorption via your bifacial TOPCon panels.
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400">
+              <span className="font-semibold text-slate-800 dark:text-slate-200 block mb-1">
+                Weather Context for {weather.location || "Configured Station"}{coordsText ? ` (${coordsText})` : ""}:
+              </span>
+              Solar generation closely tracks local cloud cover. Diffuse irradiance continues to contribute output across your {panelTechLabel}.
+            </div>
           </div>
-        </div>
+        )
       )}
 
       {currentTab === "forecast" && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 min-[440px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <Tooltip
-                title="Expected Tomorrow Yield"
-                content="Projected kilowatt-hours of solar energy tomorrow based on solar irradiation models, sun angle, and cloud forecast."
-                provenance="Estimated"
-                underline
-              >
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Expected Tomorrow Yield</span>
-              </Tooltip>
-              <span className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
-                {weather?.tomorrow_forecast.expected_solar_kwh || 21.5} <span className="text-xs font-normal text-slate-500">kWh</span>
-              </span>
-              <span className="text-xs text-slate-500 block mt-1">Range: {weather?.tomorrow_forecast.conservative_solar_kwh || 18} - {weather?.tomorrow_forecast.optimistic_solar_kwh || 25} kWh</span>
+        !weather?.configured || !weather.tomorrow_forecast ? (
+          renderWeatherNotConfigured()
+        ) : (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 min-[440px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <Tooltip
+                  title="Expected Tomorrow Yield"
+                  content="Projected kilowatt-hours of solar energy tomorrow based on solar irradiation models, sun angle, and cloud forecast."
+                  provenance="Estimated"
+                  underline
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Expected Tomorrow Yield</span>
+                </Tooltip>
+                <span className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
+                  {weather.tomorrow_forecast.expected_solar_kwh ?? 0} <span className="text-xs font-normal text-slate-500">kWh</span>
+                </span>
+                <span className="text-xs text-slate-500 block mt-1">
+                  Range: {weather.tomorrow_forecast.conservative_solar_kwh ?? 0} - {weather.tomorrow_forecast.optimistic_solar_kwh ?? 0} kWh
+                </span>
+              </div>
+
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <Tooltip
+                  title="Full Battery Charge Probability"
+                  content="Statistical likelihood that solar generation tomorrow will exceed daily loads enough to fill the battery to 100% SOC before sunset."
+                  provenance="Estimated"
+                  underline
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Full Charge Probability</span>
+                </Tooltip>
+                <span className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                  {weather.tomorrow_forecast.probability_full_charge_percent ?? 0}%
+                </span>
+                <span className="text-xs text-slate-500 block mt-1">Likelihood battery reaches 100%</span>
+              </div>
+
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <Tooltip
+                  title="Projected Sunset Battery SOC"
+                  content="Forecasted battery state-of-charge percentage at approximately 6:00 PM sunset tomorrow before evening discharge begins."
+                  provenance="Estimated"
+                  underline
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Sunset Battery SOC</span>
+                </Tooltip>
+                <span className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
+                  {weather.tomorrow_forecast.projected_sunset_soc_percent ?? 0}%
+                </span>
+                <span className="text-xs text-slate-500 block mt-1">Projected state of charge at 6 PM</span>
+              </div>
+
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <Tooltip
+                  title="Projected Night Autonomy"
+                  content="Estimated duration the battery will sustain household evening and overnight loads without buying electricity from the utility grid."
+                  provenance="Estimated"
+                  underline
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Projected Night Autonomy</span>
+                </Tooltip>
+                <span className="text-2xl font-bold tabular-nums text-sky-600 dark:text-sky-400">
+                  {weather.tomorrow_forecast.projected_night_autonomy_formatted || "--"}
+                </span>
+                <span className="text-xs text-slate-500 block mt-1">Estimated runtime without grid import</span>
+              </div>
             </div>
 
-            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <Tooltip
-                title="Full Battery Charge Probability"
-                content="Statistical likelihood that solar generation tomorrow will exceed daily loads enough to fill the battery to 100% SOC before sunset."
-                provenance="Estimated"
-                underline
-              >
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Full Charge Probability</span>
-              </Tooltip>
-              <span className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                {weather?.tomorrow_forecast.probability_full_charge_percent || 85}%
-              </span>
-              <span className="text-xs text-slate-500 block mt-1">Likelihood battery reaches 100%</span>
-            </div>
-
-            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <Tooltip
-                title="Projected Sunset Battery SOC"
-                content="Forecasted battery state-of-charge percentage at approximately 6:00 PM sunset tomorrow before evening discharge begins."
-                provenance="Estimated"
-                underline
-              >
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Sunset Battery SOC</span>
-              </Tooltip>
-              <span className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
-                {weather?.tomorrow_forecast.projected_sunset_soc_percent || 95}%
-              </span>
-              <span className="text-xs text-slate-500 block mt-1">Projected state of charge at 6 PM</span>
-            </div>
-
-            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <Tooltip
-                title="Projected Night Autonomy"
-                content="Estimated duration the battery will sustain household evening and overnight loads without buying electricity from TEI."
-                provenance="Estimated"
-                underline
-              >
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1 cursor-help">Projected Night Autonomy</span>
-              </Tooltip>
-              <span className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
-                {weather?.tomorrow_forecast.projected_night_autonomy_formatted || "9h 30m"}
-              </span>
-              <span className="text-xs text-slate-500 block mt-1">Estimated runtime without grid import</span>
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
+                Hourly Solar Radiation & Expected PV Output Forecast (Tomorrow)
+              </h3>
+              <EChartComponent option={forecastHourlyOption} height="320px" />
             </div>
           </div>
-
-          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
-              Hourly Solar Radiation & Expected PV Output Forecast (Tomorrow)
-            </h3>
-            <EChartComponent option={forecastHourlyOption} height="320px" />
-          </div>
-        </div>
+        )
       )}
     </div>
   );

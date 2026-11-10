@@ -7,8 +7,8 @@ from backend.app.metrics.time_utils import format_time_12h, hour_index_to_12h
 def calculate_grid_metrics(
     records: List[CanonicalRecord],
     reserve_soc: float = 20.0,
-    inverter_power_kw: float = 6.0,
-    import_tariff: float = 11.50,
+    inverter_power_kw: float = 0.0,
+    import_tariff: float = 0.0,
     method: str = "trapezoidal"
 ) -> Dict[str, Any]:
     if not records:
@@ -80,7 +80,7 @@ def calculate_grid_metrics(
             elif avg_batt < -0.1 and avg_grid > 0.1:
                 cat_scheduled_kwh += delta_e
                 cat_scheduled_count += 1
-            elif avg_load > (inverter_power_kw * 0.95):
+            elif inverter_power_kw > 0 and avg_load > (inverter_power_kw * 0.95):
                 cat_power_limit_kwh += delta_e
                 cat_power_limit_count += 1
             elif avg_grid <= 0.08:

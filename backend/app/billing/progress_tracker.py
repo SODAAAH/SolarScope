@@ -34,8 +34,8 @@ def calculate_billing_progress_series(
 
     all_sorted_days = sorted(daily_imports.keys())
     sample_days = all_sorted_days[-7:] if len(all_sorted_days) >= 7 else all_sorted_days
-    sample_values = [daily_imports[d] for d in sample_days] if sample_days else [7.5]
-    avg_daily_rate = sum(sample_values) / len(sample_values) if sample_values else 7.5
+    sample_values = [daily_imports[d] for d in sample_days] if sample_days else [0.0]
+    avg_daily_rate = sum(sample_values) / len(sample_values) if sample_values else 0.0
 
     series_days = []
     curr_dt = start_date
@@ -43,7 +43,7 @@ def calculate_billing_progress_series(
     cum_kwh_expected = 0.0
 
     test_soa_100 = calculate_statement_of_account(100.0, schedule, profile, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
-    eff_rate = test_soa_100.effective_average_rate_per_kwh if test_soa_100.effective_average_rate_per_kwh > 0 else 11.85
+    eff_rate = test_soa_100.effective_average_rate_per_kwh if test_soa_100.effective_average_rate_per_kwh > 0 else 0.0
 
     while curr_dt <= end_date:
         d_str = curr_dt.strftime("%Y-%m-%d")

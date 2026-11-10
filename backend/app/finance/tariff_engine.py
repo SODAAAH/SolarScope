@@ -6,15 +6,15 @@ class TariffConfig:
     def __init__(
         self,
         tariff_type: str = "flat",
-        flat_rate: float = 11.50,
-        peak_rate: float = 14.50,
-        off_peak_rate: float = 9.00,
+        flat_rate: float = 0.0,
+        peak_rate: float = 0.0,
+        off_peak_rate: float = 0.0,
         peak_start_hour: int = 17,
         peak_end_hour: int = 21,
-        tier1_limit_kwh: float = 100.0,
-        tier1_rate: float = 9.50,
-        tier2_rate: float = 12.00,
-        fixed_charge_monthly: float = 150.0,
+        tier1_limit_kwh: float = 0.0,
+        tier1_rate: float = 0.0,
+        tier2_rate: float = 0.0,
+        fixed_charge_monthly: float = 0.0,
         export_rate: float = 0.0,
         currency: str = "PHP"
     ):

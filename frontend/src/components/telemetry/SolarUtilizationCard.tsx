@@ -53,14 +53,15 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
   consumptionBreakdown,
   productionTotalKwh = 0,
   productionBreakdown,
-  dateLabel = '11/2026',
+  dateLabel = '--',
   onPrevMonth,
   onNextMonth
 }) => {
   const [period, setPeriod] = useState<'M' | 'Y' | 'T'>('M');
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
 
   const emptyConsumption: UtilizationSlice[] = [
-    { label: 'Import', kwh: 0, pct: 0, color: '#6366F1' },
+    { label: 'Import', kwh: 0, pct: 0, color: '#0284C7' },
     { label: 'Discharge', kwh: 0, pct: 0, color: '#06B6D4' },
     { label: 'PV', kwh: 0, pct: 0, color: '#10B981' }
   ];
@@ -128,7 +129,7 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
           top: '42%',
           style: {
             text: title,
-            fill: '#64748B',
+            fill: isDark ? '#94A3B8' : '#64748B',
             fontSize: 10,
             fontWeight: 500
           }
@@ -139,7 +140,7 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
           top: '52%',
           style: {
             text: `${totalKwh.toFixed(1)}`,
-            fill: '#0F172A',
+            fill: isDark ? '#F8FAFC' : '#0F172A',
             fontSize: 13,
             fontWeight: 'bold'
           }
@@ -166,8 +167,10 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-md text-[11px] font-medium">
             {(['M', 'Y', 'T'] as const).map((p) => (
               <button
+                type="button"
                 key={p}
                 onClick={() => setPeriod(p)}
+                aria-label={`Period ${p}`}
                 className={`px-2 py-0.5 rounded ${
                   period === p
                     ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
@@ -181,14 +184,18 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
 
           <div className="flex items-center gap-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">
             <button
+              type="button"
               onClick={onPrevMonth}
+              aria-label="Previous month"
               className="p-0.5 hover:text-slate-900 dark:hover:text-white"
             >
               <ChevronLeft className="h-3 w-3" />
             </button>
             <span className="font-mono text-[11px]">{dateLabel}</span>
             <button
+              type="button"
               onClick={onNextMonth}
+              aria-label="Next month"
               className="p-0.5 hover:text-slate-900 dark:hover:text-white"
             >
               <ChevronRight className="h-3 w-3" />

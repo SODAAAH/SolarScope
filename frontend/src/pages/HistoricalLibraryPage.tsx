@@ -42,6 +42,13 @@ interface IngestionProgress {
   elapsedSec: number;
 }
 
+function toLocalISODate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export const HistoricalLibraryPage: React.FC = () => {
   const { activeDatasetId, setActiveDatasetId } = useOutletContext<OutletContextType>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -60,6 +67,7 @@ export const HistoricalLibraryPage: React.FC = () => {
   const [filterTab, setFilterTab] = useState<"all" | "included" | "excluded" | "pending">("all");
   const [deleteTarget, setDeleteTarget] = useState<SourceItem | null>(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isClearingDeye, setIsClearingDeye] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const [deyeStatus, setDeyeStatus] = useState<DeyeStatusResponse | null>(null);
@@ -78,8 +86,12 @@ export const HistoricalLibraryPage: React.FC = () => {
   const [savingConfig, setSavingConfig] = useState(false);
   const [credentialsDirty, setCredentialsDirty] = useState(false);
 
-  const [rangeStartDate, setRangeStartDate] = useState("2026-10-30");
-  const [rangeEndDate, setRangeEndDate] = useState("2026-10-31");
+  const [rangeStartDate, setRangeStartDate] = useState(() => {
+    const dt = new Date();
+    dt.setDate(dt.getDate() - 1);
+    return toLocalISODate(dt);
+  });
+  const [rangeEndDate, setRangeEndDate] = useState(() => toLocalISODate(new Date()));
   const [rangeSyncing, setRangeSyncing] = useState(false);
   const [missingDates, setMissingDates] = useState<string[]>([]);
   const [loadingMissing, setLoadingMissing] = useState(false);
@@ -111,7 +123,7 @@ export const HistoricalLibraryPage: React.FC = () => {
       const data = await api.getDeyeStatus();
       setDeyeStatus(data);
       if (data) {
-        setConfigStationId(data.station_id || "62805884");
+        setConfigStationId(data.station_id || "");
         setConfigAppId(data.app_id || "");
         setConfigUsername(data.username || "");
         setConfigAutoSync(data.auto_sync || false);
@@ -160,7 +172,7 @@ export const HistoricalLibraryPage: React.FC = () => {
     setSavingConfig(true);
     try {
       const res = await api.saveDeyeConfig({
-        station_id: "STATION-2026",
+        station_id: "DEMO-STATION",
         app_id: "demo",
         app_secret: "demo_secret",
         username: "demo@solarscope.local",
@@ -168,7 +180,7 @@ export const HistoricalLibraryPage: React.FC = () => {
         auto_sync: false,
         sync_interval_min: 5
       });
-      setConfigStationId(res.station_id || "STATION-2026");
+      setConfigStationId(res.station_id || "DEMO-STATION");
       setConfigAppId(res.app_id || "demo");
       setConfigAppSecret("");
       setConfigUsername(res.username || "demo@solarscope.local");
@@ -178,6 +190,27 @@ export const HistoricalLibraryPage: React.FC = () => {
       setDeyeMessage("Demo mode applied: Simulated live Deye Cloud connection enabled.");
     } catch (err: any) {
       setDeyeMessage(`Failed to apply demo: ${err.message}`);
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const handleConfirmClearDeyeConfig = async () => {
+    setSavingConfig(true);
+    try {
+      const res = await api.clearDeyeConfig();
+      setDeyeStatus(res);
+      setConfigStationId("");
+      setConfigAppId("");
+      setConfigAppSecret("");
+      setConfigUsername("");
+      setConfigPassword("");
+      setConfigAutoSync(false);
+      setCredentialsDirty(false);
+      setIsClearingDeye(false);
+      setDeyeMessage("Deye Cloud credentials cleared. Live Flow Graph is now offline.");
+    } catch (err: any) {
+      setDeyeMessage(`Failed to clear credentials: ${err.message}`);
     } finally {
       setSavingConfig(false);
     }
@@ -199,6 +232,13 @@ export const HistoricalLibraryPage: React.FC = () => {
     fetchSources();
     fetchDeyeStatus();
     fetchMissingDates();
+    const onSettingsUpdated = () => {
+      fetchDeyeStatus();
+    };
+    window.addEventListener("solarscope:settings-updated", onSettingsUpdated);
+    return () => {
+      window.removeEventListener("solarscope:settings-updated", onSettingsUpdated);
+    };
   }, []);
 
   const handleTestDeyeConnection = async () => {
@@ -506,6 +546,7 @@ export const HistoricalLibraryPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           {pendingSources.length > 0 && currentTab === "datasets" && (
             <button
+              type="button"
               onClick={handleAutoCommitAll}
               disabled={committingAll || uploading}
               className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs disabled:opacity-50"
@@ -524,6 +565,7 @@ export const HistoricalLibraryPage: React.FC = () => {
             </button>
           )}
           <button
+            type="button"
             onClick={() => {
               fetchSources();
               fetchDeyeStatus();
@@ -539,6 +581,7 @@ export const HistoricalLibraryPage: React.FC = () => {
 
       <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-4 sm:space-x-8 overflow-x-auto no-scrollbar whitespace-nowrap">
         <button
+          type="button"
           onClick={() => setTab("datasets")}
           className={`shrink-0 pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
             currentTab === "datasets"
@@ -550,6 +593,7 @@ export const HistoricalLibraryPage: React.FC = () => {
           <span>Historical Datasets ({sources.length})</span>
         </button>
         <button
+          type="button"
           onClick={() => setTab("cloud")}
           className={`shrink-0 pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
             currentTab === "cloud"
@@ -564,6 +608,7 @@ export const HistoricalLibraryPage: React.FC = () => {
           )}
         </button>
         <button
+          type="button"
           onClick={() => setTab("preview")}
           className={`shrink-0 pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
             currentTab === "preview"
@@ -671,6 +716,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                 <div className="mt-4 p-3 bg-slate-100 dark:bg-slate-800/80 rounded-lg text-xs flex items-center justify-between text-slate-700 dark:text-slate-300">
                   <span>{uploadStatus}</span>
                   <button
+                    type="button"
                     onClick={() => setUploadStatus(null)}
                     className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                   >
@@ -717,6 +763,7 @@ export const HistoricalLibraryPage: React.FC = () => {
               <div className="flex items-center gap-3 w-full sm:w-auto">
                 <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 text-xs font-medium w-full sm:w-auto overflow-x-auto no-scrollbar whitespace-nowrap">
                   <button
+                    type="button"
                     onClick={() => setFilterTab("all")}
                     className={`shrink-0 px-3 py-1.5 rounded-md transition-colors ${
                       filterTab === "all" ? "bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-400"
@@ -725,6 +772,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                     All ({sources.length})
                   </button>
                   <button
+                    type="button"
                     onClick={() => setFilterTab("included")}
                     className={`shrink-0 px-3 py-1.5 rounded-md transition-colors ${
                       filterTab === "included" ? "bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-400"
@@ -733,6 +781,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                     Included ({includedSources.length})
                   </button>
                   <button
+                    type="button"
                     onClick={() => setFilterTab("excluded")}
                     className={`shrink-0 px-3 py-1.5 rounded-md transition-colors ${
                       filterTab === "excluded" ? "bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-400"
@@ -742,6 +791,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                   </button>
                   {pendingSources.length > 0 && (
                     <button
+                      type="button"
                       onClick={() => setFilterTab("pending")}
                       className={`shrink-0 px-3 py-1.5 rounded-md transition-colors ${
                         filterTab === "pending" ? "bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 font-semibold" : "text-amber-600 dark:text-amber-400"
@@ -757,18 +807,21 @@ export const HistoricalLibraryPage: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="text-slate-500 font-medium">{selectedIds.size} selected:</span>
                   <button
+                    type="button"
                     onClick={() => handleBulkInclude(true)}
                     className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded font-medium transition-colors"
                   >
                     Include
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleBulkInclude(false)}
                     className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded font-medium transition-colors"
                   >
                     Exclude
                   </button>
                   <button
+                    type="button"
                     onClick={() => setIsBulkDeleting(true)}
                     className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded font-medium transition-colors"
                   >
@@ -792,6 +845,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                       <th className="px-4 py-3 w-10">
                         <input
                           type="checkbox"
+                          aria-label="Select all visible datasets"
                           checked={allFilteredSelected}
                           onChange={(e) => {
                             if (e.target.checked) {
@@ -826,6 +880,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                           <td className="px-4 py-3">
                             <input
                               type="checkbox"
+                              aria-label={`Select dataset ${src.filename}`}
                               checked={isSelected}
                               onChange={(e) => {
                                 const next = new Set(selectedIds);
@@ -863,6 +918,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">
                             <button
+                              type="button"
                               onClick={() => handleToggleInclude(src.id, src.is_included)}
                               className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
                                 src.is_included === 1
@@ -877,6 +933,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                             <div className="flex items-center justify-end gap-2">
                               {isPending ? (
                                 <button
+                                  type="button"
                                   onClick={() => handleAutoCommitSingle(src.id)}
                                   disabled={committingId === src.id}
                                   className="px-2.5 py-1 text-xs font-medium rounded bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1"
@@ -886,6 +943,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                                 </button>
                               ) : (
                                 <button
+                                  type="button"
                                   onClick={() => setActiveDatasetId(src.id)}
                                   className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
                                     isActive
@@ -897,9 +955,11 @@ export const HistoricalLibraryPage: React.FC = () => {
                                 </button>
                               )}
                               <button
+                                type="button"
                                 onClick={() => setDeleteTarget(src)}
                                 className="p-1 text-slate-400 hover:text-red-600 transition-colors"
                                 title="Delete Source"
+                                aria-label={`Delete dataset ${src.filename}`}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -927,18 +987,28 @@ export const HistoricalLibraryPage: React.FC = () => {
                     Station & Device Hierarchy
                   </h2>
                 </div>
-                <span className="px-2 py-0.5 text-xs font-semibold rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">
-                  {deyeStatus?.device_hierarchy?.logger?.status || "ONLINE"}
+                <span className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                  deyeStatus?.is_demo
+                    ? "bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400"
+                    : deyeStatus?.is_configured
+                    ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                }`}>
+                  {deyeStatus?.is_demo
+                    ? "DEMO"
+                    : deyeStatus?.is_configured
+                    ? (deyeStatus?.device_hierarchy?.logger?.status || "ONLINE")
+                    : "UNCONFIGURED"}
                 </span>
               </div>
 
               <div className="space-y-3.5 text-xs">
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
                   <div className="font-semibold text-slate-800 dark:text-slate-200">
-                    {deyeStatus?.device_hierarchy?.installation_name || "SolarScope Primary Station"}
+                    {deyeStatus?.device_hierarchy?.installation_name || "Station Not Configured"}
                   </div>
                   <div className="text-slate-500 font-mono text-[11px] mt-0.5 break-all">
-                    Station ID: {deyeStatus?.station_id || "STATION-2026"}
+                    Station ID: {deyeStatus?.station_id || "Not set"}
                   </div>
                 </div>
 
@@ -949,13 +1019,15 @@ export const HistoricalLibraryPage: React.FC = () => {
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
                   <div className="flex flex-wrap items-center justify-between gap-1">
                     <span className="font-semibold text-slate-800 dark:text-slate-200">Deye Data Logger</span>
-                    <span className="font-mono text-emerald-600 font-medium">5-min interval</span>
+                    <span className="font-mono text-emerald-600 font-medium">
+                      {deyeStatus?.device_hierarchy?.logger?.reporting_interval_min || 5}-min interval
+                    </span>
                   </div>
                   <div className="text-slate-600 dark:text-slate-400 mt-1 font-mono break-all">
-                    Serial: {deyeStatus?.device_hierarchy?.logger?.logger_serial || "1251892903"}
+                    Serial: {deyeStatus?.device_hierarchy?.logger?.logger_serial || "Not set"}
                   </div>
                   <div className="text-slate-500 text-[11px] mt-0.5 font-mono break-all">
-                    Firmware: {deyeStatus?.device_hierarchy?.logger?.firmware_version || "MW4_32_5407_SS_04_00.00.00.13"}
+                    Firmware: {deyeStatus?.device_hierarchy?.logger?.firmware_version || "--"}
                   </div>
                 </div>
 
@@ -966,13 +1038,17 @@ export const HistoricalLibraryPage: React.FC = () => {
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
                   <div className="flex flex-wrap items-center justify-between gap-1">
                     <span className="font-semibold text-slate-800 dark:text-slate-200">Hybrid Inverter</span>
-                    <span className="font-mono text-slate-600 dark:text-slate-400">6.0 kW continuous</span>
+                    <span className="font-mono text-slate-600 dark:text-slate-400">
+                      {deyeStatus?.device_hierarchy?.inverter?.rated_power_kw
+                        ? `${deyeStatus.device_hierarchy.inverter.rated_power_kw} kW continuous`
+                        : "--"}
+                    </span>
                   </div>
                   <div className="text-slate-600 dark:text-slate-400 mt-1 font-mono break-all">
-                    Serial: {deyeStatus?.device_hierarchy?.inverter?.inverter_serial || "2604282202"}
+                    Serial: {deyeStatus?.device_hierarchy?.inverter?.inverter_serial || "Not set"}
                   </div>
                   <div className="text-slate-500 text-[11px] mt-0.5 break-all">
-                    Model: {deyeStatus?.device_hierarchy?.inverter?.model || "SUN-6K-SG06LP1-EU-CM2"}
+                    Model: {deyeStatus?.device_hierarchy?.inverter?.model || "Not set"}
                   </div>
                 </div>
               </div>
@@ -1016,7 +1092,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                 {deyeMessage && (
                   <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-lg text-xs text-amber-800 dark:text-amber-300 mb-6 flex items-center justify-between gap-2">
                     <span>{deyeMessage}</span>
-                    <button onClick={() => setDeyeMessage(null)} className="text-amber-600 hover:text-amber-800 shrink-0">
+                    <button type="button" onClick={() => setDeyeMessage(null)} className="text-amber-600 hover:text-amber-800 shrink-0">
                       Dismiss
                     </button>
                   </div>
@@ -1025,6 +1101,7 @@ export const HistoricalLibraryPage: React.FC = () => {
 
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-3">
                 <button
+                  type="button"
                   onClick={handleTestDeyeConnection}
                   disabled={deyeTesting || deyeSyncing}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors disabled:opacity-50"
@@ -1033,6 +1110,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                   <span>Test API Connection</span>
                 </button>
                 <button
+                  type="button"
                   onClick={handleSyncDeyeNow}
                   disabled={deyeTesting || deyeSyncing}
                   className="px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors shadow-xs disabled:opacity-50"
@@ -1151,6 +1229,16 @@ export const HistoricalLibraryPage: React.FC = () => {
                 >
                   Use Demo Mode
                 </button>
+                {(deyeStatus?.is_configured || deyeStatus?.is_demo) && (
+                  <button
+                    type="button"
+                    onClick={() => setIsClearingDeye(true)}
+                    disabled={savingConfig}
+                    className="px-2.5 py-1 text-xs rounded bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-medium transition-colors disabled:opacity-50"
+                  >
+                    Clear Credentials
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1174,7 +1262,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. STATION-2026"
+                  placeholder="Enter your Deye Cloud Station ID"
                   value={configStationId}
                   onChange={(e) => {
                     setConfigStationId(e.target.value);
@@ -1441,6 +1529,7 @@ export const HistoricalLibraryPage: React.FC = () => {
 
                 <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
                   <button
+                    type="button"
                     onClick={() => {
                       setPreviewResult(null);
                       setPreviewFile(null);
@@ -1450,6 +1539,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                     Discard
                   </button>
                   <button
+                    type="button"
                     onClick={handleCommitPreviewedFile}
                     disabled={uploading}
                     className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm disabled:opacity-50"
@@ -1504,6 +1594,20 @@ export const HistoricalLibraryPage: React.FC = () => {
             value: sources.filter(s => selectedIds.has(s.id)).map(s => s.filename).slice(0, 3).join(", ") + (selectedIds.size > 3 ? ` + ${selectedIds.size - 3} more` : "")
           }
         ]}
+      />
+
+      <ConfirmModal
+        isOpen={isClearingDeye}
+        title="Clear Deye Cloud Credentials"
+        description="This removes all stored Deye Cloud API credentials from the server and immediately switches the Live Flow Graph offline until new credentials are saved."
+        confirmText="Clear Credentials"
+        cancelText="Cancel"
+        variant="danger"
+        loading={savingConfig}
+        onConfirm={handleConfirmClearDeyeConfig}
+        onCancel={() => {
+          if (!savingConfig) setIsClearingDeye(false);
+        }}
       />
     </div>
   );

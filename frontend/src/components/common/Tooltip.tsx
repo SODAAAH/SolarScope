@@ -117,7 +117,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
         style={shiftX !== 0 && (position === 'top' || position === 'bottom') ? { marginLeft: `${shiftX}px` } : undefined}
         className={`absolute ${positionClasses} z-50 pointer-events-none transition-all duration-150 ease-out ${
           isOpen ? 'opacity-100 scale-100 visible' : 'opacity-0 scale-95 invisible'
-        } w-[min(16rem,calc(100vw-1.5rem))] p-3 rounded-xl bg-slate-900 text-slate-100 dark:bg-slate-800 dark:text-slate-100 text-xs shadow-2xl border border-slate-700/80 backdrop-blur-xs font-normal normal-case tracking-normal leading-relaxed text-left select-none`}
+        } w-[min(16rem,calc(100vw-1.5rem))] p-3 rounded-xl bg-slate-900 text-slate-100 dark:bg-slate-800 dark:text-slate-100 text-xs shadow-2xl border border-slate-700 font-normal normal-case tracking-normal leading-relaxed text-left select-none`}
       >
         {(title || provenance) && (
           <span className="flex items-center justify-between gap-2 mb-1.5 pb-1 border-b border-slate-700/60">

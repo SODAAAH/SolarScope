@@ -5,10 +5,10 @@ from backend.app.metrics.time_utils import format_time_12h
 
 def calculate_battery_metrics(
     records: List[CanonicalRecord],
-    nominal_capacity_kwh: float = 16.08,
+    nominal_capacity_kwh: float = 0.0,
     reserve_soc: float = 20.0,
-    bms_max_current_a: float = 100.0,
-    battery_voltage: float = 51.2,
+    bms_max_current_a: float = 0.0,
+    battery_voltage: float = 0.0,
     method: str = "trapezoidal"
 ) -> Dict[str, Any]:
     if not records:
@@ -54,21 +54,21 @@ def calculate_battery_metrics(
 
     net_energy_kwh = round(disch_kwh - chg_kwh, 4)
 
-    rte_pct = round((disch_kwh / chg_kwh) * 100.0, 1) if chg_kwh > 0.5 else 95.0
+    rte_pct = round((disch_kwh / chg_kwh) * 100.0, 1) if chg_kwh > 0.5 else 0.0
 
     recent_loads = load_powers[-12:] if len(load_powers) >= 12 else load_powers
-    avg_recent_load = (sum(recent_loads) / len(recent_loads)) if recent_loads else 0.5
-    if avg_recent_load <= 0.05:
-        avg_recent_load = 0.5
+    avg_recent_load = (sum(recent_loads) / len(recent_loads)) if recent_loads else 0.0
 
-    autonomy_hours = round(usable_above_reserve_kwh / avg_recent_load, 1) if avg_recent_load > 0 else 24.0
-    autonomy_hours = min(48.0, autonomy_hours)
+    if nominal_capacity_kwh > 0 and avg_recent_load > 0.01:
+        autonomy_hours = min(48.0, round(usable_above_reserve_kwh / avg_recent_load, 1))
+        whole_h = int(autonomy_hours)
+        mins = int(round((autonomy_hours - whole_h) * 60))
+        autonomy_formatted = f"{whole_h}h {mins}m"
+    else:
+        autonomy_hours = 0.0
+        autonomy_formatted = "--"
 
-    whole_h = int(autonomy_hours)
-    mins = int(round((autonomy_hours - whole_h) * 60))
-    autonomy_formatted = f"{whole_h}h {mins}m"
-
-    bms_limit_kw = round((bms_max_current_a * battery_voltage) / 1000.0, 2)
+    bms_limit_kw = round((bms_max_current_a * battery_voltage) / 1000.0, 2) if (bms_max_current_a > 0 and battery_voltage > 0) else 0.0
 
     return {
         "discharging_energy_kwh": disch_kwh,

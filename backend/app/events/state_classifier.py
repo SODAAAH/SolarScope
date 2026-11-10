@@ -5,7 +5,7 @@ from backend.app.metrics.time_utils import format_time_12h
 
 def classify_operating_state(
     record: CanonicalRecord,
-    reserve_soc: float = 25.0
+    reserve_soc: float = 20.0
 ) -> str:
     pv = record.pv_power_kw
     load = record.load_power_kw
@@ -43,7 +43,7 @@ def classify_operating_state(
 
 def build_operating_state_timeline(
     records: List[CanonicalRecord],
-    reserve_soc: float = 25.0
+    reserve_soc: float = 20.0
 ) -> List[Dict[str, Any]]:
     if not records:
         return []

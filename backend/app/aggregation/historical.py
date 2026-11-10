@@ -9,9 +9,9 @@ from backend.app.metrics.time_utils import format_time_12h
 
 def calculate_daily_summaries(
     records: List[CanonicalRecord],
-    pv_capacity_kwp: float = 5.0,
-    nominal_battery_kwh: float = 15.0,
-    reserve_soc: float = 25.0
+    pv_capacity_kwp: float = 0.0,
+    nominal_battery_kwh: float = 0.0,
+    reserve_soc: float = 20.0
 ) -> List[Dict[str, Any]]:
     if not records:
         return []

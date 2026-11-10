@@ -25,10 +25,12 @@ def calculate_statement_of_account(
     other_total = 0.0
     vat_total = 0.0
 
-    gen_rate = 6.74890
+    gen_rate = 0.0
+    gen_vat_rate = 0.0
     for comp in schedule.components:
         if comp.component_id == "gen_charge":
             gen_rate = comp.rate_per_kwh
+            gen_vat_rate = comp.vat_rate_per_kwh
 
     for comp in schedule.components:
         if comp.category not in ["generation_transmission", "distribution", "other"]:
@@ -84,11 +86,11 @@ def calculate_statement_of_account(
     subtotal_charges = round(gen_trans_total + dist_total + other_total, 2)
 
     rpt_component = next((c for c in schedule.components if c.component_id == "real_property_tax"), None)
-    rpt_rate = rpt_component.rate_per_kwh if rpt_component else 0.02150
+    rpt_rate = rpt_component.rate_per_kwh if rpt_component else 0.0
     rpt_amount = round(billed_kwh * rpt_rate, 2)
 
     franchise_component = next((c for c in schedule.components if c.component_id == "local_franchise_tax"), None)
-    franchise_rate = franchise_component.rate_per_kwh if franchise_component else 0.00750
+    franchise_rate = franchise_component.rate_per_kwh if franchise_component else 0.0
     franchise_amount = round(subtotal_charges * franchise_rate, 2)
 
     total_taxes = round(vat_total + rpt_amount + franchise_amount, 2)
@@ -139,7 +141,7 @@ def calculate_statement_of_account(
             vat_amount=0.0,
             total_with_vat=vat_total,
             explanation="Government VAT calculated per eligible charge component.",
-            formula="Itemized VAT (Generation fixed ₱0.71120/kWh + 12% on Transmission & Distribution)",
+            formula=f"Itemized VAT (Generation fixed ₱{gen_vat_rate:.5f}/kWh + 12% on Transmission & Distribution)",
             vat_treatment="vatable"
         )
     )

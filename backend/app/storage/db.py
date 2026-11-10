@@ -85,36 +85,40 @@ def init_db(hydrate: bool = True):
     CREATE TABLE IF NOT EXISTS system_settings (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL UNIQUE,
-        pv_capacity_kwp REAL DEFAULT 6.2,
-        num_modules INTEGER DEFAULT 10,
-        module_wattage REAL DEFAULT 620.0,
-        panel_model TEXT DEFAULT 'Canadian Solar',
-        panel_tech TEXT DEFAULT 'N-Type TOPCon bifacial',
-        inverter_model TEXT DEFAULT 'SUN-6K-SG06LP1-EU-CM2',
-        inverter_power_kw REAL DEFAULT 6.0,
-        inverter_serial TEXT DEFAULT '2604282202',
-        inverter_max_apparent_va REAL DEFAULT 6600.0,
-        inverter_max_battery_current_a REAL DEFAULT 135.0,
-        mppt_voltage_min_v REAL DEFAULT 150.0,
-        mppt_voltage_max_v REAL DEFAULT 425.0,
-        pv_voltage_max_v REAL DEFAULT 500.0,
-        mppt_max_current_a REAL DEFAULT 18.0,
-        logger_serial TEXT DEFAULT '1251892903',
-        logger_firmware TEXT DEFAULT 'MW4_32_5407_SS_04_00.00.00.13',
+        station_name TEXT DEFAULT '',
+        location_name TEXT DEFAULT '',
+        latitude REAL DEFAULT 0.0,
+        longitude REAL DEFAULT 0.0,
+        pv_capacity_kwp REAL DEFAULT 0.0,
+        num_modules INTEGER DEFAULT 0,
+        module_wattage REAL DEFAULT 0.0,
+        panel_model TEXT DEFAULT '',
+        panel_tech TEXT DEFAULT '',
+        inverter_model TEXT DEFAULT '',
+        inverter_power_kw REAL DEFAULT 0.0,
+        inverter_serial TEXT DEFAULT '',
+        inverter_max_apparent_va REAL DEFAULT 0.0,
+        inverter_max_battery_current_a REAL DEFAULT 0.0,
+        mppt_voltage_min_v REAL DEFAULT 0.0,
+        mppt_voltage_max_v REAL DEFAULT 0.0,
+        pv_voltage_max_v REAL DEFAULT 0.0,
+        mppt_max_current_a REAL DEFAULT 0.0,
+        logger_serial TEXT DEFAULT '',
+        logger_firmware TEXT DEFAULT '',
         logger_interval_min INTEGER DEFAULT 5,
-        battery_model TEXT DEFAULT 'MENRED ESS',
+        battery_model TEXT DEFAULT '',
         battery_chemistry TEXT DEFAULT 'LFP',
-        battery_voltage REAL DEFAULT 51.2,
-        battery_ah REAL DEFAULT 314.0,
-        battery_capacity_kwh REAL DEFAULT 16.08,
-        usable_capacity_kwh REAL DEFAULT 12.86,
+        battery_voltage REAL DEFAULT 0.0,
+        battery_ah REAL DEFAULT 0.0,
+        battery_capacity_kwh REAL DEFAULT 0.0,
+        usable_capacity_kwh REAL DEFAULT 0.0,
         reserve_soc REAL DEFAULT 20.0,
-        bms_max_charge_a REAL DEFAULT 100.0,
-        bms_max_discharge_a REAL DEFAULT 100.0,
-        max_charge_kw REAL DEFAULT 5.12,
-        max_discharge_kw REAL DEFAULT 5.12,
+        bms_max_charge_a REAL DEFAULT 0.0,
+        bms_max_discharge_a REAL DEFAULT 0.0,
+        max_charge_kw REAL DEFAULT 0.0,
+        max_discharge_kw REAL DEFAULT 0.0,
         battery_efficiency REAL DEFAULT 0.95,
-        import_tariff REAL DEFAULT 11.50,
+        import_tariff REAL DEFAULT 0.0,
         export_tariff REAL DEFAULT 0.0,
         currency TEXT DEFAULT 'PHP',
         timezone TEXT DEFAULT 'Asia/Manila',
@@ -154,7 +158,7 @@ def init_db(hydrate: bool = True):
         id TEXT PRIMARY KEY,
         project_id TEXT UNIQUE NOT NULL,
         customer_class TEXT DEFAULT 'Residential',
-        billing_cycle_day INTEGER DEFAULT 18,
+        billing_cycle_day INTEGER DEFAULT 25,
         cycle_start_date TEXT,
         cycle_end_date TEXT,
         prev_meter_reading REAL,
@@ -266,23 +270,27 @@ def init_db(hydrate: bool = True):
     cursor.execute("PRAGMA table_info(system_settings)")
     sys_cols = [row["name"] for row in cursor.fetchall()]
     add_sys_cols = {
-        "panel_model": "TEXT DEFAULT 'Canadian Solar'",
-        "panel_tech": "TEXT DEFAULT 'N-Type TOPCon bifacial'",
-        "inverter_model": "TEXT DEFAULT 'SUN-6K-SG06LP1-EU-CM2'",
-        "inverter_serial": "TEXT DEFAULT '2604282202'",
-        "inverter_max_apparent_va": "REAL DEFAULT 6600.0",
-        "inverter_max_battery_current_a": "REAL DEFAULT 135.0",
-        "mppt_voltage_min_v": "REAL DEFAULT 150.0",
-        "mppt_voltage_max_v": "REAL DEFAULT 425.0",
-        "pv_voltage_max_v": "REAL DEFAULT 500.0",
-        "mppt_max_current_a": "REAL DEFAULT 18.0",
-        "logger_serial": "TEXT DEFAULT '1251892903'",
-        "logger_firmware": "TEXT DEFAULT 'MW4_32_5407_SS_04_00.00.00.13'",
+        "station_name": "TEXT DEFAULT ''",
+        "location_name": "TEXT DEFAULT ''",
+        "latitude": "REAL DEFAULT 0.0",
+        "longitude": "REAL DEFAULT 0.0",
+        "panel_model": "TEXT DEFAULT ''",
+        "panel_tech": "TEXT DEFAULT ''",
+        "inverter_model": "TEXT DEFAULT ''",
+        "inverter_serial": "TEXT DEFAULT ''",
+        "inverter_max_apparent_va": "REAL DEFAULT 0.0",
+        "inverter_max_battery_current_a": "REAL DEFAULT 0.0",
+        "mppt_voltage_min_v": "REAL DEFAULT 0.0",
+        "mppt_voltage_max_v": "REAL DEFAULT 0.0",
+        "pv_voltage_max_v": "REAL DEFAULT 0.0",
+        "mppt_max_current_a": "REAL DEFAULT 0.0",
+        "logger_serial": "TEXT DEFAULT ''",
+        "logger_firmware": "TEXT DEFAULT ''",
         "logger_interval_min": "INTEGER DEFAULT 5",
-        "battery_model": "TEXT DEFAULT 'MENRED ESS'",
-        "battery_ah": "REAL DEFAULT 314.0",
-        "bms_max_charge_a": "REAL DEFAULT 100.0",
-        "bms_max_discharge_a": "REAL DEFAULT 100.0"
+        "battery_model": "TEXT DEFAULT ''",
+        "battery_ah": "REAL DEFAULT 0.0",
+        "bms_max_charge_a": "REAL DEFAULT 0.0",
+        "bms_max_discharge_a": "REAL DEFAULT 0.0"
     }
     for col_name, col_def in add_sys_cols.items():
         if col_name not in sys_cols:
@@ -297,22 +305,24 @@ def init_db(hydrate: bool = True):
         )
         cursor.execute(
             """INSERT INTO system_settings (
-                id, project_id, pv_capacity_kwp, num_modules, module_wattage,
+                id, project_id, station_name, location_name, latitude, longitude,
+                pv_capacity_kwp, num_modules, module_wattage,
                 panel_model, panel_tech, inverter_model, inverter_power_kw, inverter_serial,
                 inverter_max_apparent_va, inverter_max_battery_current_a, mppt_voltage_min_v, mppt_voltage_max_v,
                 pv_voltage_max_v, mppt_max_current_a, logger_serial, logger_firmware, logger_interval_min,
                 battery_model, battery_chemistry, battery_voltage, battery_ah, battery_capacity_kwh,
                 usable_capacity_kwh, reserve_soc, bms_max_charge_a, bms_max_discharge_a, max_charge_kw, max_discharge_kw,
                 battery_efficiency, import_tariff, export_tariff, currency, timezone, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                "settings-default", "default", 6.2, 10, 620.0,
-                "Canadian Solar", "N-Type TOPCon bifacial", "SUN-6K-SG06LP1-EU-CM2", 6.0, "2604282202",
-                6600.0, 135.0, 150.0, 425.0,
-                500.0, 18.0, "1251892903", "MW4_32_5407_SS_04_00.00.00.13", 5,
-                "MENRED ESS", "LFP", 51.2, 314.0, 16.08,
-                12.86, 20.0, 100.0, 100.0, 5.12, 5.12,
-                0.95, 11.50, 0.0, "PHP", "Asia/Manila", now
+                "settings-default", "default", "", "", 0.0, 0.0,
+                0.0, 0, 0.0,
+                "", "", "", 0.0, "",
+                0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, "", "", 5,
+                "", "LFP", 0.0, 0.0, 0.0,
+                0.0, 20.0, 0.0, 0.0, 0.0, 0.0,
+                0.95, 0.0, 0.0, "PHP", "Asia/Manila", now
             )
         )
 
@@ -332,8 +342,8 @@ def init_db(hydrate: bool = True):
 
     cursor.execute("SELECT id FROM tei_rate_schedules WHERE is_active = 1")
     if not cursor.fetchone():
-        from backend.app.billing.tariff_defaults import get_default_october_2026_schedule
-        default_sched = get_default_october_2026_schedule()
+        from backend.app.billing.tariff_defaults import get_default_tei_schedule
+        default_sched = get_default_tei_schedule()
         comps_json = json.dumps([c.model_dump() for c in default_sched.components])
         cursor.execute(
             """INSERT INTO tei_rate_schedules
@@ -354,15 +364,17 @@ def init_db(hydrate: bool = True):
 
     cursor.execute("SELECT id FROM tei_billing_profiles WHERE project_id = 'default'")
     if not cursor.fetchone():
+        from backend.app.billing.billing_profile import compute_cycle_dates
+        start_dt, end_dt = compute_cycle_dates(25)
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         cursor.execute(
             """INSERT INTO tei_billing_profiles
                (id, project_id, customer_class, billing_cycle_day, cycle_start_date, cycle_end_date, connection_type,
                 is_lifeline_eligible, is_senior_eligible, is_prompt_payment_eligible, previous_unpaid_balance,
                 payments_received, forecast_method, updated_at)
-               VALUES ('profile-default', 'default', 'Residential', 18, '2026-10-18', '2026-11-18', 'behind_meter',
+               VALUES ('profile-default', 'default', 'Residential', 25, ?, ?, 'behind_meter',
                        0, 0, 0, 0.0, 0.0, '7day', ?)""",
-            (now_iso,)
+            (start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d"), now_iso)
         )
 
     conn.commit()

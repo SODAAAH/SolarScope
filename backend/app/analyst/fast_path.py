@@ -1,6 +1,5 @@
-import datetime
+from typing import Dict, Any
 from backend.app.metrics.time_utils import format_date_mmddyyyy, format_datetime_12h
-from typing import Dict, Any, List
 from backend.app.storage.db import get_connection
 from backend.app.integrations.deye_mcp import get_station_health
 
@@ -17,7 +16,7 @@ def execute_fast_path(intent_info: Dict[str, Any], project_id: str = "default") 
             f"- **Solar Electricity Produced:** {rt['pv_kw']:.2f} kW\n"
             f"- **Household Electricity Use:** {rt['load_kw']:.2f} kW\n"
             f"- **Battery Charge Level:** {rt['battery_soc_percent']:.0f}% ({rt['battery_kw']:.2f} kW charging/discharging)\n"
-            f"- **Electricity Purchased from TEI:** {rt['grid_kw']:.2f} kW\n\n"
+            f"- **Utility Grid Power:** {rt['grid_kw']:.2f} kW\n\n"
             f"**System Recommendation:** {health['recommendation']}"
         )
         return {
@@ -37,14 +36,26 @@ def execute_fast_path(intent_info: Dict[str, Any], project_id: str = "default") 
     conn.close()
 
     total_days = len(datasets)
-    start_str = format_date_mmddyyyy(datasets[0]["start_time"]) if datasets else "10/18/2026"
-    end_str = format_date_mmddyyyy(datasets[-1]["end_time"]) if datasets else "10/31/2026"
+    start_str = format_date_mmddyyyy(datasets[0]["start_time"]) if datasets else "--"
+    end_str = format_date_mmddyyyy(datasets[-1]["end_time"]) if datasets else "--"
 
     from backend.app.api.endpoints import _get_historical_records
     from backend.app.aggregation.historical import calculate_daily_summaries
 
     records = _get_historical_records()
-    daily_summaries = calculate_daily_summaries(records)
+    keys = sys_row.keys() if sys_row else []
+    pv_kwp = float(sys_row["pv_capacity_kwp"] or 0.0) if "pv_capacity_kwp" in keys else 0.0
+    batt_kwh = float(sys_row["battery_capacity_kwh"] or 0.0) if "battery_capacity_kwh" in keys else 0.0
+    reserve_soc = float(sys_row["reserve_soc"] if sys_row["reserve_soc"] is not None else 20.0) if "reserve_soc" in keys else 20.0
+    tariff_rate = float(sys_row["import_tariff"] or 0.0) if "import_tariff" in keys else 0.0
+    batt_model = (sys_row["battery_model"] or "").strip() if "battery_model" in keys else ""
+
+    daily_summaries = calculate_daily_summaries(
+        records,
+        pv_capacity_kwp=pv_kwp,
+        nominal_battery_kwh=batt_kwh,
+        reserve_soc=reserve_soc
+    )
 
     if not daily_summaries:
         return {
@@ -94,13 +105,14 @@ def execute_fast_path(intent_info: Dict[str, Any], project_id: str = "default") 
 
     if "battery" in metric:
         latest = records[-1] if records else None
-        soc_val = latest.soc_percent if latest else 72.0
-        ts_val = format_datetime_12h(latest.timestamp) if latest and latest.timestamp else "Recent"
-        usable_kwh = (soc_val / 100.0) * (sys_row["battery_capacity_kwh"] if sys_row else 16.08)
+        soc_val = latest.soc_percent if latest else 0.0
+        ts_val = format_datetime_12h(latest.timestamp) if latest and latest.timestamp else "No Data"
+        usable_kwh = (soc_val / 100.0) * batt_kwh if batt_kwh > 0 else 0.0
+        batt_label = batt_model if batt_model else "battery"
+        stored_text = f" (approximately **{usable_kwh:.2f} kWh** of stored energy)" if batt_kwh > 0 else ""
         text = (
-            f"Your MENRED battery currently has a **{soc_val:.0f}% charge level** "
-            f"(approximately **{usable_kwh:.2f} kWh** of stored energy as of `{ts_val}`).\n\n"
-            f"Safety reserve is configured at 20% to safeguard long-term battery cell health."
+            f"Your {batt_label} last recorded a **{soc_val:.0f}% charge level**{stored_text} as of `{ts_val}`.\n\n"
+            f"Safety reserve is configured at {reserve_soc:.0f}% to safeguard long-term battery cell health."
         )
         return {
             "path": "FAST_PATH",
@@ -113,30 +125,29 @@ def execute_fast_path(intent_info: Dict[str, Any], project_id: str = "default") 
     if "grid" in metric or "tei" in metric:
         if target_day:
             grid_kwh = target_day.get("grid_import_kwh", 0.0)
-            cost = grid_kwh * (sys_row["import_tariff"] if sys_row else 11.50)
+            cost = grid_kwh * tariff_rate
             text = (
-                f"On **{format_date_mmddyyyy(target_day['date'])}**, your home purchased **{grid_kwh:.2f} kWh** of electricity from TEI "
+                f"On **{format_date_mmddyyyy(target_day['date'])}**, your home purchased **{grid_kwh:.2f} kWh** of electricity from the utility grid "
                 f"(equivalent to approximately PHP {cost:.2f})."
             )
             return {
                 "path": "FAST_PATH",
                 "intent": "METRIC_LOOKUP",
-                "title": f"Electricity Purchased from TEI ({format_date_mmddyyyy(target_day['date'])})",
+                "title": f"Utility Electricity Purchased ({format_date_mmddyyyy(target_day['date'])})",
                 "response_text": text,
                 "duration_ms": 3.1
             }
         else:
             total_grid = sum(d.get("grid_import_kwh", 0.0) for d in daily_summaries)
             avg_grid = total_grid / len(daily_summaries) if daily_summaries else 0.0
-            rate = sys_row["import_tariff"] if sys_row else 11.50
             text = (
-                f"Your home purchases an average of **{avg_grid:.2f} kWh per day** from TEI "
-                f"(total purchased over {len(daily_summaries)} recorded days: {total_grid:.1f} kWh, approx. PHP {total_grid * rate:,.2f})."
+                f"Your home purchases an average of **{avg_grid:.2f} kWh per day** from the utility grid "
+                f"(total purchased over {len(daily_summaries)} recorded days: {total_grid:.1f} kWh, approx. PHP {total_grid * tariff_rate:,.2f})."
             )
             return {
                 "path": "FAST_PATH",
                 "intent": "METRIC_LOOKUP",
-                "title": "Electricity Purchased from TEI",
+                "title": "Utility Electricity Purchased",
                 "response_text": text,
                 "duration_ms": 3.4
             }
@@ -158,20 +169,22 @@ def execute_fast_path(intent_info: Dict[str, Any], project_id: str = "default") 
         }
 
     if "bill" in metric:
-        avg_grid = sum(d.get("grid_import_kwh", 0.0) for d in daily_summaries) / len(daily_summaries) if daily_summaries else 9.0
+        avg_grid = sum(d.get("grid_import_kwh", 0.0) for d in daily_summaries) / len(daily_summaries) if daily_summaries else 0.0
+        avg_load = sum(d.get("load_kwh", 0.0) for d in daily_summaries) / len(daily_summaries) if daily_summaries else 0.0
         projected_kwh = avg_grid * 30.5
-        rate = sys_row["import_tariff"] if sys_row else 11.50
-        est_bill = projected_kwh * rate
-        avoided = est_bill * 1.85
+        est_bill = projected_kwh * tariff_rate
+        avoided_kwh_month = max(0.0, (avg_load - avg_grid) * 30.5)
+        avoided = avoided_kwh_month * tariff_rate
+        array_label = f"{pv_kwp:.2f} kWp solar and battery system" if pv_kwp > 0 else "solar and battery system"
         text = (
-            f"Based on your daily average grid import of **{avg_grid:.2f} kWh/day**, your estimated monthly TEI electricity bill "
-            f"is approximately **PHP {est_bill:,.2f}** ({projected_kwh:.1f} kWh at PHP {rate:.2f}/kWh).\n\n"
-            f"Your 6.2 kWp solar and battery system avoids an estimated **PHP {avoided:,.2f}** in monthly utility charges."
+            f"Based on your daily average grid import of **{avg_grid:.2f} kWh/day**, your estimated monthly utility bill "
+            f"is approximately **PHP {est_bill:,.2f}** ({projected_kwh:.1f} kWh at PHP {tariff_rate:.2f}/kWh).\n\n"
+            f"Your {array_label} avoids an estimated **PHP {avoided:,.2f}** in monthly utility charges."
         )
         return {
             "path": "FAST_PATH",
             "intent": "BILL_ESTIMATE",
-            "title": "Estimated Monthly TEI Electricity Bill",
+            "title": "Estimated Monthly Electricity Bill",
             "response_text": text,
             "duration_ms": 3.5
         }
@@ -180,6 +193,6 @@ def execute_fast_path(intent_info: Dict[str, Any], project_id: str = "default") 
         "path": "FAST_PATH",
         "intent": "METRIC_LOOKUP",
         "title": "System Summary",
-        "response_text": f"SolarScope has verified telemetry for {total_days} days ({start_str} to {end_str}). All systems operational.",
+        "response_text": f"SolarScope has verified telemetry for {total_days} datasets ({start_str} to {end_str}). All systems operational.",
         "duration_ms": 2.0
     }

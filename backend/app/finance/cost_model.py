@@ -7,7 +7,7 @@ from backend.app.energy_balance.reconciliation import reconcile_energy_balance
 def calculate_financial_performance(
     records: List[CanonicalRecord],
     config: TariffConfig,
-    system_capex: float = 250000.0,
+    system_capex: float = 0.0,
     annual_degradation: float = 0.008,
     discount_rate: float = 0.06
 ) -> Dict[str, Any]:
@@ -43,7 +43,7 @@ def calculate_financial_performance(
     monthly_savings = round(daily_avoided_cost * 30.5, 2)
     annual_savings = round(daily_avoided_cost * 365.25, 2)
 
-    simple_payback_years = round(system_capex / annual_savings, 2) if annual_savings > 0 else 99.0
+    simple_payback_years = round(system_capex / annual_savings, 2) if (annual_savings > 0 and system_capex > 0) else 0.0
 
     npv = -system_capex
     cash_flows = []

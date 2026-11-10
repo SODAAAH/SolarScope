@@ -98,6 +98,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
             {term.provenance}
           </span>
           <button
+            type="button"
             onClick={() => setShowHelp(true)}
             aria-label="How is this calculated?"
             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded transition-colors"
@@ -164,7 +165,9 @@ export const MetricCard: React.FC<MetricCardProps> = ({
                 </span>
               </div>
               <button
+                type="button"
                 onClick={() => setShowHelp(false)}
+                aria-label="Close formula details"
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
               >
                 <X className="w-4 h-4" />
@@ -203,6 +206,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
 
             <div className="pt-2 flex justify-end">
               <button
+                type="button"
                 onClick={() => setShowHelp(false)}
                 className="px-3 py-1.5 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-md text-xs font-medium hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors"
               >

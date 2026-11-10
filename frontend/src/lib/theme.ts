@@ -8,7 +8,7 @@ export const PALETTE = {
   battery: '#0D9488',
   batteryLight: '#CCFBF1',
   soc: '#0284C7',
-  residual: '#6366F1',
+  residual: '#0284C7',
   slateDark: '#0F172A',
   slateLight: '#F8FAFC',
   border: '#E2E8F0',
@@ -27,7 +27,7 @@ export function getBaseEChartsOption(isDark = false) {
     animationDurationUpdate: 400,
     animationEasingUpdate: 'cubicInOut',
     textStyle: {
-      fontFamily: 'Inter, system-ui, sans-serif'
+      fontFamily: 'Plus Jakarta Sans, system-ui, sans-serif'
     },
     tooltip: {
       trigger: 'axis',

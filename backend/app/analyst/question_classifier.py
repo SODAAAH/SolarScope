@@ -55,7 +55,7 @@ class QuestionClassifier:
             return "STATION_HEALTH"
         if any(w in text for w in ["bill", "electricity bill", "cost", "tariff", "estimate", "pesos", "php", "tei bill"]):
             return "BILL_ESTIMATE"
-        if any(w in text for w in ["battery", "charge level", "soc", "stored", "menred", "usable energy", "reserve"]):
+        if any(w in text for w in ["battery", "charge level", "soc", "stored", "usable energy", "reserve"]):
             return "BATTERY"
         if any(w in text for w in ["solar", "generation", "panels", "produced", "production", "sun", "pv"]):
             return "SOLAR"
@@ -77,11 +77,11 @@ class QuestionClassifier:
             d_str = date_match.group(1).replace("/", "-")
             return {"date_str": d_str, "type": "EXACT_DATE"}
 
-        day_num_match = re.search(r"\b(?:day|oct(?:ober)?)\s*(\d{1,2})\b", text)
+        day_num_match = re.search(r"\bday\s*(\d{1,2})\b", text)
         if day_num_match:
             d_num = int(day_num_match.group(1))
             if 1 <= d_num <= 31:
-                d_str = f"2026-10-{d_num:02d}"
+                d_str = f"{now_manila.year}-{now_manila.month:02d}-{d_num:02d}"
                 return {"date_str": d_str, "type": "EXACT_DATE"}
 
         if "yesterday" in text:

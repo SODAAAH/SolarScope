@@ -2,7 +2,7 @@ import { Tooltip } from '../components/common/Tooltip';
 import React, { useState, useEffect } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { Zap, Home, BatteryCharging, Activity, Clock } from "lucide-react";
-import { api } from "../lib/api";
+import { api, type SystemSettings } from "../lib/api";
 import { EChartComponent } from "../components/charts/EChartComponent";
 import { getBaseEChartsOption, theme } from "../lib/theme";
 
@@ -18,24 +18,40 @@ export const EnergyPage: React.FC = () => {
   const [summary, setSummary] = useState<any>(null);
   const [timeline, setTimeline] = useState<any>(null);
   const [gridClassification, setGridClassification] = useState<any>(null);
+  const [settings, setSettings] = useState<SystemSettings | null>(null);
 
   const setTab = (tab: "consumption" | "grid" | "battery" | "timeline") => {
     setSearchParams({ tab });
   };
 
   useEffect(() => {
-    if (!activeDatasetId) return;
-    Promise.all([
-      api.getSummary(activeDatasetId),
-      api.getTimeline(activeDatasetId),
-      api.getGridClassification(activeDatasetId)
-    ])
-      .then(([sData, tData, gData]) => {
-        setSummary(sData);
-        setTimeline(tData);
-        setGridClassification(gData);
-      })
-      .catch((err) => console.error(err));
+    const loadAll = () => {
+      if (!activeDatasetId) {
+        setSummary(null);
+        setTimeline(null);
+        setGridClassification(null);
+        return;
+      }
+      Promise.all([
+        api.getSummary(activeDatasetId),
+        api.getTimeline(activeDatasetId),
+        api.getGridClassification(activeDatasetId),
+        api.getSettings()
+      ])
+        .then(([sData, tData, gData, cfg]) => {
+          setSummary(sData);
+          setTimeline(tData);
+          setGridClassification(gData);
+          setSettings(cfg);
+        })
+        .catch((err) => console.error(err));
+    };
+
+    loadAll();
+    window.addEventListener("solarscope:settings-updated", loadAll);
+    return () => {
+      window.removeEventListener("solarscope:settings-updated", loadAll);
+    };
   }, [activeDatasetId]);
 
   if (!activeDatasetId) {
@@ -52,12 +68,17 @@ export const EnergyPage: React.FC = () => {
   const grid = summary?.grid || {};
   const battery = summary?.battery || {};
   const classifications = gridClassification?.import_classification || [];
+  const currency = settings?.currency || "PHP";
+  const reserveSoc = settings?.reserve_soc ?? 20;
+  const batteryChemistry = settings?.battery_chemistry || "Battery";
+  const bmsLimitA = Number(battery.bms_limit_enforced_a || settings?.bms_max_discharge_a || 0);
+  const bmsLimitKw = Number(battery.bms_limit_enforced_kw || settings?.max_discharge_kw || 0);
 
   const timelineOption = timeline ? {
     ...getBaseEChartsOption(),
     legend: {
       type: "scroll",
-      data: ["Solar PV", "Household Load", "Electricity from TEI", "Battery Power"],
+      data: ["Solar PV", "Household Load", "Utility Grid Import", "Battery Power"],
       textStyle: { fontSize: 11, color: "#64748B" },
       top: 0,
       left: 0,
@@ -78,7 +99,7 @@ export const EnergyPage: React.FC = () => {
     series: [
       { name: "Solar PV", type: "line", data: timeline.pv_power_kw, itemStyle: { color: theme.colors.solar }, smooth: true, showSymbol: false },
       { name: "Household Load", type: "line", data: timeline.load_power_kw, itemStyle: { color: theme.colors.coral }, smooth: true, showSymbol: false },
-      { name: "Electricity from TEI", type: "line", data: timeline.grid_power_kw, itemStyle: { color: theme.colors.teal }, smooth: true, showSymbol: false },
+      { name: "Utility Grid Import", type: "line", data: timeline.grid_power_kw, itemStyle: { color: theme.colors.teal }, smooth: true, showSymbol: false },
       { name: "Battery Power", type: "line", data: timeline.battery_power_kw, itemStyle: { color: theme.colors.emerald }, smooth: true, showSymbol: false }
     ]
   } : {};
@@ -123,6 +144,7 @@ export const EnergyPage: React.FC = () => {
 
       <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-full sm:w-fit max-w-full overflow-x-auto no-scrollbar">
         <button
+          type="button"
           onClick={() => setTab("consumption")}
           className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "consumption"
@@ -135,6 +157,7 @@ export const EnergyPage: React.FC = () => {
         </button>
 
         <button
+          type="button"
           onClick={() => setTab("grid")}
           className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "grid"
@@ -143,10 +166,11 @@ export const EnergyPage: React.FC = () => {
           }`}
         >
           <Zap className="w-3.5 h-3.5" />
-          <span>Electricity from TEI</span>
+          <span>Grid Imports</span>
         </button>
 
         <button
+          type="button"
           onClick={() => setTab("battery")}
           className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "battery"
@@ -159,6 +183,7 @@ export const EnergyPage: React.FC = () => {
         </button>
 
         <button
+          type="button"
           onClick={() => setTab("timeline")}
           className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "timeline"
@@ -224,14 +249,14 @@ export const EnergyPage: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Daytime Solar Coincidence"
-                content="Fraction of total home electricity consumed during solar daylight hours (06:00 - 18:00) when free rooftop solar is available."
+                content="Fraction of total home electricity consumed during solar daylight hours (06:00 - 18:00) when rooftop solar is available."
                 provenance="Calculated"
                 underline
               >
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Daytime Use Ratio</span>
               </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
-                {consumption.day_consumption_ratio_percent ? consumption.day_consumption_ratio_percent.toFixed(1) : "55.0"}%
+                {(consumption.day_consumption_ratio_percent ?? 0).toFixed(1)}%
               </div>
               <p className="text-xs text-slate-500 mt-1">Share consumed during daylight solar hours</p>
             </div>
@@ -245,17 +270,17 @@ export const EnergyPage: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Utility Grid Import"
-                content="Electricity purchased from TEI when household demand exceeded solar generation and battery discharge."
+                content="Electricity purchased from the utility grid when household demand exceeded solar generation and battery discharge."
                 formula="E_import = ∫ max(0, P_grid(t)) dt"
                 provenance="Calculated"
                 underline
               >
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Grid Import</span>
               </Tooltip>
-              <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400 mt-1">
+              <div className="text-2xl font-bold tabular-nums text-sky-600 dark:text-sky-400 mt-1">
                 {(grid.imported_energy_kwh || 0).toFixed(2)} kWh
               </div>
-              <p className="text-xs text-slate-500 mt-1">Electricity purchased from TEI</p>
+              <p className="text-xs text-slate-500 mt-1">Electricity purchased from utility</p>
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -277,7 +302,7 @@ export const EnergyPage: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Peak Grid Import Surge"
-                content="Highest instantaneous power surge drawn from the TEI utility service lines."
+                content="Highest instantaneous power surge drawn from the utility service lines."
                 provenance="Measured"
                 underline
               >
@@ -292,7 +317,7 @@ export const EnergyPage: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Reserve Cutoff Grid Import"
-                content="Electricity imported from the grid after battery reached its configured minimum depth-of-discharge reserve cutoff (20% SOC)."
+                content={`Electricity imported from the grid after the battery reached its configured minimum reserve cutoff (${reserveSoc}% SOC).`}
                 provenance="Calculated"
                 underline
               >
@@ -310,7 +335,7 @@ export const EnergyPage: React.FC = () => {
               5-Category Grid Import Cause Classification
             </h3>
             <p className="text-xs text-slate-500">
-              Deterministic breakdown showing exactly why electricity was purchased from TEI during this observation period.
+              Deterministic breakdown showing why electricity was purchased from the grid during this observation period.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2">
@@ -319,7 +344,7 @@ export const EnergyPage: React.FC = () => {
                   <div>
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">{cat.category}</span>
                     <div className="text-xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
-                      {cat.energy_kwh.toFixed(2)} kWh
+                      {(cat.energy_kwh ?? 0).toFixed(2)} kWh
                     </div>
                     <span className="text-xs font-medium text-amber-600 dark:text-amber-400 tabular-nums">
                       {cat.percentage}% of import
@@ -327,7 +352,9 @@ export const EnergyPage: React.FC = () => {
                   </div>
                   <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 text-xs">
                     <span className="text-slate-500 block">Est. Cost:</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">PHP {cat.estimated_cost_php.toFixed(2)}</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      {currency} {(cat.estimated_cost_php ?? 0).toFixed(2)}
+                    </span>
                   </div>
                 </div>
               ))}
@@ -349,7 +376,7 @@ export const EnergyPage: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Remaining Battery Autonomy"
-                content="Estimated runtime the battery can sustain current household consumption before reaching the 20% safe reserve floor."
+                content={`Estimated runtime the battery can sustain current household consumption before reaching the ${reserveSoc}% safe reserve floor.`}
                 provenance="Estimated"
                 underline
               >
@@ -357,7 +384,7 @@ export const EnergyPage: React.FC = () => {
               </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1.5">
                 <Clock className="w-5 h-5" />
-                <span>{battery.estimated_autonomy_formatted || "8h 30m"}</span>
+                <span>{battery.estimated_autonomy_formatted || "--"}</span>
               </div>
               <p className="text-xs text-slate-500 mt-1">Based on recent load and usable energy</p>
             </div>
@@ -365,7 +392,7 @@ export const EnergyPage: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Battery State of Charge"
-                content="Current percentage of total usable battery capacity remaining in the LiFePO4 battery bank."
+                content={`Percentage of total usable capacity remaining in the ${batteryChemistry} bank.`}
                 formula="SOC = Remaining Ah / Rated Ah × 100%"
                 provenance="Measured"
                 underline
@@ -389,7 +416,7 @@ export const EnergyPage: React.FC = () => {
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Round-Trip Efficiency</span>
               </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
-                {(battery.round_trip_efficiency_percent || 95.0).toFixed(1)}%
+                {(battery.round_trip_efficiency_percent ?? 0).toFixed(1)}%
               </div>
               <p className="text-xs text-slate-500 mt-1">Energy discharged vs energy charged</p>
             </div>
@@ -397,16 +424,18 @@ export const EnergyPage: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="BMS Current Threshold"
-                content="Maximum continuous DC charge/discharge current permitted by the Battery Management System hardware to prevent overheating and cell degradation."
+                content="Maximum continuous DC charge/discharge current permitted by the Battery Management System hardware."
                 provenance="Measured"
                 underline
               >
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">BMS Current Limit</span>
               </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
-                {battery.bms_limit_enforced_a || 100.0} A
+                {bmsLimitA > 0 ? `${bmsLimitA} A` : "--"}
               </div>
-              <p className="text-xs text-slate-500 mt-1">Max power: {battery.bms_limit_enforced_kw || 5.12} kW</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Max power: {bmsLimitKw > 0 ? `${bmsLimitKw} kW` : "--"}
+              </p>
             </div>
           </div>
 

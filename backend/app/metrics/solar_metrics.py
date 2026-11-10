@@ -6,8 +6,8 @@ from backend.app.metrics.time_utils import format_time_12h, hour_index_to_12h
 
 def calculate_solar_metrics(
     records: List[CanonicalRecord],
-    pv_capacity_kwp: float = 5.0,
-    inverter_rating_kw: float = 5.0,
+    pv_capacity_kwp: float = 0.0,
+    inverter_rating_kw: float = 0.0,
     method: str = "trapezoidal"
 ) -> Dict[str, Any]:
     if not records:
@@ -39,12 +39,13 @@ def calculate_solar_metrics(
     capacity_factor = round((total_kwh / theoretical_max) * 100.0, 2) if theoretical_max > 0 else 0.0
 
     near_peak_count = 0
-    clipping_threshold = min(inverter_rating_kw, peak_power) * 0.98
-    for p in pv_powers:
-        if p >= clipping_threshold and p > 1.0:
-            near_peak_count += 1
-    
-    clipping_suspected = near_peak_count >= 8
+    if inverter_rating_kw > 0:
+        clipping_threshold = min(inverter_rating_kw, peak_power) * 0.98
+        for p in pv_powers:
+            if p >= clipping_threshold and p > 1.0:
+                near_peak_count += 1
+
+    clipping_suspected = inverter_rating_kw > 0 and near_peak_count >= 8
 
     hourly_energy: Dict[int, float] = {h: 0.0 for h in range(24)}
     for i in range(len(records) - 1):

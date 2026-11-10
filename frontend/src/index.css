@@ -20,7 +20,7 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   background-color: var(--bg-page);
   color: var(--text-main);
   -webkit-font-smoothing: antialiased;
@@ -98,7 +98,7 @@ body {
 }
 
 .animate-pulse-pill {
-  animation: pulsePill 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  transition: opacity 200ms ease-out;
 }
 
 .card-stagger-1 {
@@ -127,11 +127,10 @@ body {
 }
 
 .interactive-card {
-  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms ease-out;
+  transition: box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms ease-out;
 }
 .interactive-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 8px 20px -6px rgba(15, 23, 42, 0.08), 0 4px 8px -4px rgba(15, 23, 42, 0.04);
 }
 .dark .interactive-card:hover {
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.35), 0 8px 10px -6px rgba(0, 0, 0, 0.25);

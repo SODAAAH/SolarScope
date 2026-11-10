@@ -166,7 +166,8 @@ export const AnalystPage: React.FC = () => {
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
-            placeholder="Ask about your solar production, battery charge level, TEI purchases, or why energy spiked..."
+            aria-label="Diagnostic inquiry"
+            placeholder="Ask about your solar production, battery charge level, grid purchases, or why energy spiked..."
             value={customText}
             onChange={(e) => setCustomText(e.target.value)}
             onKeyDown={(e) => {
@@ -178,6 +179,7 @@ export const AnalystPage: React.FC = () => {
           />
           {streaming.isStreaming ? (
             <button
+              type="button"
               onClick={handleStopStreaming}
               className="w-full sm:w-auto justify-center px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm shrink-0"
             >
@@ -186,6 +188,7 @@ export const AnalystPage: React.FC = () => {
             </button>
           ) : (
             <button
+              type="button"
               onClick={() => {
                 if (customText.trim()) {
                   executeDiagnostic(customText);

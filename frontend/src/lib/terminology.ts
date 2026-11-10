@@ -235,7 +235,7 @@ export const GLOSSARY: Record<string, TermDefinition> = {
     simpleLabel: 'Inverter Saturation',
     technicalLabel: 'Inverter Continuous AC Power Saturation',
     category: 'solar',
-    simpleExplanation: 'Occurs when DC solar array potential exceeds the inverter rated AC capacity (6.0 kW). System operates safely within optimal design limits.',
+    simpleExplanation: 'Occurs when DC solar array potential exceeds the inverter continuous rated AC capacity. System operates safely within optimal design limits.',
     technicalDefinition: 'Throttling of array generation when DC input potential exceeds the inverter continuous AC output rating.',
     unit: 'kW',
     provenance: 'Estimated'

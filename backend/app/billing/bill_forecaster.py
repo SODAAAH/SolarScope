@@ -82,13 +82,13 @@ def forecast_tei_bill(
     else:
         sample_days = all_sorted_days
 
-    sample_import_values = [daily_imports[d] for d in sample_days] if sample_days else [7.5]
-    mean_daily_import = float(np.mean(sample_import_values)) if sample_import_values else 7.5
+    sample_import_values = [daily_imports[d] for d in sample_days] if sample_days else [0.0]
+    mean_daily_import = float(np.mean(sample_import_values)) if sample_import_values else 0.0
     std_daily_import = float(np.std(sample_import_values)) if len(sample_import_values) > 1 else (mean_daily_import * 0.20)
 
-    expected_daily_rate = max(0.5, mean_daily_import)
-    lower_daily_rate = max(0.2, mean_daily_import - (0.80 * std_daily_import))
-    higher_daily_rate = max(expected_daily_rate + 0.5, mean_daily_import + (0.80 * std_daily_import))
+    expected_daily_rate = max(0.0, mean_daily_import)
+    lower_daily_rate = max(0.0, mean_daily_import - (0.80 * std_daily_import))
+    higher_daily_rate = max(expected_daily_rate, mean_daily_import + (0.80 * std_daily_import))
 
     expected_additional_kwh = round(expected_daily_rate * days_remaining, 2)
     lower_additional_kwh = round(lower_daily_rate * days_remaining, 2)
@@ -186,8 +186,8 @@ def forecast_tei_bill(
         billing_end=end_str
     )
 
-    gen_charge_val = 6.74890
-    gen_vat_val = 0.71120
+    gen_charge_val = 0.0
+    gen_vat_val = 0.0
     for comp in schedule.components:
         if comp.component_id == "gen_charge":
             gen_charge_val = comp.rate_per_kwh
@@ -208,7 +208,7 @@ def forecast_tei_bill(
         active_generation_charge=gen_charge_val,
         active_generation_vat=gen_vat_val,
         last_rate_check_timestamp=last_check_status.get("checked_at", now.isoformat()),
-        rate_monitor_status=last_check_status.get("status", "verified_current"),
+        rate_monitor_status=last_check_status.get("status", "pending"),
         rate_change_alert=last_check_status.get("rate_change_alert"),
         current_so_far_statement=current_so_far_soa,
         lower_estimate=lower_scenario,

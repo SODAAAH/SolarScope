@@ -33,7 +33,7 @@ def build_excel_report(
 
     ws_summary["A1"] = "SolarScope Technical Audit Summary"
     ws_summary["A1"].font = Font(name="Calibri", size=16, bold=True, color="0F172A")
-    ws_summary["A2"] = f"Generated on {summary_data.get('report_date', '2026-10-29')} | File: {summary_data.get('filename', 'Oct 21.xlsx')}"
+    ws_summary["A2"] = f"Generated on {summary_data.get('report_date', '')} | File: {summary_data.get('filename', 'SolarScope Dataset')}"
     ws_summary["A2"].font = Font(name="Calibri", size=10, italic=True, color="475569")
 
     ws_summary.append([])
@@ -46,19 +46,19 @@ def build_excel_report(
         cell.alignment = Alignment(horizontal="center" if col_idx in [2, 3] else "left")
 
     kpis = [
-        ("Solar PV Generation", summary_data.get("pv_kwh", 21.71), "kWh", "Trapezoidal numerical integration over Δt"),
-        ("Household Demand", summary_data.get("load_kwh", 33.51), "kWh", "Trapezoidal numerical integration over Δt"),
-        ("Grid Imported Energy", summary_data.get("grid_import_kwh", 12.38), "kWh", "Trapezoidal integration of positive grid power"),
+        ("Solar PV Generation", summary_data.get("pv_kwh", 0.0), "kWh", "Trapezoidal numerical integration over Δt"),
+        ("Household Demand", summary_data.get("load_kwh", 0.0), "kWh", "Trapezoidal numerical integration over Δt"),
+        ("Grid Imported Energy", summary_data.get("grid_import_kwh", 0.0), "kWh", "Trapezoidal integration of positive grid power"),
         ("Grid Exported Energy", summary_data.get("grid_export_kwh", 0.0), "kWh", "Trapezoidal integration of negative grid power"),
-        ("Battery Discharging Energy", summary_data.get("batt_disch_kwh", 8.68), "kWh", "Trapezoidal integration of positive battery power"),
-        ("Battery Charging Energy", summary_data.get("batt_chg_kwh", 6.77), "kWh", "Trapezoidal integration of negative battery power"),
-        ("Reconciliation Residual", summary_data.get("residual_kwh", 2.50), "kWh", "Sources (PV+Grid+Disch) - Sinks (Load+Chg)"),
-        ("Solar Self-Consumption Ratio", summary_data.get("self_consumption", 1.0), "Ratio", "(Direct Solar + Battery Charge) / Total PV"),
-        ("Solar Self-Sufficiency Ratio", summary_data.get("self_sufficiency", 0.63), "Ratio", "(Direct Solar + Battery Disch) / Total Load"),
-        ("Grid Dependence Ratio", summary_data.get("grid_dependence", 0.37), "Ratio", "Grid Import / Total Load"),
-        ("Peak PV Power", summary_data.get("peak_pv_kw", 4.17), "kW", f"Instantaneous max @ {summary_data.get('peak_pv_time_12h', 'N/A')}"),
-        ("Peak Household Load", summary_data.get("peak_load_kw", 3.27), "kW", f"Instantaneous max @ {summary_data.get('peak_load_time_12h', 'N/A')}"),
-        ("Base-Load Estimate", summary_data.get("base_load_kw", 0.69), "kW", "5th percentile night demand (2:00 AM - 5:00 AM)")
+        ("Battery Discharging Energy", summary_data.get("batt_disch_kwh", 0.0), "kWh", "Trapezoidal integration of positive battery power"),
+        ("Battery Charging Energy", summary_data.get("batt_chg_kwh", 0.0), "kWh", "Trapezoidal integration of negative battery power"),
+        ("Reconciliation Residual", summary_data.get("residual_kwh", 0.0), "kWh", "Sources (PV+Grid+Disch) - Sinks (Load+Chg)"),
+        ("Solar Self-Consumption Ratio", summary_data.get("self_consumption", 0.0), "Ratio", "(Direct Solar + Battery Charge) / Total PV"),
+        ("Solar Self-Sufficiency Ratio", summary_data.get("self_sufficiency", 0.0), "Ratio", "(Direct Solar + Battery Disch) / Total Load"),
+        ("Grid Dependence Ratio", summary_data.get("grid_dependence", 0.0), "Ratio", "Grid Import / Total Load"),
+        ("Peak PV Power", summary_data.get("peak_pv_kw", 0.0), "kW", f"Instantaneous max @ {summary_data.get('peak_pv_time_12h', 'N/A')}"),
+        ("Peak Household Load", summary_data.get("peak_load_kw", 0.0), "kW", f"Instantaneous max @ {summary_data.get('peak_load_time_12h', 'N/A')}"),
+        ("Base-Load Estimate", summary_data.get("base_load_kw", 0.0), "kW", "5th percentile night demand (2:00 AM - 5:00 AM)")
     ]
 
     for item in kpis:

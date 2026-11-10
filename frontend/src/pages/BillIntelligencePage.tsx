@@ -169,6 +169,9 @@ export const BillIntelligencePage: React.FC = () => {
     };
   };
 
+  const nowMonthDate = new Date();
+  const currentMonthStr = `${nowMonthDate.getFullYear()}-${String(nowMonthDate.getMonth() + 1).padStart(2, "0")}`;
+
   const [billForm, setBillForm] = useState({
     billing_period_start: "",
     billing_period_end: "",
@@ -177,16 +180,18 @@ export const BillIntelligencePage: React.FC = () => {
     predicted_amount_due: 0,
     notes: ""
   });
+  const [billError, setBillError] = useState<string | null>(null);
 
   const [manualRateForm, setManualRateForm] = useState({
-    effective_month: "2026-11",
+    effective_month: currentMonthStr,
     customer_class: "Residential",
-    generation_charge: 6.7489,
-    generation_vat: 0.7112,
-    distribution_charge: 1.4520,
-    transmission_charge: 0.8524,
-    system_loss_charge: 0.5412
+    generation_charge: 0,
+    generation_vat: 0,
+    distribution_charge: 0,
+    transmission_charge: 0,
+    system_loss_charge: 0
   });
+  const [rateError, setRateError] = useState<string | null>(null);
 
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
     generation_transmission: true,
@@ -221,6 +226,11 @@ export const BillIntelligencePage: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    const handleRefresh = () => loadData();
+    window.addEventListener("solarscope:sources-updated", handleRefresh);
+    return () => {
+      window.removeEventListener("solarscope:sources-updated", handleRefresh);
+    };
   }, [activeDatasetId]);
 
   const handleCheckRatesNow = async () => {
@@ -266,20 +276,21 @@ export const BillIntelligencePage: React.FC = () => {
 
   const handleAddBill = async (e: React.FormEvent) => {
     e.preventDefault();
+    setBillError(null);
     try {
       await api.addHistoricalBill({
         billing_period_start: billForm.billing_period_start,
         billing_period_end: billForm.billing_period_end,
-        billed_kwh: Number(billForm.billed_kwh),
-        actual_amount_due: Number(billForm.actual_amount_due),
-        predicted_amount_due: billForm.predicted_amount_due ? Number(billForm.predicted_amount_due) : undefined,
+        billed_kwh: Number.isFinite(Number(billForm.billed_kwh)) ? Number(billForm.billed_kwh) : 0,
+        actual_amount_due: Number.isFinite(Number(billForm.actual_amount_due)) ? Number(billForm.actual_amount_due) : 0,
+        predicted_amount_due: billForm.predicted_amount_due && Number.isFinite(Number(billForm.predicted_amount_due)) ? Number(billForm.predicted_amount_due) : undefined,
         notes: billForm.notes
       });
       setIsAddBillOpen(false);
       const bList = await api.getHistoricalBills();
       setHistoryBills(bList);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setBillError(err?.message || "Failed to save bill record.");
     }
   };
 
@@ -295,20 +306,21 @@ export const BillIntelligencePage: React.FC = () => {
 
   const handleAddManualRate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setRateError(null);
     try {
       await api.addManualRateSchedule({
         effective_month: manualRateForm.effective_month,
         customer_class: manualRateForm.customer_class,
-        generation_charge: Number(manualRateForm.generation_charge),
-        generation_vat: Number(manualRateForm.generation_vat),
-        distribution_charge: Number(manualRateForm.distribution_charge),
-        transmission_charge: Number(manualRateForm.transmission_charge),
-        system_loss_charge: Number(manualRateForm.system_loss_charge)
+        generation_charge: Number.isFinite(Number(manualRateForm.generation_charge)) ? Number(manualRateForm.generation_charge) : 0,
+        generation_vat: Number.isFinite(Number(manualRateForm.generation_vat)) ? Number(manualRateForm.generation_vat) : 0,
+        distribution_charge: Number.isFinite(Number(manualRateForm.distribution_charge)) ? Number(manualRateForm.distribution_charge) : 0,
+        transmission_charge: Number.isFinite(Number(manualRateForm.transmission_charge)) ? Number(manualRateForm.transmission_charge) : 0,
+        system_loss_charge: Number.isFinite(Number(manualRateForm.system_loss_charge)) ? Number(manualRateForm.system_loss_charge) : 0
       });
       setIsManualRateOpen(false);
       await loadData();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setRateError(err?.message || "Failed to save custom rate schedule.");
     }
   };
 
@@ -423,6 +435,13 @@ export const BillIntelligencePage: React.FC = () => {
     ]
   };
 
+  const cyclePreview = getCyclePreview(settingsForm.billing_cycle_day || 25);
+  const activeCycleStartLabel = forecast?.billing_cycle_start ? formatDateMMDDYYYY(forecast.billing_cycle_start) : cyclePreview.startFormatted;
+  const activeCycleEndLabel = forecast?.billing_cycle_end ? formatDateMMDDYYYY(forecast.billing_cycle_end) : cyclePreview.endFormatted;
+  const activeNextReadingLabel = forecast?.next_meter_reading_date ? formatDateMMDDYYYY(forecast.next_meter_reading_date) : cyclePreview.endFormatted;
+  const activeGenCharge = forecast?.active_generation_charge ?? 0;
+  const activeGenVat = forecast?.active_generation_vat ?? 0;
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
@@ -442,17 +461,18 @@ export const BillIntelligencePage: React.FC = () => {
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
               <Calendar className="w-3.5 h-3.5 text-amber-600" />
               <span>
-                Meter Reading: <strong>Day {settingsForm.billing_cycle_day || 25}</strong> ({forecast?.billing_cycle_start ? formatDateMMDDYYYY(forecast.billing_cycle_start) : "10/25/2026"} – {forecast?.billing_cycle_end ? formatDateMMDDYYYY(forecast.billing_cycle_end) : "11/25/2026"})
+                Meter Reading: <strong>Day {settingsForm.billing_cycle_day || 25}</strong> ({activeCycleStartLabel} – {activeCycleEndLabel})
               </span>
             </span>
             <span className="text-xs text-slate-500 font-mono">
-              Day {forecast?.days_elapsed || 0} of {forecast?.cycle_total_days || 31} ({forecast?.days_remaining || 0} days remaining)
+              Day {forecast?.days_elapsed || 0} of {forecast?.cycle_total_days || 30} ({forecast?.days_remaining || 0} days remaining)
             </span>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
+            type="button"
             onClick={handleCheckRatesNow}
             disabled={checkingRates}
             className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-xs"
@@ -462,6 +482,7 @@ export const BillIntelligencePage: React.FC = () => {
           </button>
 
           <button
+            type="button"
             onClick={openSettingsModal}
             className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-slate-200 text-white dark:text-slate-900 transition-colors flex items-center gap-1.5 shadow-xs"
           >
@@ -475,11 +496,13 @@ export const BillIntelligencePage: React.FC = () => {
         <div className="flex items-center gap-2">
           <Info className="w-4 h-4 text-slate-400 shrink-0" />
           <span>
-            Projections calculated using verified published tariffs and active cycle meter readings.
+            {activeGenCharge > 0
+              ? "Projections calculated using active tariffs and billing cycle meter readings."
+              : "No active tariff rate loaded yet. Click Check TEI Rates or add a custom rate schedule in the archive tab."}
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] font-mono text-slate-500">
-          <span>Schedule: {forecast?.active_rate_effective_month || "October 2026"}</span>
+          <span>Schedule: {forecast?.active_rate_effective_month || currentMonthStr}</span>
           {checkMessage && (
             <span className="text-emerald-600 dark:text-emerald-400 font-sans font-medium flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3" />
@@ -593,16 +616,20 @@ export const BillIntelligencePage: React.FC = () => {
                 Active TEI Generation Rate
               </span>
             </Tooltip>
-            <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded">
-              Verified
+            <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
+              activeGenCharge > 0
+                ? "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40"
+                : "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40"
+            }`}>
+              {activeGenCharge > 0 ? "Active" : "Not Set"}
             </span>
           </div>
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-            ₱{forecast?.active_generation_charge.toFixed(5) || "6.74890"} <span className="text-sm font-normal text-slate-500">/kWh</span>
+            ₱{activeGenCharge.toFixed(5)} <span className="text-sm font-normal text-slate-500">/kWh</span>
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-slate-100 dark:border-slate-800">
-            <span>+ Gen VAT ₱{forecast?.active_generation_vat.toFixed(5)}</span>
-            <span>Cycle: {forecast?.billing_cycle_start ? formatDateMMDDYYYY(forecast.billing_cycle_start) : "10/25/2026"} to {forecast?.billing_cycle_end ? formatDateMMDDYYYY(forecast.billing_cycle_end) : "11/25/2026"}</span>
+            <span>+ Gen VAT ₱{activeGenVat.toFixed(5)}</span>
+            <span>Cycle: {activeCycleStartLabel} to {activeCycleEndLabel}</span>
           </div>
         </div>
       </div>
@@ -614,12 +641,12 @@ export const BillIntelligencePage: React.FC = () => {
               Electricity Bill Progression Across Current Billing Cycle
             </h2>
             <p className="text-xs text-slate-500">
-              Tracking observed electricity purchases and projected costs toward your next meter reading date ({forecast?.next_meter_reading_date ? formatDateMMDDYYYY(forecast.next_meter_reading_date) : "11/25/2026"}).
+              Tracking observed electricity purchases and projected costs toward your next meter reading date ({activeNextReadingLabel}).
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
             <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-coral-500 inline-block" style={{ backgroundColor: theme.colors.coral }}></span>
+              <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: theme.colors.coral }}></span>
               Observed Purchases
             </span>
             <span className="flex items-center gap-1.5">
@@ -633,6 +660,7 @@ export const BillIntelligencePage: React.FC = () => {
 
       <div className="flex border-b border-slate-200 dark:border-slate-800 gap-1 sm:gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
         <button
+          type="button"
           onClick={() => setActiveTab("statement")}
           className={`shrink-0 px-3 sm:px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
             activeTab === "statement"
@@ -645,6 +673,7 @@ export const BillIntelligencePage: React.FC = () => {
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveTab("savings")}
           className={`shrink-0 px-3 sm:px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
             activeTab === "savings"
@@ -657,6 +686,7 @@ export const BillIntelligencePage: React.FC = () => {
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveTab("sensitivity")}
           className={`shrink-0 px-3 sm:px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
             activeTab === "sensitivity"
@@ -669,6 +699,7 @@ export const BillIntelligencePage: React.FC = () => {
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveTab("history")}
           className={`shrink-0 px-3 sm:px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
             activeTab === "history"
@@ -681,6 +712,7 @@ export const BillIntelligencePage: React.FC = () => {
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveTab("rates")}
           className={`shrink-0 px-3 sm:px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
             activeTab === "rates"
@@ -700,6 +732,7 @@ export const BillIntelligencePage: React.FC = () => {
               <span className="text-xs font-medium text-slate-500 shrink-0">Statement View Mode:</span>
               <div className="flex flex-wrap bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs gap-0.5">
                 <button
+                  type="button"
                   onClick={() => setStatementMode("expected")}
                   className={`px-3 py-1 rounded-md font-medium transition-colors ${
                     statementMode === "expected"
@@ -707,9 +740,10 @@ export const BillIntelligencePage: React.FC = () => {
                       : "text-slate-600 dark:text-slate-400"
                   }`}
                 >
-                  Expected Full Month ({forecast?.expected_estimate.total_projected_kwh.toFixed(1)} kWh)
+                  Expected Full Month ({(forecast?.expected_estimate.total_projected_kwh ?? 0).toFixed(1)} kWh)
                 </button>
                 <button
+                  type="button"
                   onClick={() => setStatementMode("actual")}
                   className={`px-3 py-1 rounded-md font-medium transition-colors ${
                     statementMode === "actual"
@@ -717,9 +751,10 @@ export const BillIntelligencePage: React.FC = () => {
                       : "text-slate-600 dark:text-slate-400"
                   }`}
                 >
-                  Purchased So Far ({forecast?.actual_imported_kwh.toFixed(1)} kWh)
+                  Purchased So Far ({(forecast?.actual_imported_kwh ?? 0).toFixed(1)} kWh)
                 </button>
                 <button
+                  type="button"
                   onClick={() => setStatementMode("lower")}
                   className={`px-3 py-1 rounded-md font-medium transition-colors ${
                     statementMode === "lower"
@@ -727,9 +762,10 @@ export const BillIntelligencePage: React.FC = () => {
                       : "text-slate-600 dark:text-slate-400"
                   }`}
                 >
-                  Lower Estimate ({forecast?.lower_estimate.total_projected_kwh.toFixed(1)} kWh)
+                  Lower Estimate ({(forecast?.lower_estimate.total_projected_kwh ?? 0).toFixed(1)} kWh)
                 </button>
                 <button
+                  type="button"
                   onClick={() => setStatementMode("higher")}
                   className={`px-3 py-1 rounded-md font-medium transition-colors ${
                     statementMode === "higher"
@@ -737,13 +773,13 @@ export const BillIntelligencePage: React.FC = () => {
                       : "text-slate-600 dark:text-slate-400"
                   }`}
                 >
-                  Higher Estimate ({forecast?.higher_estimate.total_projected_kwh.toFixed(1)} kWh)
+                  Higher Estimate ({(forecast?.higher_estimate.total_projected_kwh ?? 0).toFixed(1)} kWh)
                 </button>
               </div>
             </div>
 
             <div className="text-xs text-slate-500 shrink-0">
-              Effective Average Rate: <span className="font-semibold text-slate-800 dark:text-slate-200">₱{currentStatement?.effective_average_rate_per_kwh.toFixed(4)}/kWh</span>
+              Effective Average Rate: <span className="font-semibold text-slate-800 dark:text-slate-200">₱{(currentStatement?.effective_average_rate_per_kwh ?? 0).toFixed(4)}/kWh</span>
             </div>
           </div>
 
@@ -754,27 +790,28 @@ export const BillIntelligencePage: React.FC = () => {
                   Itemized Electricity Charges & Taxes
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Calculated using TEI {currentStatement?.effective_rate_schedule_month} schedule ({currentStatement?.customer_class} Class).
+                  Calculated using TEI {currentStatement?.effective_rate_schedule_month || currentMonthStr} schedule ({currentStatement?.customer_class || settingsForm.customer_class} Class).
                 </p>
               </div>
               <div className="text-right">
                 <span className="text-[10px] font-mono text-slate-400">Total Billed:</span>
-                <span className="ml-1.5 text-xs font-bold text-slate-900 dark:text-slate-100">{currentStatement?.billed_kwh.toFixed(2)} kWh</span>
+                <span className="ml-1.5 text-xs font-bold text-slate-900 dark:text-slate-100">{(currentStatement?.billed_kwh ?? 0).toFixed(2)} kWh</span>
               </div>
             </div>
 
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
               <div className="p-4">
-                <div
+                <button
+                  type="button"
                   onClick={() => toggleCategory("generation_transmission")}
-                  className="flex items-center justify-between cursor-pointer py-1 font-semibold text-xs text-slate-800 dark:text-slate-200 select-none"
+                  className="w-full flex items-center justify-between cursor-pointer py-1 font-semibold text-xs text-slate-800 dark:text-slate-200 select-none text-left"
                 >
                   <span className="flex items-center gap-1.5">
                     {expandedCategories.generation_transmission ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                     Generation & Transmission Charges
                   </span>
-                  <span className="font-bold tabular-nums">₱{currentStatement?.generation_transmission_charges.toFixed(2)}</span>
-                </div>
+                  <span className="font-bold tabular-nums">₱{(currentStatement?.generation_transmission_charges ?? 0).toFixed(2)}</span>
+                </button>
 
                 {expandedCategories.generation_transmission && (
                   <div className="mt-3 overflow-x-auto">
@@ -805,7 +842,7 @@ export const BillIntelligencePage: React.FC = () => {
                                   item.vat_treatment === "exempt" ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400" :
                                   "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
                                 }`}>
-                                  {item.vat_treatment === "fixed_rate" ? "Separate VAT ₱0.7112/kWh" : item.vat_treatment === "exempt" ? "VAT Exempt (2026 Rules)" : "Standard 12% VAT"}
+                                  {item.vat_treatment === "fixed_rate" ? `Separate VAT ₱${activeGenVat.toFixed(4)}/kWh` : item.vat_treatment === "exempt" ? "VAT Exempt" : "Standard 12% VAT"}
                                 </span>
                               </td>
                               <td className="py-2.5 text-right font-semibold tabular-nums text-slate-800 dark:text-slate-200">
@@ -820,16 +857,17 @@ export const BillIntelligencePage: React.FC = () => {
               </div>
 
               <div className="p-4">
-                <div
+                <button
+                  type="button"
                   onClick={() => toggleCategory("distribution")}
-                  className="flex items-center justify-between cursor-pointer py-1 font-semibold text-xs text-slate-800 dark:text-slate-200 select-none"
+                  className="w-full flex items-center justify-between cursor-pointer py-1 font-semibold text-xs text-slate-800 dark:text-slate-200 select-none text-left"
                 >
                   <span className="flex items-center gap-1.5">
                     {expandedCategories.distribution ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                     Distribution, Supply & Metering Charges
                   </span>
-                  <span className="font-bold tabular-nums">₱{currentStatement?.distribution_charges.toFixed(2)}</span>
-                </div>
+                  <span className="font-bold tabular-nums">₱{(currentStatement?.distribution_charges ?? 0).toFixed(2)}</span>
+                </button>
 
                 {expandedCategories.distribution && (
                   <div className="mt-3 overflow-x-auto">
@@ -871,16 +909,17 @@ export const BillIntelligencePage: React.FC = () => {
               </div>
 
               <div className="p-4">
-                <div
+                <button
+                  type="button"
                   onClick={() => toggleCategory("other")}
-                  className="flex items-center justify-between cursor-pointer py-1 font-semibold text-xs text-slate-800 dark:text-slate-200 select-none"
+                  className="w-full flex items-center justify-between cursor-pointer py-1 font-semibold text-xs text-slate-800 dark:text-slate-200 select-none text-left"
                 >
                   <span className="flex items-center gap-1.5">
                     {expandedCategories.other ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                     Other Approved Charges & Universal Levies
                   </span>
-                  <span className="font-bold tabular-nums">₱{currentStatement?.other_charges.toFixed(2)}</span>
-                </div>
+                  <span className="font-bold tabular-nums">₱{(currentStatement?.other_charges ?? 0).toFixed(2)}</span>
+                </button>
 
                 {expandedCategories.other && (
                   <div className="mt-3 overflow-x-auto">
@@ -922,16 +961,17 @@ export const BillIntelligencePage: React.FC = () => {
               </div>
 
               <div className="p-4">
-                <div
+                <button
+                  type="button"
                   onClick={() => toggleCategory("taxes")}
-                  className="flex items-center justify-between cursor-pointer py-1 font-semibold text-xs text-slate-800 dark:text-slate-200 select-none"
+                  className="w-full flex items-center justify-between cursor-pointer py-1 font-semibold text-xs text-slate-800 dark:text-slate-200 select-none text-left"
                 >
                   <span className="flex items-center gap-1.5">
                     {expandedCategories.taxes ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                     Government Taxes & Local Assessments
                   </span>
-                  <span className="font-bold tabular-nums">₱{currentStatement?.government_taxes.toFixed(2)}</span>
-                </div>
+                  <span className="font-bold tabular-nums">₱{(currentStatement?.government_taxes ?? 0).toFixed(2)}</span>
+                </button>
 
                 {expandedCategories.taxes && (
                   <div className="mt-3 overflow-x-auto">
@@ -971,9 +1011,10 @@ export const BillIntelligencePage: React.FC = () => {
 
               {currentStatement?.line_items.some(i => i.category === "discounts") && (
                 <div className="p-4 bg-emerald-50/30 dark:bg-emerald-950/10">
-                  <div
+                  <button
+                    type="button"
                     onClick={() => toggleCategory("discounts")}
-                    className="flex items-center justify-between cursor-pointer py-1 font-semibold text-xs text-emerald-800 dark:text-emerald-300 select-none"
+                    className="w-full flex items-center justify-between cursor-pointer py-1 font-semibold text-xs text-emerald-800 dark:text-emerald-300 select-none text-left"
                   >
                     <span className="flex items-center gap-1.5">
                       {expandedCategories.discounts ? <ChevronUp className="w-4 h-4 text-emerald-600" /> : <ChevronDown className="w-4 h-4 text-emerald-600" />}
@@ -982,7 +1023,7 @@ export const BillIntelligencePage: React.FC = () => {
                     <span className="font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
                       -₱{(currentStatement.discounts + currentStatement.net_metering_credits).toFixed(2)}
                     </span>
-                  </div>
+                  </button>
 
                   {expandedCategories.discounts && (
                     <div className="mt-3 overflow-x-auto">
@@ -1167,6 +1208,7 @@ export const BillIntelligencePage: React.FC = () => {
                 <div className="flex flex-wrap gap-1.5">
                   {[-1.0, -0.5, 0.0, 0.5, 1.0, 2.0].map(val => (
                     <button
+                      type="button"
                       key={val}
                       onClick={() => handleRunSensitivity(val, deltaUsagePct, customKwh)}
                       className={`px-2.5 py-1 text-xs rounded font-mono ${
@@ -1180,7 +1222,7 @@ export const BillIntelligencePage: React.FC = () => {
                   ))}
                 </div>
                 <div className="text-[11px] text-slate-500">
-                  Tested Generation Rate: ₱{((forecast?.active_generation_charge || 6.7489) + deltaGenRate).toFixed(5)}/kWh
+                  Tested Generation Rate: ₱{Math.max(0, activeGenCharge + deltaGenRate).toFixed(5)}/kWh
                 </div>
               </div>
 
@@ -1191,6 +1233,7 @@ export const BillIntelligencePage: React.FC = () => {
                 <div className="flex flex-wrap gap-1.5">
                   {[-20, -10, 0, 10, 20].map(pct => (
                     <button
+                      type="button"
                       key={pct}
                       onClick={() => handleRunSensitivity(deltaGenRate, pct, customKwh)}
                       className={`px-2.5 py-1 text-xs rounded font-mono ${
@@ -1209,11 +1252,12 @@ export const BillIntelligencePage: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                <label htmlFor="sensitivity-custom-kwh" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   Or Test Specific Monthly Import (kWh)
                 </label>
                 <div className="flex gap-2">
                   <input
+                    id="sensitivity-custom-kwh"
                     type="number"
                     placeholder="e.g. 250"
                     value={customKwh}
@@ -1225,6 +1269,7 @@ export const BillIntelligencePage: React.FC = () => {
                   />
                   {customKwh && (
                     <button
+                      type="button"
                       onClick={() => {
                         setCustomKwh("");
                         handleRunSensitivity(deltaGenRate, deltaUsagePct, "");
@@ -1270,7 +1315,7 @@ export const BillIntelligencePage: React.FC = () => {
                   <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
                     <span className="text-[11px] text-slate-500">Projected Net Difference</span>
                     <div className={`text-xl font-bold tabular-nums mt-1 ${
-                      sensitivityResult.difference_pesos > 0 ? "text-coral-600 dark:text-coral-400" :
+                      sensitivityResult.difference_pesos > 0 ? "text-rose-600 dark:text-rose-400" :
                       sensitivityResult.difference_pesos < 0 ? "text-emerald-600 dark:text-emerald-400" :
                       "text-slate-800 dark:text-slate-200"
                     }`}>
@@ -1296,7 +1341,11 @@ export const BillIntelligencePage: React.FC = () => {
               </p>
             </div>
             <button
-              onClick={() => setIsAddBillOpen(true)}
+              type="button"
+              onClick={() => {
+                setBillError(null);
+                setIsAddBillOpen(true);
+              }}
               className="self-start sm:self-auto shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors flex items-center gap-1.5 shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -1350,9 +1399,11 @@ export const BillIntelligencePage: React.FC = () => {
                         </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           <button
+                            type="button"
                             onClick={() => handleDeleteBill(b.id)}
                             className="p-1 text-slate-400 hover:text-red-600 transition-colors"
                             title="Delete Record"
+                            aria-label="Delete bill record"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -1375,11 +1426,15 @@ export const BillIntelligencePage: React.FC = () => {
                 TEI Rate Schedule Archive & Monitoring Records
               </h3>
               <p className="text-xs text-slate-500">
-                All rate schedule versions extracted from Tarlac Electric Inc. and verified locally.
+                All rate schedule versions extracted from Tarlac Electric Inc. or configured manually.
               </p>
             </div>
             <button
-              onClick={() => setIsManualRateOpen(true)}
+              type="button"
+              onClick={() => {
+                setRateError(null);
+                setIsManualRateOpen(true);
+              }}
               className="self-start sm:self-auto shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -1418,7 +1473,7 @@ export const BillIntelligencePage: React.FC = () => {
                             ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
                             : "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400"
                         }`}>
-                          {r.verification_status === "verified" ? "Officially Verified" : "Manual / Custom"}
+                          {r.verification_status === "verified" ? "Officially Verified" : r.verification_status === "unconfigured" ? "Unconfigured" : "Manual / Custom"}
                         </span>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
@@ -1445,10 +1500,10 @@ export const BillIntelligencePage: React.FC = () => {
       {isSettingsOpen && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-hidden">
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-slate-950/60 transition-opacity"
             onClick={() => setIsSettingsOpen(false)}
           />
-          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90dvh] z-10 animate-in zoom-in-95 duration-150">
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90dvh] z-10">
             <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Settings className="w-4 h-4 text-amber-600 shrink-0" />
@@ -1456,6 +1511,7 @@ export const BillIntelligencePage: React.FC = () => {
               </h3>
               <button
                 type="button"
+                aria-label="Close billing settings modal"
                 onClick={() => setIsSettingsOpen(false)}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-md transition-colors"
               >
@@ -1686,10 +1742,10 @@ export const BillIntelligencePage: React.FC = () => {
       {isAddBillOpen && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-hidden">
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-slate-950/60 transition-opacity"
             onClick={() => setIsAddBillOpen(false)}
           />
-          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90dvh] z-10 animate-in zoom-in-95 duration-150">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90dvh] z-10">
             <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <ReceiptText className="w-4 h-4 text-amber-600 shrink-0" />
@@ -1697,6 +1753,7 @@ export const BillIntelligencePage: React.FC = () => {
               </h3>
               <button
                 type="button"
+                aria-label="Close past bill modal"
                 onClick={() => setIsAddBillOpen(false)}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-md transition-colors"
               >
@@ -1708,10 +1765,11 @@ export const BillIntelligencePage: React.FC = () => {
               <div className="px-4 sm:px-6 py-4 overflow-y-auto space-y-3 text-xs flex-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="bill-start" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Period Start Date
                   </label>
                   <input
+                    id="bill-start"
                     type="date"
                     required
                     value={billForm.billing_period_start}
@@ -1720,10 +1778,11 @@ export const BillIntelligencePage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="bill-end" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Period End Date
                   </label>
                   <input
+                    id="bill-end"
                     type="date"
                     required
                     value={billForm.billing_period_end}
@@ -1734,63 +1793,73 @@ export const BillIntelligencePage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label htmlFor="bill-kwh" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Billed Energy from Meter (kWh)
                 </label>
                 <input
+                  id="bill-kwh"
                   type="number"
                   step="0.1"
                   required
                   placeholder="e.g. 210.5"
                   value={billForm.billed_kwh || ""}
-                  onChange={(e) => setBillForm({ ...billForm, billed_kwh: Number(e.target.value) })}
+                  onChange={(e) => setBillForm({ ...billForm, billed_kwh: Number(e.target.value) || 0 })}
                   className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="bill-actual" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Actual Bill Amount (₱)
                   </label>
                   <input
+                    id="bill-actual"
                     type="number"
                     step="0.01"
                     required
                     placeholder="e.g. 2450.00"
                     value={billForm.actual_amount_due || ""}
-                    onChange={(e) => setBillForm({ ...billForm, actual_amount_due: Number(e.target.value) })}
+                    onChange={(e) => setBillForm({ ...billForm, actual_amount_due: Number(e.target.value) || 0 })}
                     className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono font-bold"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="bill-predicted" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     SolarScope Predicted (₱)
                   </label>
                   <input
+                    id="bill-predicted"
                     type="number"
                     step="0.01"
                     placeholder="e.g. 2480.00"
                     value={billForm.predicted_amount_due || ""}
-                    onChange={(e) => setBillForm({ ...billForm, predicted_amount_due: Number(e.target.value) })}
+                    onChange={(e) => setBillForm({ ...billForm, predicted_amount_due: Number(e.target.value) || 0 })}
                     className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label htmlFor="bill-notes" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Notes / Bill Statement Reference
                 </label>
                 <input
+                  id="bill-notes"
                   type="text"
-                  placeholder="e.g. Statement #10425, low AC usage"
+                  placeholder="Optional statement reference or notes"
                   value={billForm.notes}
                   onChange={(e) => setBillForm({ ...billForm, notes: e.target.value })}
                   className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
                 />
               </div>
+
+              {billError && (
+                <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-[11px] text-red-700 dark:text-red-300">
+                  {billError}
+                </div>
+              )}
 
               </div>
 
@@ -1818,10 +1887,10 @@ export const BillIntelligencePage: React.FC = () => {
       {isManualRateOpen && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-hidden">
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-slate-950/60 transition-opacity"
             onClick={() => setIsManualRateOpen(false)}
           />
-          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90dvh] z-10 animate-in zoom-in-95 duration-150">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90dvh] z-10">
             <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-amber-600 shrink-0" />
@@ -1829,6 +1898,7 @@ export const BillIntelligencePage: React.FC = () => {
               </h3>
               <button
                 type="button"
+                aria-label="Close custom rate modal"
                 onClick={() => setIsManualRateOpen(false)}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-md transition-colors"
               >
@@ -1840,23 +1910,25 @@ export const BillIntelligencePage: React.FC = () => {
               <div className="px-4 sm:px-6 py-4 overflow-y-auto space-y-3 text-xs flex-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="rate-month" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Effective Month (YYYY-MM)
                   </label>
                   <input
+                    id="rate-month"
                     type="text"
                     required
-                    placeholder="2026-11"
+                    placeholder={currentMonthStr}
                     value={manualRateForm.effective_month}
                     onChange={(e) => setManualRateForm({ ...manualRateForm, effective_month: e.target.value })}
                     className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="rate-class" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Customer Class
                   </label>
                   <select
+                    id="rate-class"
                     value={manualRateForm.customer_class}
                     onChange={(e) => setManualRateForm({ ...manualRateForm, customer_class: e.target.value })}
                     className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
@@ -1868,41 +1940,47 @@ export const BillIntelligencePage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label htmlFor="rate-gen" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Generation Charge (₱/kWh)
                 </label>
                 <input
+                  id="rate-gen"
                   type="number"
+                  min="0"
                   step="0.00001"
                   required
                   value={manualRateForm.generation_charge}
-                  onChange={(e) => setManualRateForm({ ...manualRateForm, generation_charge: Number(e.target.value) })}
+                  onChange={(e) => setManualRateForm({ ...manualRateForm, generation_charge: Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : 0 })}
                   className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono font-bold"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="rate-gen-vat" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Generation VAT (₱/kWh)
                   </label>
                   <input
+                    id="rate-gen-vat"
                     type="number"
+                    min="0"
                     step="0.00001"
                     value={manualRateForm.generation_vat}
-                    onChange={(e) => setManualRateForm({ ...manualRateForm, generation_vat: Number(e.target.value) })}
+                    onChange={(e) => setManualRateForm({ ...manualRateForm, generation_vat: Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : 0 })}
                     className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="rate-dist" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Distribution Charge (₱/kWh)
                   </label>
                   <input
+                    id="rate-dist"
                     type="number"
+                    min="0"
                     step="0.00001"
                     value={manualRateForm.distribution_charge}
-                    onChange={(e) => setManualRateForm({ ...manualRateForm, distribution_charge: Number(e.target.value) })}
+                    onChange={(e) => setManualRateForm({ ...manualRateForm, distribution_charge: Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : 0 })}
                     className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono"
                   />
                 </div>
@@ -1910,30 +1988,40 @@ export const BillIntelligencePage: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="rate-trans" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Transmission Charge (₱/kWh)
                   </label>
                   <input
+                    id="rate-trans"
                     type="number"
+                    min="0"
                     step="0.00001"
                     value={manualRateForm.transmission_charge}
-                    onChange={(e) => setManualRateForm({ ...manualRateForm, transmission_charge: Number(e.target.value) })}
+                    onChange={(e) => setManualRateForm({ ...manualRateForm, transmission_charge: Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : 0 })}
                     className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="rate-loss" className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     System Loss Charge (₱/kWh)
                   </label>
                   <input
+                    id="rate-loss"
                     type="number"
+                    min="0"
                     step="0.00001"
                     value={manualRateForm.system_loss_charge}
-                    onChange={(e) => setManualRateForm({ ...manualRateForm, system_loss_charge: Number(e.target.value) })}
+                    onChange={(e) => setManualRateForm({ ...manualRateForm, system_loss_charge: Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : 0 })}
                     className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono"
                   />
                 </div>
               </div>
+
+              {rateError && (
+                <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-[11px] text-red-700 dark:text-red-300">
+                  {rateError}
+                </div>
+              )}
 
               </div>
 

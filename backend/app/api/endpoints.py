@@ -103,11 +103,13 @@ def invalidate_all_caches():
 def _hydrate_state(force: bool = False) -> bool:
     updated = ensure_hydrated(force=force)
     if updated:
+        from backend.app.storage.db import init_db
+        init_db(hydrate=False)
         dataset_cache.clear()
         invalidate_all_caches()
         try:
             from backend.app.integrations.deye_mcp import deye_mcp_client
-            deye_mcp_client.invalidate_cache(clear_last_real=False)
+            deye_mcp_client.invalidate_cache(clear_last_real=True)
         except Exception:
             pass
     return updated
@@ -119,9 +121,9 @@ def _persist_state(
     return persist_state(upload_files=upload_files, deleted_filenames=deleted_filenames)
 
 last_rate_check_cache: Dict[str, Any] = {
-    "status": "verified_current",
-    "message": "Using verified October 2026 schedule",
-    "checked_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "status": "pending",
+    "message": "Rate schedule not yet verified against TEI.",
+    "checked_at": None,
     "rate_change_alert": None
 }
 
@@ -142,34 +144,55 @@ class ManualRateScheduleRequest(BaseModel):
     effective_month: str
     customer_class: str = "Residential"
     generation_charge: float
-    generation_vat: float = 0.71120
-    distribution_charge: float = 1.45200
-    transmission_charge: float = 0.85240
-    system_loss_charge: float = 0.54120
+    generation_vat: float = 0.0
+    distribution_charge: float = 0.0
+    transmission_charge: float = 0.0
+    system_loss_charge: float = 0.0
 
 class SystemSettingsModel(BaseModel):
-    pv_capacity_kwp: float = 5.0
-    num_modules: int = 10
-    module_wattage: float = 500.0
-    inverter_power_kw: float = 5.0
+    station_name: str = ""
+    location_name: str = ""
+    latitude: float = 0.0
+    longitude: float = 0.0
+    pv_capacity_kwp: float = 0.0
+    num_modules: int = 0
+    module_wattage: float = 0.0
+    panel_model: str = ""
+    panel_tech: str = ""
+    inverter_model: str = ""
+    inverter_power_kw: float = 0.0
+    inverter_serial: str = ""
+    inverter_max_apparent_va: float = 0.0
+    inverter_max_battery_current_a: float = 0.0
+    mppt_voltage_min_v: float = 0.0
+    mppt_voltage_max_v: float = 0.0
+    pv_voltage_max_v: float = 0.0
+    mppt_max_current_a: float = 0.0
+    logger_serial: str = ""
+    logger_firmware: str = ""
+    logger_interval_min: int = 5
+    battery_model: str = ""
     battery_chemistry: str = "LFP"
-    battery_voltage: float = 51.2
-    battery_capacity_kwh: float = 15.0
-    usable_capacity_kwh: float = 11.25
-    reserve_soc: float = 25.0
-    max_charge_kw: float = 3.0
-    max_discharge_kw: float = 3.0
+    battery_voltage: float = 0.0
+    battery_ah: float = 0.0
+    battery_capacity_kwh: float = 0.0
+    usable_capacity_kwh: float = 0.0
+    reserve_soc: float = 20.0
+    bms_max_charge_a: float = 0.0
+    bms_max_discharge_a: float = 0.0
+    max_charge_kw: float = 0.0
+    max_discharge_kw: float = 0.0
     battery_efficiency: float = 0.95
-    import_tariff: float = 11.50
+    import_tariff: float = 0.0
     export_tariff: float = 0.0
     currency: str = "PHP"
     timezone: str = "Asia/Manila"
 
 class ScenarioRequest(BaseModel):
-    add_battery_kwh: float = 5.0
-    add_pv_kwp: float = 2.0
+    add_battery_kwh: float = 0.0
+    add_pv_kwp: float = 0.0
     new_reserve_soc: float = 20.0
-    shift_load_kwh: float = 2.0
+    shift_load_kwh: float = 0.0
 
 class ReportGenRequest(BaseModel):
     report_type: str = "pdf"
@@ -189,8 +212,7 @@ def get_health():
         "time_format": "12-hour"
     }
 
-@router.get("/settings")
-def get_settings():
+def get_settings() -> Dict[str, Any]:
     _hydrate_state()
     conn = get_connection()
     row = conn.execute("SELECT * FROM system_settings WHERE project_id = 'default'").fetchone()
@@ -199,33 +221,85 @@ def get_settings():
         return dict(row)
     return SystemSettingsModel().model_dump()
 
+@router.get("/settings")
+def get_settings_endpoint(response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return get_settings()
+
 @router.put("/settings")
-def update_settings(payload: SystemSettingsModel):
+def update_settings(payload: SystemSettingsModel, response: Response):
     _hydrate_state(force=True)
+    response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    conn.execute(
+    cur = conn.execute(
         """UPDATE system_settings SET
-            pv_capacity_kwp = ?, num_modules = ?, module_wattage = ?, inverter_power_kw = ?,
-            battery_chemistry = ?, battery_voltage = ?, battery_capacity_kwh = ?,
-            usable_capacity_kwh = ?, reserve_soc = ?, max_charge_kw = ?, max_discharge_kw = ?,
+            station_name = ?, location_name = ?, latitude = ?, longitude = ?,
+            pv_capacity_kwp = ?, num_modules = ?, module_wattage = ?, panel_model = ?, panel_tech = ?,
+            inverter_model = ?, inverter_power_kw = ?, inverter_serial = ?,
+            inverter_max_apparent_va = ?, inverter_max_battery_current_a = ?,
+            mppt_voltage_min_v = ?, mppt_voltage_max_v = ?, pv_voltage_max_v = ?, mppt_max_current_a = ?,
+            logger_serial = ?, logger_firmware = ?, logger_interval_min = ?,
+            battery_model = ?, battery_chemistry = ?, battery_voltage = ?, battery_ah = ?,
+            battery_capacity_kwh = ?, usable_capacity_kwh = ?, reserve_soc = ?,
+            bms_max_charge_a = ?, bms_max_discharge_a = ?, max_charge_kw = ?, max_discharge_kw = ?,
             battery_efficiency = ?, import_tariff = ?, export_tariff = ?, currency = ?,
             timezone = ?, updated_at = ?
         WHERE project_id = 'default'""",
         (
-            payload.pv_capacity_kwp, payload.num_modules, payload.module_wattage,
-            payload.inverter_power_kw, payload.battery_chemistry, payload.battery_voltage,
+            payload.station_name, payload.location_name, payload.latitude, payload.longitude,
+            payload.pv_capacity_kwp, payload.num_modules, payload.module_wattage, payload.panel_model, payload.panel_tech,
+            payload.inverter_model, payload.inverter_power_kw, payload.inverter_serial,
+            payload.inverter_max_apparent_va, payload.inverter_max_battery_current_a,
+            payload.mppt_voltage_min_v, payload.mppt_voltage_max_v, payload.pv_voltage_max_v, payload.mppt_max_current_a,
+            payload.logger_serial, payload.logger_firmware, payload.logger_interval_min,
+            payload.battery_model, payload.battery_chemistry, payload.battery_voltage, payload.battery_ah,
             payload.battery_capacity_kwh, payload.usable_capacity_kwh, payload.reserve_soc,
-            payload.max_charge_kw, payload.max_discharge_kw, payload.battery_efficiency,
-            payload.import_tariff, payload.export_tariff, payload.currency,
+            payload.bms_max_charge_a, payload.bms_max_discharge_a, payload.max_charge_kw, payload.max_discharge_kw,
+            payload.battery_efficiency, payload.import_tariff, payload.export_tariff, payload.currency,
             payload.timezone, now
         )
     )
+    if cur.rowcount == 0:
+        conn.execute(
+            """INSERT INTO system_settings (
+                id, project_id, station_name, location_name, latitude, longitude,
+                pv_capacity_kwp, num_modules, module_wattage, panel_model, panel_tech,
+                inverter_model, inverter_power_kw, inverter_serial, inverter_max_apparent_va, inverter_max_battery_current_a,
+                mppt_voltage_min_v, mppt_voltage_max_v, pv_voltage_max_v, mppt_max_current_a,
+                logger_serial, logger_firmware, logger_interval_min,
+                battery_model, battery_chemistry, battery_voltage, battery_ah, battery_capacity_kwh,
+                usable_capacity_kwh, reserve_soc, bms_max_charge_a, bms_max_discharge_a,
+                max_charge_kw, max_discharge_kw, battery_efficiency, import_tariff, export_tariff,
+                currency, timezone, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "settings-default", "default",
+                payload.station_name, payload.location_name, payload.latitude, payload.longitude,
+                payload.pv_capacity_kwp, payload.num_modules, payload.module_wattage, payload.panel_model, payload.panel_tech,
+                payload.inverter_model, payload.inverter_power_kw, payload.inverter_serial,
+                payload.inverter_max_apparent_va, payload.inverter_max_battery_current_a,
+                payload.mppt_voltage_min_v, payload.mppt_voltage_max_v, payload.pv_voltage_max_v, payload.mppt_max_current_a,
+                payload.logger_serial, payload.logger_firmware, payload.logger_interval_min,
+                payload.battery_model, payload.battery_chemistry, payload.battery_voltage, payload.battery_ah,
+                payload.battery_capacity_kwh, payload.usable_capacity_kwh, payload.reserve_soc,
+                payload.bms_max_charge_a, payload.bms_max_discharge_a, payload.max_charge_kw, payload.max_discharge_kw,
+                payload.battery_efficiency, payload.import_tariff, payload.export_tariff, payload.currency,
+                payload.timezone, now
+            )
+        )
+    conn.execute("DELETE FROM weather_cache")
+    conn.execute("DELETE FROM analyst_cache")
     conn.commit()
     conn.close()
     invalidate_all_caches()
+    try:
+        from backend.app.integrations.deye_mcp import deye_mcp_client
+        deye_mcp_client.invalidate_cache(clear_last_real=False)
+    except Exception:
+        pass
     _persist_state()
-    return {"status": "updated", "settings": payload.model_dump()}
+    return {"status": "updated", "settings": get_settings()}
 
 @router.post("/datasets/upload")
 async def upload_dataset(file: UploadFile = File(...)):
@@ -459,8 +533,9 @@ async def upload_datasets_batch(files: List[UploadFile] = File(...)):
     return {"total_uploaded": len(results), "files": results}
 
 @router.get("/sources")
-def list_sources():
+def list_sources(response: Response):
     _hydrate_state()
+    response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     rows = conn.execute("SELECT * FROM datasets ORDER BY COALESCE(start_time, created_at) ASC, filename ASC").fetchall()
     conn.close()
@@ -514,47 +589,6 @@ def delete_source(source_id: str):
     invalidate_all_caches()
     _persist_state(deleted_filenames=[deleted_name] if deleted_name else None)
     return {"status": "deleted", "source_id": source_id}
-
-@router.post("/datasets/load_sample")
-def load_sample_dataset():
-    _hydrate_state(force=True)
-    sample_file = settings.sample_dir / "Oct 21.xlsx"
-    if not sample_file.exists():
-        static_sample = settings.base_dir / "data" / "sample" / "Oct 21.xlsx"
-        fallback_path = Path("C:/Users/jahnm/Documents/solar/Oct 21.xlsx")
-        src_sample = static_sample if static_sample.exists() else (fallback_path if fallback_path.exists() else None)
-        if src_sample is not None:
-            import shutil
-            sample_file.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(str(src_sample), str(sample_file))
-        else:
-            raise HTTPException(status_code=404, detail="Sample dataset Oct 21.xlsx not found.")
-
-    with open(sample_file, "rb") as f:
-        contents = f.read()
-    file_id, target_path = save_uploaded_file("Oct 21.xlsx", contents)
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    sheets = list_excel_sheets(target_path)
-    file_hash = compute_file_hash(contents)
-
-    conn = get_connection()
-    conn.execute(
-        """INSERT INTO datasets (id, project_id, filename, file_hash, file_format, filepath, sheet_name, is_active, is_included, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)""",
-        (file_id, "default", "Oct 21.xlsx", file_hash, "XLSX", str(target_path), sheets[0] if sheets else "2026-10-21", now)
-    )
-    conn.commit()
-    conn.close()
-    invalidate_all_caches()
-    _persist_state(upload_files=[target_path])
-
-    return {
-        "dataset_id": file_id,
-        "filename": "Oct 21.xlsx",
-        "file_hash": file_hash,
-        "available_sheets": sheets,
-        "selected_sheet": sheets[0] if sheets else "2026-10-21"
-    }
 
 @router.get("/datasets/{dataset_id}/preview")
 def preview_dataset(dataset_id: str, sheet_name: Optional[str] = None):
@@ -764,10 +798,25 @@ def get_executive_summary(dataset_id: str):
     records = _get_records(dataset_id)
     settings_dict = get_settings()
 
-    solar = calculate_solar_metrics(records, pv_capacity_kwp=settings_dict["pv_capacity_kwp"])
+    solar = calculate_solar_metrics(
+        records,
+        pv_capacity_kwp=settings_dict.get("pv_capacity_kwp", 0.0),
+        inverter_rating_kw=settings_dict.get("inverter_power_kw", 0.0)
+    )
     consumption = calculate_consumption_metrics(records)
-    battery = calculate_battery_metrics(records, nominal_capacity_kwh=settings_dict["battery_capacity_kwh"], reserve_soc=settings_dict["reserve_soc"])
-    grid = calculate_grid_metrics(records, reserve_soc=settings_dict["reserve_soc"])
+    battery = calculate_battery_metrics(
+        records,
+        nominal_capacity_kwh=settings_dict.get("battery_capacity_kwh", 0.0),
+        reserve_soc=settings_dict.get("reserve_soc", 20.0),
+        bms_max_current_a=settings_dict.get("bms_max_charge_a", 0.0),
+        battery_voltage=settings_dict.get("battery_voltage", 0.0)
+    )
+    grid = calculate_grid_metrics(
+        records,
+        reserve_soc=settings_dict.get("reserve_soc", 20.0),
+        inverter_power_kw=settings_dict.get("inverter_power_kw", 0.0),
+        import_tariff=settings_dict.get("import_tariff", 0.0)
+    )
     balance = reconcile_energy_balance(records)
     quality = calculate_data_quality_report(records)
 
@@ -882,7 +931,11 @@ def get_timeline_data(dataset_id: str, date: Optional[str] = Query(None)):
 def get_solar_analysis(dataset_id: str):
     records = _get_records(dataset_id)
     settings_dict = get_settings()
-    return calculate_solar_metrics(records, pv_capacity_kwp=settings_dict["pv_capacity_kwp"])
+    return calculate_solar_metrics(
+        records,
+        pv_capacity_kwp=settings_dict.get("pv_capacity_kwp", 0.0),
+        inverter_rating_kw=settings_dict.get("inverter_power_kw", 0.0)
+    )
 
 @router.get("/datasets/{dataset_id}/consumption")
 def get_consumption_analysis(dataset_id: str):
@@ -893,13 +946,24 @@ def get_consumption_analysis(dataset_id: str):
 def get_battery_analysis(dataset_id: str):
     records = _get_records(dataset_id)
     settings_dict = get_settings()
-    return calculate_battery_metrics(records, nominal_capacity_kwh=settings_dict["battery_capacity_kwh"], reserve_soc=settings_dict["reserve_soc"])
+    return calculate_battery_metrics(
+        records,
+        nominal_capacity_kwh=settings_dict.get("battery_capacity_kwh", 0.0),
+        reserve_soc=settings_dict.get("reserve_soc", 20.0),
+        bms_max_current_a=settings_dict.get("bms_max_charge_a", 0.0),
+        battery_voltage=settings_dict.get("battery_voltage", 0.0)
+    )
 
 @router.get("/datasets/{dataset_id}/grid")
 def get_grid_analysis(dataset_id: str):
     records = _get_records(dataset_id)
     settings_dict = get_settings()
-    return calculate_grid_metrics(records, reserve_soc=settings_dict["reserve_soc"])
+    return calculate_grid_metrics(
+        records,
+        reserve_soc=settings_dict.get("reserve_soc", 20.0),
+        inverter_power_kw=settings_dict.get("inverter_power_kw", 0.0),
+        import_tariff=settings_dict.get("import_tariff", 0.0)
+    )
 
 @router.get("/datasets/{dataset_id}/balance")
 def get_balance_analysis(dataset_id: str):
@@ -932,15 +996,27 @@ def get_anomalies(dataset_id: str):
 def run_scenario(dataset_id: str, payload: ScenarioRequest):
     records = _get_records(dataset_id)
     settings_dict = get_settings()
+    mppt_min = float(settings_dict.get("mppt_voltage_min_v") or 0.0)
+    mppt_max = float(settings_dict.get("mppt_voltage_max_v") or 0.0)
+    mppt_range_str = f"{mppt_min:.0f}-{mppt_max:.0f} V DC" if mppt_max > 0 else "--"
+    pv_max_v = float(settings_dict.get("pv_voltage_max_v") or 0.0)
+    pv_max_str = f"{pv_max_v:.0f} V DC" if pv_max_v > 0 else "--"
     return simulate_system_scenarios(
         records=records,
-        baseline_battery_kwh=settings_dict["battery_capacity_kwh"],
+        baseline_battery_kwh=settings_dict.get("battery_capacity_kwh", 0.0),
         add_battery_kwh=payload.add_battery_kwh,
-        baseline_pv_kwp=settings_dict["pv_capacity_kwp"],
+        baseline_pv_kwp=settings_dict.get("pv_capacity_kwp", 0.0),
         add_pv_kwp=payload.add_pv_kwp,
         new_reserve_soc=payload.new_reserve_soc,
         shift_load_kwh=payload.shift_load_kwh,
-        tariff_rate=settings_dict["import_tariff"]
+        tariff_rate=settings_dict.get("import_tariff", 0.0),
+        inverter_rated_kw=settings_dict.get("inverter_power_kw", 0.0),
+        inverter_peak_va=settings_dict.get("inverter_max_apparent_va", 0.0),
+        inverter_max_current_a=settings_dict.get("inverter_max_battery_current_a", 0.0),
+        bms_max_current_a=settings_dict.get("bms_max_charge_a", 0.0),
+        battery_voltage=settings_dict.get("battery_voltage", 0.0),
+        mppt_range_v=mppt_range_str,
+        pv_max_voltage_v=pv_max_str
     )
 
 @router.get("/datasets/{dataset_id}/finance")
@@ -948,13 +1024,13 @@ def get_finance_analysis(
     dataset_id: str,
     tariff_type: str = "flat",
     flat_rate: Optional[float] = None,
-    peak_rate: float = 14.50,
-    off_peak_rate: float = 9.00,
-    system_capex: float = 250000.0
+    peak_rate: float = 0.0,
+    off_peak_rate: float = 0.0,
+    system_capex: float = 0.0
 ):
     records = _get_records(dataset_id)
     settings_dict = get_settings()
-    rate = flat_rate or settings_dict["import_tariff"]
+    rate = flat_rate if flat_rate is not None else settings_dict.get("import_tariff", 0.0)
     conf = TariffConfig(
         tariff_type=tariff_type,
         flat_rate=rate,
@@ -1037,10 +1113,25 @@ def generate_report(dataset_id: str, payload: ReportGenRequest):
     records = _get_records(dataset_id)
     settings_dict = get_settings()
 
-    solar = calculate_solar_metrics(records, pv_capacity_kwp=settings_dict["pv_capacity_kwp"])
+    solar = calculate_solar_metrics(
+        records,
+        pv_capacity_kwp=settings_dict.get("pv_capacity_kwp", 0.0),
+        inverter_rating_kw=settings_dict.get("inverter_power_kw", 0.0)
+    )
     consumption = calculate_consumption_metrics(records)
-    battery = calculate_battery_metrics(records, nominal_capacity_kwh=settings_dict["battery_capacity_kwh"], reserve_soc=settings_dict["reserve_soc"])
-    grid = calculate_grid_metrics(records, reserve_soc=settings_dict["reserve_soc"])
+    battery = calculate_battery_metrics(
+        records,
+        nominal_capacity_kwh=settings_dict.get("battery_capacity_kwh", 0.0),
+        reserve_soc=settings_dict.get("reserve_soc", 20.0),
+        bms_max_current_a=settings_dict.get("bms_max_charge_a", 0.0),
+        battery_voltage=settings_dict.get("battery_voltage", 0.0)
+    )
+    grid = calculate_grid_metrics(
+        records,
+        reserve_soc=settings_dict.get("reserve_soc", 20.0),
+        inverter_power_kw=settings_dict.get("inverter_power_kw", 0.0),
+        import_tariff=settings_dict.get("import_tariff", 0.0)
+    )
     balance = reconcile_energy_balance(records)
     quality = calculate_data_quality_report(records)
     operating_states = build_operating_state_timeline(records, reserve_soc=settings_dict["reserve_soc"])
@@ -1150,7 +1241,7 @@ def _resolve_billing_profile(conn: Any, request: Optional[Request] = None) -> TE
     current = get_billing_profile(conn)
     raw_profile = None
     if request is not None:
-        raw_profile = request.headers.get("X-Billing-Profile") or request.cookies.get("solarscope_billing_profile")
+        raw_profile = request.headers.get("X-Billing-Profile") or request.cookies.get("solarscope_billing_profile_v2")
     if raw_profile:
         try:
             decoded = urllib.parse.unquote(raw_profile)
@@ -1233,8 +1324,9 @@ def update_billing_profile_endpoint(profile: TEIBillingProfile, response: Respon
     conn.close()
     _persist_state()
     encoded = urllib.parse.quote(json.dumps(saved.model_dump()))
+    response.delete_cookie(key="solarscope_billing_profile", path="/")
     response.set_cookie(
-        key="solarscope_billing_profile",
+        key="solarscope_billing_profile_v2",
         value=encoded,
         max_age=31536000,
         path="/",
@@ -1266,7 +1358,7 @@ def check_billing_rates_now():
         "message": res["message"],
         "checked_at": res["checked_at"],
         "rate_change_alert": res["rate_change_alert"],
-        "effective_month": res["active_schedule"].effective_month if res.get("active_schedule") else "2026-10"
+        "effective_month": res["active_schedule"].effective_month if res.get("active_schedule") else ""
     }
 
 @router.post("/billing/rates/manual")
@@ -1402,6 +1494,15 @@ def save_deye_config_endpoint(payload: DeyeConfigPayload, response: Response):
     status["is_demo"] = status.get("app_id") == "demo" or status.get("username") == "demo"
     return status
 
+@router.delete("/deye/config")
+def clear_deye_config_endpoint(response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    client = DeyeCloudClient()
+    client.clear_config()
+    status = client.get_status()
+    status["is_demo"] = False
+    return status
+
 @router.post("/deye/test")
 def test_deye_connection_endpoint(response: Response, payload: Optional[DeyeConfigPayload] = Body(default=None)):
     _hydrate_state()
@@ -1417,9 +1518,10 @@ class DeyeSyncRangePayload(BaseModel):
     credentials: Optional[DeyeConfigPayload] = None
 
 @router.post("/deye/sync")
-def sync_deye_endpoint(payload: Optional[DeyeConfigPayload] = Body(default=None)):
+def sync_deye_endpoint(response: Response, payload: Optional[DeyeConfigPayload] = Body(default=None)):
     try:
         _hydrate_state(force=True)
+        response.headers["Cache-Control"] = "no-store"
         client = DeyeCloudClient()
         if payload and any([payload.station_id, payload.app_id, payload.app_secret, payload.username, payload.password]):
             client.save_config(payload.model_dump())
@@ -1431,9 +1533,10 @@ def sync_deye_endpoint(payload: Optional[DeyeConfigPayload] = Body(default=None)
         return {"status": "FAILED", "message": str(e), "records_inserted": 0}
 
 @router.post("/deye/sync_range")
-def sync_deye_range_endpoint(payload: DeyeSyncRangePayload):
+def sync_deye_range_endpoint(payload: DeyeSyncRangePayload, response: Response):
     try:
         _hydrate_state(force=True)
+        response.headers["Cache-Control"] = "no-store"
         client = DeyeCloudClient()
         if payload.credentials and any([payload.credentials.station_id, payload.credentials.app_id, payload.credentials.app_secret, payload.credentials.username, payload.credentials.password]):
             client.save_config(payload.credentials.model_dump())
@@ -1445,15 +1548,17 @@ def sync_deye_range_endpoint(payload: DeyeSyncRangePayload):
         return {"status": "FAILED", "message": str(e), "records_inserted": 0}
 
 @router.get("/deye/missing_dates")
-def get_deye_missing_dates_endpoint():
+def get_deye_missing_dates_endpoint(response: Response):
     _hydrate_state()
+    response.headers["Cache-Control"] = "no-store"
     client = DeyeCloudClient()
     missing = client.get_missing_dates()
     return {"missing_dates": missing, "count": len(missing)}
 
 @router.post("/deye/sync_missing")
-def sync_deye_missing_endpoint():
+def sync_deye_missing_endpoint(response: Response):
     _hydrate_state(force=True)
+    response.headers["Cache-Control"] = "no-store"
     client = DeyeCloudClient()
     res = client.sync_missing_dates()
     dataset_cache.clear()
@@ -1475,15 +1580,41 @@ def get_deye_health_endpoint(response: Response):
     return deye_mcp_client.get_station_health()
 
 @router.get("/weather/intelligence")
-def get_weather_endpoint():
+def get_weather_endpoint(response: Response):
     _hydrate_state()
-    conn = get_connection()
-    sys_row = conn.execute("SELECT pv_capacity_kwp, battery_capacity_kwh, reserve_soc FROM system_settings WHERE project_id = 'default'").fetchone()
-    conn.close()
-    kwp = sys_row["pv_capacity_kwp"] if sys_row else 6.2
-    batt = sys_row["battery_capacity_kwh"] if sys_row else 16.08
-    res_soc = sys_row["reserve_soc"] if sys_row else 20.0
-    return get_weather_intelligence(installed_kwp=kwp, battery_capacity_kwh=batt, reserve_soc=res_soc)
+    response.headers["Cache-Control"] = "no-store"
+    settings_dict = get_settings()
+    lat = float(settings_dict.get("latitude") or 0.0)
+    lon = float(settings_dict.get("longitude") or 0.0)
+    loc_name = (settings_dict.get("location_name") or "").strip()
+    tz_str = (settings_dict.get("timezone") or "Asia/Manila").strip()
+    kwp = float(settings_dict.get("pv_capacity_kwp") or 0.0)
+    batt = float(settings_dict.get("battery_capacity_kwh") or 0.0)
+    res_soc = float(settings_dict.get("reserve_soc") if settings_dict.get("reserve_soc") is not None else 20.0)
+    current_soc = 0.0
+    daily_cons = 0.0
+    records = _get_records("all")
+    if records:
+        current_soc = float(records[-1].soc_percent or 0.0)
+        daily_sums = calculate_daily_summaries(
+            records=records,
+            pv_capacity_kwp=kwp,
+            nominal_battery_kwh=batt,
+            reserve_soc=res_soc
+        )
+        if daily_sums:
+            daily_cons = round(sum(d.get("load_kwh", 0.0) for d in daily_sums) / len(daily_sums), 2)
+    return get_weather_intelligence(
+        lat=lat,
+        lon=lon,
+        location_name=loc_name,
+        timezone_str=tz_str,
+        installed_kwp=kwp,
+        battery_capacity_kwh=batt,
+        reserve_soc=res_soc,
+        current_soc=current_soc,
+        daily_consumption_kwh=daily_cons
+    )
 
 @router.post("/ingestion/preview")
 async def preview_uploaded_files(file: UploadFile = File(...)):
@@ -1505,34 +1636,42 @@ def get_grid_classification_endpoint(dataset_id: str):
     settings_dict = get_settings()
     return calculate_grid_metrics(
         records,
-        reserve_soc=settings_dict["reserve_soc"],
-        inverter_power_kw=settings_dict["inverter_power_kw"],
-        import_tariff=settings_dict["import_tariff"]
+        reserve_soc=settings_dict.get("reserve_soc", 20.0),
+        inverter_power_kw=settings_dict.get("inverter_power_kw", 0.0),
+        import_tariff=settings_dict.get("import_tariff", 0.0)
     )
 
 class UpgradeSimulationRequest(BaseModel):
-    add_battery_kwh: float = 5.0
-    add_pv_kwp: float = 1.24
+    add_battery_kwh: float = 0.0
+    add_pv_kwp: float = 0.0
     new_reserve_soc: float = 20.0
-    shift_load_kwh: float = 2.0
+    shift_load_kwh: float = 0.0
 
 @router.post("/datasets/{dataset_id}/simulation_upgrade")
 def simulate_upgrade_endpoint(dataset_id: str, payload: UpgradeSimulationRequest):
     records = _get_records(dataset_id)
     settings_dict = get_settings()
+    mppt_min = float(settings_dict.get("mppt_voltage_min_v") or 0.0)
+    mppt_max = float(settings_dict.get("mppt_voltage_max_v") or 0.0)
+    mppt_range_str = f"{mppt_min:.0f}-{mppt_max:.0f} V DC" if mppt_max > 0 else "--"
+    pv_max_v = float(settings_dict.get("pv_voltage_max_v") or 0.0)
+    pv_max_str = f"{pv_max_v:.0f} V DC" if pv_max_v > 0 else "--"
     return simulate_system_scenarios(
         records,
-        baseline_battery_kwh=settings_dict["battery_capacity_kwh"],
+        baseline_battery_kwh=settings_dict.get("battery_capacity_kwh", 0.0),
         add_battery_kwh=payload.add_battery_kwh,
-        baseline_pv_kwp=settings_dict["pv_capacity_kwp"],
+        baseline_pv_kwp=settings_dict.get("pv_capacity_kwp", 0.0),
         add_pv_kwp=payload.add_pv_kwp,
         new_reserve_soc=payload.new_reserve_soc,
         shift_load_kwh=payload.shift_load_kwh,
-        tariff_rate=settings_dict["import_tariff"],
-        inverter_rated_kw=settings_dict["inverter_power_kw"],
-        inverter_max_current_a=settings_dict.get("inverter_max_battery_current_a", 135.0),
-        bms_max_current_a=settings_dict.get("bms_max_charge_a", 100.0),
-        battery_voltage=settings_dict.get("battery_voltage", 51.2)
+        tariff_rate=settings_dict.get("import_tariff", 0.0),
+        inverter_rated_kw=settings_dict.get("inverter_power_kw", 0.0),
+        inverter_peak_va=settings_dict.get("inverter_max_apparent_va", 0.0),
+        inverter_max_current_a=settings_dict.get("inverter_max_battery_current_a", 0.0),
+        bms_max_current_a=settings_dict.get("bms_max_charge_a", 0.0),
+        battery_voltage=settings_dict.get("battery_voltage", 0.0),
+        mppt_range_v=mppt_range_str,
+        pv_max_voltage_v=pv_max_str
     )
 
 class AnalystQueryRequest(BaseModel):

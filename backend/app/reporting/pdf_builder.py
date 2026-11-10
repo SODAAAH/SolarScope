@@ -92,12 +92,12 @@ def build_pdf_report(
     story.append(Spacer(1, 0.25 * inch))
 
     meta_table_data = [
-        [Paragraph("Report Date", cell_bold), Paragraph(summary_data.get("report_date", "2026-10-29"), cell_style)],
-        [Paragraph("Source File", cell_bold), Paragraph(summary_data.get("filename", "Oct 21.xlsx"), cell_style)],
-        [Paragraph("Target Sheet", cell_bold), Paragraph(summary_data.get("sheet_name", "2026-10-21"), cell_style)],
-        [Paragraph("Observation Range (12h)", cell_bold), Paragraph(f"{summary_data.get('start_time_12h', summary_data.get('start_time', '12:00 AM'))} to {summary_data.get('end_time_12h', summary_data.get('end_time', '12:00 AM'))}", cell_style)],
+        [Paragraph("Report Date", cell_bold), Paragraph(summary_data.get("report_date", ""), cell_style)],
+        [Paragraph("Source File", cell_bold), Paragraph(summary_data.get("filename", "SolarScope Dataset"), cell_style)],
+        [Paragraph("Target Sheet", cell_bold), Paragraph(summary_data.get("sheet_name", "Audited"), cell_style)],
+        [Paragraph("Observation Range (12h)", cell_bold), Paragraph(f"{summary_data.get('start_time_12h', summary_data.get('start_time', ''))} to {summary_data.get('end_time_12h', summary_data.get('end_time', ''))}", cell_style)],
         [Paragraph("Integration Method", cell_bold), Paragraph("Trapezoidal Numerical Integration", cell_style)],
-        [Paragraph("Quality Assessment", cell_bold), Paragraph(f"{summary_data.get('quality_score', 95.0)}% ({summary_data.get('quality_status', 'EXCELLENT')})", cell_style)]
+        [Paragraph("Quality Assessment", cell_bold), Paragraph(f"{summary_data.get('quality_score', 0.0)}% ({summary_data.get('quality_status', 'UNKNOWN')})", cell_style)]
     ]
     meta_table = Table(meta_table_data, colWidths=[2.2 * inch, 4.8 * inch])
     meta_table.setStyle(TableStyle([
@@ -119,17 +119,17 @@ def build_pdf_report(
 
     kpi_data = [
         [Paragraph("Metric", cell_bold), Paragraph("Value", cell_bold), Paragraph("Unit", cell_bold), Paragraph("Accounting Method", cell_bold)],
-        [Paragraph("Solar Generation", cell_style), Paragraph(str(summary_data.get("pv_kwh", 21.71)), cell_bold), Paragraph("kWh", cell_style), Paragraph("Trapezoidal Integration", cell_style)],
-        [Paragraph("Household Demand", cell_style), Paragraph(str(summary_data.get("load_kwh", 33.51)), cell_bold), Paragraph("kWh", cell_style), Paragraph("Trapezoidal Integration", cell_style)],
-        [Paragraph("Grid Imported Energy", cell_style), Paragraph(str(summary_data.get("grid_import_kwh", 12.38)), cell_bold), Paragraph("kWh", cell_style), Paragraph("Trapezoidal Integration", cell_style)],
-        [Paragraph("Battery Discharged", cell_style), Paragraph(str(summary_data.get("batt_disch_kwh", 8.68)), cell_bold), Paragraph("kWh", cell_style), Paragraph("Trapezoidal Integration", cell_style)],
-        [Paragraph("Battery Charged", cell_style), Paragraph(str(summary_data.get("batt_chg_kwh", 6.77)), cell_bold), Paragraph("kWh", cell_style), Paragraph("Trapezoidal Integration", cell_style)],
-        [Paragraph("Reconciliation Residual", cell_style), Paragraph(str(summary_data.get("residual_kwh", 2.50)), cell_bold), Paragraph("kWh", cell_style), Paragraph("Sources - Sinks (Tare/Losses)", cell_style)],
-        [Paragraph("Solar Self-Sufficiency", cell_style), Paragraph(f"{round(summary_data.get('self_sufficiency', 0.63) * 100, 1)}%", cell_bold), Paragraph("%", cell_style), Paragraph("(Direct Solar + Disch) / Load", cell_style)],
-        [Paragraph("Grid Dependence Ratio", cell_style), Paragraph(f"{round(summary_data.get('grid_dependence', 0.37) * 100, 1)}%", cell_bold), Paragraph("%", cell_style), Paragraph("Grid Import / Total Load", cell_style)],
-        [Paragraph("Peak Solar Power", cell_style), Paragraph(str(summary_data.get("peak_pv_kw", 4.17)), cell_bold), Paragraph("kW", cell_style), Paragraph("Instantaneous Maximum", cell_style)],
-        [Paragraph("Peak Household Load", cell_style), Paragraph(str(summary_data.get("peak_load_kw", 3.27)), cell_bold), Paragraph("kW", cell_style), Paragraph("Instantaneous Maximum", cell_style)],
-        [Paragraph("Base-Load Estimate", cell_style), Paragraph(str(summary_data.get("base_load_kw", 0.69)), cell_bold), Paragraph("kW", cell_style), Paragraph("5th Percentile Night Load (2:00 AM - 5:00 AM)", cell_style)]
+        [Paragraph("Solar Generation", cell_style), Paragraph(str(summary_data.get("pv_kwh", 0.0)), cell_bold), Paragraph("kWh", cell_style), Paragraph("Trapezoidal Integration", cell_style)],
+        [Paragraph("Household Demand", cell_style), Paragraph(str(summary_data.get("load_kwh", 0.0)), cell_bold), Paragraph("kWh", cell_style), Paragraph("Trapezoidal Integration", cell_style)],
+        [Paragraph("Grid Imported Energy", cell_style), Paragraph(str(summary_data.get("grid_import_kwh", 0.0)), cell_bold), Paragraph("kWh", cell_style), Paragraph("Trapezoidal Integration", cell_style)],
+        [Paragraph("Battery Discharged", cell_style), Paragraph(str(summary_data.get("batt_disch_kwh", 0.0)), cell_bold), Paragraph("kWh", cell_style), Paragraph("Trapezoidal Integration", cell_style)],
+        [Paragraph("Battery Charged", cell_style), Paragraph(str(summary_data.get("batt_chg_kwh", 0.0)), cell_bold), Paragraph("kWh", cell_style), Paragraph("Trapezoidal Integration", cell_style)],
+        [Paragraph("Reconciliation Residual", cell_style), Paragraph(str(summary_data.get("residual_kwh", 0.0)), cell_bold), Paragraph("kWh", cell_style), Paragraph("Sources - Sinks (Tare/Losses)", cell_style)],
+        [Paragraph("Solar Self-Sufficiency", cell_style), Paragraph(f"{round(summary_data.get('self_sufficiency', 0.0) * 100, 1)}%", cell_bold), Paragraph("%", cell_style), Paragraph("(Direct Solar + Disch) / Load", cell_style)],
+        [Paragraph("Grid Dependence Ratio", cell_style), Paragraph(f"{round(summary_data.get('grid_dependence', 0.0) * 100, 1)}%", cell_bold), Paragraph("%", cell_style), Paragraph("Grid Import / Total Load", cell_style)],
+        [Paragraph("Peak Solar Power", cell_style), Paragraph(str(summary_data.get("peak_pv_kw", 0.0)), cell_bold), Paragraph("kW", cell_style), Paragraph("Instantaneous Maximum", cell_style)],
+        [Paragraph("Peak Household Load", cell_style), Paragraph(str(summary_data.get("peak_load_kw", 0.0)), cell_bold), Paragraph("kW", cell_style), Paragraph("Instantaneous Maximum", cell_style)],
+        [Paragraph("Base-Load Estimate", cell_style), Paragraph(str(summary_data.get("base_load_kw", 0.0)), cell_bold), Paragraph("kW", cell_style), Paragraph("5th Percentile Night Load (2:00 AM - 5:00 AM)", cell_style)]
     ]
     kpi_table = Table(kpi_data, colWidths=[2.4 * inch, 1.2 * inch, 0.8 * inch, 2.6 * inch])
     kpi_table.setStyle(TableStyle([
@@ -143,24 +143,32 @@ def build_pdf_report(
     story.append(kpi_table)
     story.append(Spacer(1, 0.2 * inch))
 
+    total_sources = float(summary_data.get("total_sources_kwh", 0.0) or 0.0)
+    total_sinks = float(summary_data.get("total_sinks_kwh", 0.0) or 0.0)
+    residual_val = float(summary_data.get("residual_kwh", 0.0) or 0.0)
+    residual_pct = round((residual_val / total_sources) * 100.0, 1) if total_sources > 0 else 0.0
+
     story.append(Paragraph("2. Energy Balance & Loss Accounting", h1_style))
     story.append(Paragraph(
-        f"Under hybrid inverter topology, measured sources totaled {summary_data.get('total_sources_kwh', 42.77)} kWh and sinks totaled {summary_data.get('total_sinks_kwh', 40.28)} kWh, producing a residual of {summary_data.get('residual_kwh', 2.50)} kWh (5.8% of total sources). This residual is physically explained by the hybrid inverter continuous standby tare power (~80 W continuous = ~1.92 kWh/day) and roundtrip DC-AC/AC-DC conversion losses (~0.60 kWh).",
+        f"Under hybrid inverter topology, measured sources totaled {total_sources:.2f} kWh and sinks totaled {total_sinks:.2f} kWh, producing a residual of {residual_val:.2f} kWh ({residual_pct:.1f}% of total sources). This residual reflects continuous inverter standby tare power and bidirectional DC-AC conversion losses.",
         body_style
     ))
     story.append(Spacer(1, 0.15 * inch))
 
+    batt_disch = float(summary_data.get("batt_disch_kwh", 0.0) or 0.0)
+    batt_chg = float(summary_data.get("batt_chg_kwh", 0.0) or 0.0)
     story.append(Paragraph("3. Battery Cycling & Reserve Dynamics", h1_style))
     story.append(Paragraph(
-        "Battery state of charge began at 34% and discharged to support household demand until exactly 04:10:00, when SOC reached the 25% minimum reserve threshold. At this exact transition, battery discharge ceased and utility grid imports commenced to prevent deep cell degradation. Solar generation during peak daylight hours successfully recharged the battery to 62% SOC before evening discharge began.",
+        f"Across the audited window, the battery supplied {batt_disch:.2f} kWh during discharge periods and absorbed {batt_chg:.2f} kWh during charging windows. Utility grid imports compensated whenever demand exceeded storage limits or reserve state-of-charge cutoffs were reached.",
         body_style
     ))
     story.append(Spacer(1, 0.15 * inch))
 
-    story.append(Paragraph("4. Technical Upgrade Recommendations", h1_style))
+    grid_imp = float(summary_data.get("grid_import_kwh", 0.0) or 0.0)
+    story.append(Paragraph("4. Technical Recommendations", h1_style))
     story.append(Paragraph(
-        "• Battery Capacity Expansion: Expanding battery storage by 5 kWh would absorb remaining daytime surplus solar and provide approximately 3.5 additional hours of nighttime autonomy, reducing daily grid import by up to 35%.\n"
-        "• Flexible Load Shifting: Shifting 2.0 kWh of nighttime water pumping or laundry loads to the 11:00-14:00 peak solar window would directly replace grid consumption at zero capital expenditure.",
+        f"• Load Alignment: Where daytime PV surplus exists, shifting deferrable loads into peak solar hours directly offsets remaining grid import ({grid_imp:.2f} kWh observed).\n"
+        "• Upgrade Simulation: Evaluate battery storage or PV array expansions using the What-If & Upgrades simulator calibrated with your station ratings.",
         body_style
     ))
     story.append(Spacer(1, 0.2 * inch))

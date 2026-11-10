@@ -56,31 +56,38 @@ class DeyeCloudClient:
             (self.project_id,)
         ).fetchall()
         settings_row = conn.execute(
-            "SELECT inverter_serial, inverter_model, logger_serial, logger_firmware, logger_interval_min FROM system_settings WHERE project_id = ?",
+            "SELECT station_name, location_name, inverter_serial, inverter_model, inverter_power_kw, logger_serial, logger_firmware, logger_interval_min FROM system_settings WHERE project_id = ?",
             (self.project_id,)
         ).fetchone()
         conn.close()
 
         is_demo = self.app_id == "demo" or self.username == "demo"
-        is_configured = is_demo or bool(self.app_id and self.app_secret and self.username and self.password)
+        is_configured = is_demo or bool(self.app_id and self.app_secret and self.username and self.password and self.station_id)
+
+        s_name = (settings_row["station_name"] or "").strip() if settings_row and "station_name" in settings_row.keys() else ""
+        loc_name = (settings_row["location_name"] or "").strip() if settings_row and "location_name" in settings_row.keys() else ""
+        if s_name and loc_name:
+            inst_label = f"{s_name} ({loc_name})"
+        else:
+            inst_label = s_name or loc_name or "Station Not Configured"
 
         device_hierarchy = {
-            "installation_name": "Mam Micah (Teresa, Tibag, Tarlac City)",
+            "installation_name": inst_label,
             "station": {
-                "station_id": self.station_id or "62805884",
+                "station_id": self.station_id or "",
                 "status": "CONFIGURED" if is_configured else "UNCONFIGURED"
             },
             "logger": {
-                "logger_serial": settings_row["logger_serial"] if settings_row else "1251892903",
-                "firmware_version": settings_row["logger_firmware"] if settings_row else "MW4_32_5407_SS_04_00.00.00.13",
-                "reporting_interval_min": settings_row["logger_interval_min"] if settings_row else 5,
-                "status": "ONLINE"
+                "logger_serial": (settings_row["logger_serial"] or "") if settings_row else "",
+                "firmware_version": (settings_row["logger_firmware"] or "") if settings_row else "",
+                "reporting_interval_min": (settings_row["logger_interval_min"] or 5) if settings_row else 5,
+                "status": "ONLINE" if is_configured else "UNCONFIGURED"
             },
             "inverter": {
-                "inverter_serial": settings_row["inverter_serial"] if settings_row else "2604282202",
-                "model": settings_row["inverter_model"] if settings_row else "SUN-6K-SG06LP1-EU-CM2",
-                "rated_power_kw": 6.0,
-                "status": "OPERATIONAL"
+                "inverter_serial": (settings_row["inverter_serial"] or "") if settings_row else "",
+                "model": (settings_row["inverter_model"] or "") if settings_row else "",
+                "rated_power_kw": float(settings_row["inverter_power_kw"] or 0.0) if settings_row else 0.0,
+                "status": "OPERATIONAL" if is_configured else "UNCONFIGURED"
             }
         }
 
@@ -136,6 +143,38 @@ class DeyeCloudClient:
                 now_iso
             )
         )
+        conn.commit()
+        conn.close()
+        try:
+            c2 = get_connection()
+            c2.execute("DELETE FROM deye_live_cache")
+            c2.commit()
+            c2.close()
+        except Exception:
+            pass
+        try:
+            from backend.app.integrations.deye_mcp import deye_mcp_client
+            deye_mcp_client.invalidate_cache(clear_last_real=True)
+        except Exception:
+            pass
+        persist_state()
+        self._load_config()
+
+    def clear_config(self) -> None:
+        ensure_hydrated(force=True)
+        conn = get_connection()
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        conn.execute(
+            """UPDATE deye_cloud_configs SET
+                station_id = '', app_id = '', app_secret = '',
+                username = '', password_encrypted = '',
+                auto_sync = 0, sync_status = 'IDLE', sync_message = 'Not connected',
+                last_sync_time = NULL, updated_at = ?
+               WHERE project_id = ?""",
+            (now_iso, self.project_id)
+        )
+        conn.execute("DELETE FROM deye_sync_logs WHERE project_id = ?", (self.project_id,))
+        conn.execute("DELETE FROM deye_live_cache")
         conn.commit()
         conn.close()
         try:
@@ -207,12 +246,12 @@ class DeyeCloudClient:
     def test_connection(self) -> Dict[str, Any]:
         self._load_config()
         if self.app_id == "demo" or self.username == "demo":
-            self._update_status("CONNECTED", "Simulated connection to Deye Cloud Logger 1251892903 successful.")
+            self._update_status("CONNECTED", "Demo mode active with simulated telemetry stream.")
             return {
                 "success": True,
-                "message": "Demo mode: Simulated connection to Deye Logger 1251892903 successful.",
+                "message": "Demo mode active with simulated telemetry stream.",
                 "is_demo": True,
-                "station_id": self.station_id or "STATION-2026"
+                "station_id": self.station_id or "DEMO"
             }
 
         if not (self.app_id and self.app_secret and self.username and self.password):
@@ -221,12 +260,18 @@ class DeyeCloudClient:
                 "message": "Incomplete credentials. Enter Station ID, App ID, App Secret, Account Email/Username, and Account Password."
             }
 
+        if not (self.station_id and self.station_id.isdigit()):
+            return {
+                "success": False,
+                "message": "Numeric Station ID is required to test Deye Cloud connection."
+            }
+
         try:
             token = self._get_auth_token()
             if not token:
                 return {"success": False, "message": "Authentication failed. Check your App ID, App Secret, email/username, or account password."}
 
-            st_id = int(self.station_id) if (self.station_id and self.station_id.isdigit()) else 62805884
+            st_id = int(self.station_id)
             req = urllib.request.Request(
                 "https://eu1-developer.deyecloud.com/v1.0/station/latest",
                 data=json.dumps({"stationId": st_id}).encode("utf-8"),
@@ -239,9 +284,15 @@ class DeyeCloudClient:
             if latest_data.get("success") is False:
                 raise Exception(latest_data.get("msg") or "Station query failed")
 
+            conn_s = get_connection()
+            s_row = conn_s.execute("SELECT station_name FROM system_settings WHERE project_id = ?", (self.project_id,)).fetchone()
+            conn_s.close()
+            station_label = (s_row["station_name"] or "").strip() if s_row else ""
+            label_part = f"{station_label} (Station {st_id})" if station_label else f"Station {st_id}"
+
             pv_w = latest_data.get("generationPower", 0.0) or 0.0
             soc = latest_data.get("batterySOC", 0.0) or 0.0
-            msg = f"Connected to Mam Micah (Station {st_id}). Live Solar: {pv_w/1000.0:.2f} kW, Battery: {soc:.0f}% SOC."
+            msg = f"Connected to {label_part}. Live Solar: {pv_w/1000.0:.2f} kW, Battery: {soc:.0f}% SOC."
             self._update_status("CONNECTED", msg)
             persist_state()
             return {
@@ -353,7 +404,9 @@ class DeyeCloudClient:
         if not token:
             raise Exception("Authentication failed. Check your App ID, App Secret, or account password.")
 
-        st_id = int(self.station_id) if (self.station_id and self.station_id.isdigit()) else 62805884
+        if not (self.station_id and self.station_id.isdigit()):
+            raise Exception("Numeric Station ID is required.")
+        st_id = int(self.station_id)
         all_records = []
         seen_timestamps = set()
         last_api_error = None
@@ -552,7 +605,7 @@ class DeyeCloudClient:
             res = self.persist_telemetry_dataset(records, start_date_str, end_date_str)
             is_demo = self.app_id == "demo" or self.username == "demo"
             res["is_demo"] = is_demo
-            res["station_id"] = self.station_id or ("STATION-2026" if is_demo else "62805884")
+            res["station_id"] = self.station_id or ("DEMO" if is_demo else "")
             try:
                 from backend.app.integrations.deye_mcp import deye_mcp_client
                 deye_mcp_client.invalidate_cache(clear_last_real=False)
