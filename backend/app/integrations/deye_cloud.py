@@ -10,6 +10,7 @@ import urllib.parse
 import urllib.error
 from backend.app.config import settings
 from backend.app.storage.db import get_connection
+from backend.app.storage.blob_sync import ensure_hydrated, persist_state
 
 class DeyeCloudClient:
     def __init__(self, project_id: str = "default"):
@@ -18,6 +19,7 @@ class DeyeCloudClient:
         self._load_config()
 
     def _load_config(self):
+        ensure_hydrated(force=False)
         conn = get_connection()
         row = conn.execute("SELECT * FROM deye_cloud_configs WHERE project_id = ?", (self.project_id,)).fetchone()
         conn.close()
@@ -84,6 +86,7 @@ class DeyeCloudClient:
 
         return {
             "is_configured": is_configured,
+            "is_demo": is_demo,
             "has_app_secret": bool(self.app_secret),
             "has_password": bool(self.password),
             "station_id": self.station_id,
@@ -100,6 +103,7 @@ class DeyeCloudClient:
         }
 
     def save_config(self, config_data: Dict[str, Any]) -> None:
+        ensure_hydrated(force=True)
         conn = get_connection()
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         conn.execute(
@@ -134,6 +138,12 @@ class DeyeCloudClient:
         )
         conn.commit()
         conn.close()
+        try:
+            from backend.app.integrations.deye_mcp import deye_mcp_client
+            deye_mcp_client.invalidate_cache(clear_last_real=True)
+        except Exception:
+            pass
+        persist_state()
         self._load_config()
 
     def _get_auth_token(self) -> Optional[str]:
@@ -233,16 +243,17 @@ class DeyeCloudClient:
             soc = latest_data.get("batterySOC", 0.0) or 0.0
             msg = f"Connected to Mam Micah (Station {st_id}). Live Solar: {pv_w/1000.0:.2f} kW, Battery: {soc:.0f}% SOC."
             self._update_status("CONNECTED", msg)
+            persist_state()
             return {
                 "success": True,
                 "message": msg,
-                "access_token": token,
                 "station_id": str(st_id),
                 "is_demo": False
             }
         except Exception as e:
             msg = str(e)
             self._update_status("ERROR", msg)
+            persist_state()
             return {"success": False, "message": msg}
 
     def get_missing_dates(self) -> List[str]:
@@ -455,6 +466,8 @@ class DeyeCloudClient:
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         total_rows = 0
         created_datasets = []
+        created_files: List[Path] = []
+        settings.upload_dir.mkdir(parents=True, exist_ok=True)
 
         legacy_composite_id = f"deye-{start_date_str}-to-{end_date_str}"
         conn.execute("DELETE FROM datasets WHERE id = ? OR filename LIKE 'Deye Cloud (% to %).csv' OR id LIKE 'deye-%-to-%'", (legacy_composite_id,))
@@ -510,17 +523,20 @@ class DeyeCloudClient:
                 (mapping_id, dataset_id, json.dumps(fieldnames), json.dumps(canonical_map), json.dumps(sign_conventions), now_iso)
             )
             created_datasets.append(dataset_id)
+            created_files.append(file_path)
 
         conn.commit()
         conn.close()
 
-        from backend.app.api.endpoints import dataset_cache
+        from backend.app.api.endpoints import dataset_cache, invalidate_all_caches
         dataset_cache.clear()
+        invalidate_all_caches()
 
         msg = f"Synced {len(created_datasets)} daily dataset(s) ({total_rows} records) from {start_date_str} to {end_date_str}."
         log_id = f"log-{int(datetime.datetime.now().timestamp())}"
         self._record_log(log_id, now_iso, total_rows, total_rows, 0, "SUCCESS", msg)
         self._update_status("SUCCESS", msg, now_iso)
+        persist_state(upload_files=created_files)
         return {
             "status": "SUCCESS",
             "datasets_created": created_datasets,
@@ -537,8 +553,11 @@ class DeyeCloudClient:
             is_demo = self.app_id == "demo" or self.username == "demo"
             res["is_demo"] = is_demo
             res["station_id"] = self.station_id or ("STATION-2026" if is_demo else "62805884")
-            if not is_demo and self._last_token:
-                res["access_token"] = self._last_token
+            try:
+                from backend.app.integrations.deye_mcp import deye_mcp_client
+                deye_mcp_client.invalidate_cache(clear_last_real=False)
+            except Exception:
+                pass
             return res
         except Exception as e:
             err = str(e)
@@ -546,6 +565,7 @@ class DeyeCloudClient:
             log_id = f"log-{int(datetime.datetime.now().timestamp())}"
             self._record_log(log_id, now_iso, 0, 0, 0, "FAILED", err)
             self._update_status("FAILED", err)
+            persist_state()
             return {"status": "FAILED", "message": err, "records_inserted": 0}
 
     def sync_missing_dates(self) -> Dict[str, Any]:
@@ -553,13 +573,30 @@ class DeyeCloudClient:
         if not missing:
             return {"status": "SUCCESS", "message": "No missing dates detected. All days up to today are recorded.", "records_inserted": 0, "missing_dates": []}
 
+        spans: List[tuple[str, str]] = []
+        span_start = missing[0]
+        prev_dt = datetime.date.fromisoformat(missing[0])
+        for d_str in missing[1:]:
+            cur_dt = datetime.date.fromisoformat(d_str)
+            if (cur_dt - prev_dt).days == 1:
+                prev_dt = cur_dt
+            else:
+                spans.append((span_start, prev_dt.isoformat()))
+                span_start = d_str
+                prev_dt = cur_dt
+        spans.append((span_start, prev_dt.isoformat()))
+
         total_inserted = 0
-        details = []
-        for d in missing:
-            res = self.sync_range(d, d)
+        details: List[str] = []
+        for s_start, s_end in spans:
+            res = self.sync_range(s_start, s_end)
             if res.get("status") == "SUCCESS":
                 total_inserted += res.get("records_inserted", 0)
-                details.append(d)
+                cur_d = datetime.date.fromisoformat(s_start)
+                end_d = datetime.date.fromisoformat(s_end)
+                while cur_d <= end_d:
+                    details.append(cur_d.isoformat())
+                    cur_d += datetime.timedelta(days=1)
 
         msg = f"Backfilled {len(details)} missing dates ({', '.join(details)}): {total_inserted} total records."
         return {
@@ -571,7 +608,8 @@ class DeyeCloudClient:
 
     def sync_now(self) -> Dict[str, Any]:
         self._load_config()
-        if not (self.app_id and self.app_secret):
+        is_demo = self.app_id == "demo" or self.username == "demo"
+        if not is_demo and not (self.app_id and self.app_secret):
             now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
             log_id = f"log-{int(datetime.datetime.now().timestamp())}"
             msg = "Deye Cloud credentials not configured. Enter App ID and App Secret."

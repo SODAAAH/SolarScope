@@ -86,11 +86,14 @@ export const TrendsPage: React.FC = () => {
       textStyle: { fontSize: 11 }
     },
     legend: {
+      type: "scroll",
       data: ["Solar Generation", "Household Load", "Grid Import"],
       bottom: 0,
+      left: 0,
+      right: 0,
       textStyle: { color: "#64748B", fontSize: 11 }
     },
-    grid: { left: "4%", right: "4%", top: "8%", bottom: "16%", containLabel: true },
+    grid: { left: "4%", right: "4%", top: "10%", bottom: "18%", containLabel: true },
     xAxis: {
       type: "category",
       data: hourlyProfiles.map((p) => p.hour_label_12h),
@@ -134,10 +137,14 @@ export const TrendsPage: React.FC = () => {
     ...baseOpt,
     tooltip: { ...baseOpt.tooltip, trigger: "axis", textStyle: { fontSize: 11 } },
     legend: {
+      type: "scroll",
       data: ["Solar PV Duration", "Household Load Duration"],
       textStyle: { fontSize: 11, color: "#64748B" },
-      top: 0
+      top: 0,
+      left: 0,
+      right: 0
     },
+    grid: { left: "4%", right: "4%", top: "18%", bottom: "12%", containLabel: true },
     xAxis: {
       ...baseOpt.xAxis,
       name: "% Time Exceeded",
@@ -174,7 +181,7 @@ export const TrendsPage: React.FC = () => {
     <div className="space-y-6 max-w-7xl mx-auto pb-10">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             Historical Trends & Summaries
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -182,10 +189,10 @@ export const TrendsPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-fit">
+        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-full sm:w-fit max-w-full overflow-x-auto no-scrollbar">
           <button
             onClick={() => setTab("summaries")}
-            className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+            className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
               currentTab === "summaries"
                 ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -197,7 +204,7 @@ export const TrendsPage: React.FC = () => {
 
           <button
             onClick={() => setTab("compare")}
-            className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+            className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
               currentTab === "compare"
                 ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -209,7 +216,7 @@ export const TrendsPage: React.FC = () => {
 
           <button
             onClick={() => setTab("statistics")}
-            className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+            className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
               currentTab === "statistics"
                 ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -223,7 +230,7 @@ export const TrendsPage: React.FC = () => {
 
       {currentTab === "summaries" && (
         <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs card-stagger-1 interactive-card">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs card-stagger-1 interactive-card">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -238,7 +245,7 @@ export const TrendsPage: React.FC = () => {
           </div>
 
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs card-stagger-2 interactive-card">
-            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+            <div className="px-4 sm:px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                   Daily Verified Energy Ledger
@@ -247,7 +254,7 @@ export const TrendsPage: React.FC = () => {
                   Audited daily generation, consumption, grid import, and battery throughput
                 </p>
               </div>
-              <span className="text-xs font-mono font-medium text-slate-500 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded-md">
+              <span className="text-xs font-mono font-medium text-slate-500 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded-md w-fit">
                 {dailyData.length} observation days
               </span>
             </div>
@@ -255,25 +262,25 @@ export const TrendsPage: React.FC = () => {
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200 dark:border-slate-800 font-mono text-[11px]">
                   <tr>
-                    <th className="px-4 py-3">Date</th>
-                    <th className="px-4 py-3 text-right">Solar (kWh)</th>
-                    <th className="px-4 py-3 text-right">Load (kWh)</th>
-                    <th className="px-4 py-3 text-right">Grid Import (kWh)</th>
-                    <th className="px-4 py-3 text-right">Battery Chg (kWh)</th>
-                    <th className="px-4 py-3 text-right">Battery Disch (kWh)</th>
-                    <th className="px-4 py-3 text-right">Self-Sufficiency</th>
+                    <th className="px-3 sm:px-4 py-3 whitespace-nowrap">Date</th>
+                    <th className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">Solar (kWh)</th>
+                    <th className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">Load (kWh)</th>
+                    <th className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">Grid Import (kWh)</th>
+                    <th className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">Battery Chg (kWh)</th>
+                    <th className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">Battery Disch (kWh)</th>
+                    <th className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">Self-Sufficiency</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono">
                   {dailyData.map((d) => (
                     <tr key={d.date} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                      <td className="px-4 py-2.5 font-sans font-medium text-slate-800 dark:text-slate-200">{formatDateMMDDYYYY(d.date)}</td>
-                      <td className="px-4 py-2.5 text-right text-amber-600 dark:text-amber-400 font-bold">{d.pv_kwh.toFixed(2)}</td>
-                      <td className="px-4 py-2.5 text-right text-rose-600 dark:text-rose-400">{d.load_kwh.toFixed(2)}</td>
-                      <td className="px-4 py-2.5 text-right text-blue-600 dark:text-blue-400">{d.grid_import_kwh.toFixed(2)}</td>
-                      <td className="px-4 py-2.5 text-right">{d.battery_charge_kwh.toFixed(2)}</td>
-                      <td className="px-4 py-2.5 text-right">{d.battery_discharge_kwh.toFixed(2)}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                      <td className="px-3 sm:px-4 py-2.5 font-sans font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">{formatDateMMDDYYYY(d.date)}</td>
+                      <td className="px-3 sm:px-4 py-2.5 text-right text-amber-600 dark:text-amber-400 font-bold whitespace-nowrap">{d.pv_kwh.toFixed(2)}</td>
+                      <td className="px-3 sm:px-4 py-2.5 text-right text-rose-600 dark:text-rose-400 whitespace-nowrap">{d.load_kwh.toFixed(2)}</td>
+                      <td className="px-3 sm:px-4 py-2.5 text-right text-blue-600 dark:text-blue-400 whitespace-nowrap">{d.grid_import_kwh.toFixed(2)}</td>
+                      <td className="px-3 sm:px-4 py-2.5 text-right whitespace-nowrap">{d.battery_charge_kwh.toFixed(2)}</td>
+                      <td className="px-3 sm:px-4 py-2.5 text-right whitespace-nowrap">{d.battery_discharge_kwh.toFixed(2)}</td>
+                      <td className="px-3 sm:px-4 py-2.5 text-right font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
                         {((d.self_sufficiency_ratio || 0) * 100).toFixed(0)}%
                       </td>
                     </tr>
@@ -287,7 +294,7 @@ export const TrendsPage: React.FC = () => {
 
       {currentTab === "compare" && (
         <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -337,7 +344,7 @@ export const TrendsPage: React.FC = () => {
                 <button
                   onClick={() => runComparison()}
                   disabled={comparing || !dateAStart || !dateBStart}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
+                  className="w-full md:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${comparing ? "animate-spin" : ""}`} />
                   <span>Compare Periods</span>
@@ -357,7 +364,7 @@ export const TrendsPage: React.FC = () => {
 
           {compareResult && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+              <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
                 <div className="flex items-center justify-between">
                   <Tooltip
                     title="Comparative Solar Generation"
@@ -400,7 +407,7 @@ export const TrendsPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+              <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
                 <div className="flex items-center justify-between">
                   <Tooltip
                     title="Comparative Household Consumption"
@@ -443,7 +450,7 @@ export const TrendsPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+              <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
                 <div className="flex items-center justify-between">
                   <Tooltip
                     title="Comparative Utility Grid Purchases"
@@ -492,7 +499,7 @@ export const TrendsPage: React.FC = () => {
 
       {currentTab === "statistics" && (
         <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
             <Tooltip
                 title="Power Duration Curves"
                 content="Cumulative frequency distribution showing the percentage of observation time that electrical load, solar generation, or grid import exceeded any given power level (kW)."

@@ -76,6 +76,7 @@ export const HistoricalLibraryPage: React.FC = () => {
   const [configAutoSync, setConfigAutoSync] = useState(false);
   const [configInterval, setConfigInterval] = useState(5);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [credentialsDirty, setCredentialsDirty] = useState(false);
 
   const [rangeStartDate, setRangeStartDate] = useState("2026-10-30");
   const [rangeEndDate, setRangeEndDate] = useState("2026-10-31");
@@ -110,11 +111,12 @@ export const HistoricalLibraryPage: React.FC = () => {
       const data = await api.getDeyeStatus();
       setDeyeStatus(data);
       if (data) {
-        setConfigStationId(prev => data.station_id || prev || "62805884");
-        setConfigAppId(prev => data.app_id || prev || "");
-        setConfigUsername(prev => data.username || prev || "");
+        setConfigStationId(data.station_id || "62805884");
+        setConfigAppId(data.app_id || "");
+        setConfigUsername(data.username || "");
         setConfigAutoSync(data.auto_sync || false);
         setConfigInterval(data.sync_interval_min || 5);
+        setCredentialsDirty(false);
       }
     } catch (err: any) {
       setDeyeMessage(`Cloud status check: ${err.message}`);
@@ -139,6 +141,9 @@ export const HistoricalLibraryPage: React.FC = () => {
     try {
       const res = await api.saveDeyeConfig(getPendingCredentialsPayload());
       setDeyeStatus(res);
+      setConfigAppSecret("");
+      setConfigPassword("");
+      setCredentialsDirty(false);
       if (res.is_configured) {
         setDeyeMessage("Deye Cloud credentials saved successfully.");
       } else {
@@ -152,10 +157,6 @@ export const HistoricalLibraryPage: React.FC = () => {
   };
 
   const handleApplyDemoConfig = async () => {
-    setConfigStationId("STATION-2026");
-    setConfigAppId("demo");
-    setConfigAppSecret("demo_secret");
-    setConfigUsername("demo@solarscope.local");
     setSavingConfig(true);
     try {
       const res = await api.saveDeyeConfig({
@@ -167,6 +168,12 @@ export const HistoricalLibraryPage: React.FC = () => {
         auto_sync: false,
         sync_interval_min: 5
       });
+      setConfigStationId(res.station_id || "STATION-2026");
+      setConfigAppId(res.app_id || "demo");
+      setConfigAppSecret("");
+      setConfigUsername(res.username || "demo@solarscope.local");
+      setConfigPassword("");
+      setCredentialsDirty(false);
       setDeyeStatus(res);
       setDeyeMessage("Demo mode applied: Simulated live Deye Cloud connection enabled.");
     } catch (err: any) {
@@ -198,7 +205,7 @@ export const HistoricalLibraryPage: React.FC = () => {
     setDeyeTesting(true);
     setDeyeMessage(null);
     try {
-      const res = await api.testDeyeConnection(getPendingCredentialsPayload());
+      const res = await api.testDeyeConnection(credentialsDirty ? getPendingCredentialsPayload() : undefined);
       setDeyeMessage(res.message);
       await fetchDeyeStatus();
     } catch (err: any) {
@@ -212,7 +219,7 @@ export const HistoricalLibraryPage: React.FC = () => {
     setDeyeSyncing(true);
     setDeyeMessage(null);
     try {
-      const res = await api.syncDeyeNow(getPendingCredentialsPayload());
+      const res = await api.syncDeyeNow(credentialsDirty ? getPendingCredentialsPayload() : undefined);
       setDeyeMessage(`Sync result: ${res.message} (${res.records_inserted} rows inserted)`);
       await fetchDeyeStatus();
       await fetchSources();
@@ -231,7 +238,7 @@ export const HistoricalLibraryPage: React.FC = () => {
     setRangeSyncing(true);
     setDeyeMessage(null);
     try {
-      const res = await api.syncDeyeRange(s, e, getPendingCredentialsPayload());
+      const res = await api.syncDeyeRange(s, e, credentialsDirty ? getPendingCredentialsPayload() : undefined);
       setDeyeMessage(`Range sync result: ${res.message} (${res.records_inserted} records partitioned into individual daily datasets)`);
       if (res.datasets_created && res.datasets_created.length > 0) {
         setActiveDatasetId(res.datasets_created[res.datasets_created.length - 1]);
@@ -489,14 +496,14 @@ export const HistoricalLibraryPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             Data Library & Ingestion Center
           </h1>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
             Historical datasets, automatic Deye Cloud synchronization, and pre-import signal verification.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           {pendingSources.length > 0 && currentTab === "datasets" && (
             <button
               onClick={handleAutoCommitAll}
@@ -530,10 +537,10 @@ export const HistoricalLibraryPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-8">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-4 sm:space-x-8 overflow-x-auto no-scrollbar whitespace-nowrap">
         <button
           onClick={() => setTab("datasets")}
-          className={`pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
+          className={`shrink-0 pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
             currentTab === "datasets"
               ? "border-amber-600 text-amber-600 dark:text-amber-400 font-semibold"
               : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
@@ -544,7 +551,7 @@ export const HistoricalLibraryPage: React.FC = () => {
         </button>
         <button
           onClick={() => setTab("cloud")}
-          className={`pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
+          className={`shrink-0 pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
             currentTab === "cloud"
               ? "border-amber-600 text-amber-600 dark:text-amber-400 font-semibold"
               : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
@@ -553,12 +560,12 @@ export const HistoricalLibraryPage: React.FC = () => {
           <Cloud className="w-4 h-4" />
           <span>Deye Cloud Sync</span>
           {deyeStatus?.is_configured && (
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className={`w-2 h-2 rounded-full ${deyeStatus.is_demo ? "bg-amber-500" : "bg-emerald-500"}`} />
           )}
         </button>
         <button
           onClick={() => setTab("preview")}
-          className={`pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
+          className={`shrink-0 pb-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
             currentTab === "preview"
               ? "border-amber-600 text-amber-600 dark:text-amber-400 font-semibold"
               : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
@@ -572,8 +579,8 @@ export const HistoricalLibraryPage: React.FC = () => {
       {currentTab === "datasets" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
+            <div className="md:col-span-2 bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                   Batch Inverter Ingestion
                 </h2>
@@ -593,7 +600,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                     processFileList(Array.from(e.dataTransfer.files));
                   }
                 }}
-                className={`p-8 border-2 border-dashed rounded-xl text-center flex flex-col items-center justify-center transition-colors min-h-[190px] ${
+                className={`p-5 sm:p-8 border-2 border-dashed rounded-xl text-center flex flex-col items-center justify-center transition-colors min-h-[190px] ${
                   isDragging
                     ? "border-amber-500 bg-amber-50/50 dark:bg-amber-950/20"
                     : "border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30"
@@ -673,7 +680,7 @@ export const HistoricalLibraryPage: React.FC = () => {
               )}
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
               <div>
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-4">
                   Library Provenance
@@ -707,11 +714,11 @@ export const HistoricalLibraryPage: React.FC = () => {
 
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div className="flex items-center gap-3">
-                <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 text-xs font-medium">
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 text-xs font-medium w-full sm:w-auto overflow-x-auto no-scrollbar whitespace-nowrap">
                   <button
                     onClick={() => setFilterTab("all")}
-                    className={`px-3 py-1.5 rounded-md transition-colors ${
+                    className={`shrink-0 px-3 py-1.5 rounded-md transition-colors ${
                       filterTab === "all" ? "bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-400"
                     }`}
                   >
@@ -719,7 +726,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                   </button>
                   <button
                     onClick={() => setFilterTab("included")}
-                    className={`px-3 py-1.5 rounded-md transition-colors ${
+                    className={`shrink-0 px-3 py-1.5 rounded-md transition-colors ${
                       filterTab === "included" ? "bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-400"
                     }`}
                   >
@@ -727,7 +734,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                   </button>
                   <button
                     onClick={() => setFilterTab("excluded")}
-                    className={`px-3 py-1.5 rounded-md transition-colors ${
+                    className={`shrink-0 px-3 py-1.5 rounded-md transition-colors ${
                       filterTab === "excluded" ? "bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-400"
                     }`}
                   >
@@ -736,7 +743,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                   {pendingSources.length > 0 && (
                     <button
                       onClick={() => setFilterTab("pending")}
-                      className={`px-3 py-1.5 rounded-md transition-colors ${
+                      className={`shrink-0 px-3 py-1.5 rounded-md transition-colors ${
                         filterTab === "pending" ? "bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 font-semibold" : "text-amber-600 dark:text-amber-400"
                       }`}
                     >
@@ -747,7 +754,7 @@ export const HistoricalLibraryPage: React.FC = () => {
               </div>
 
               {selectedIds.size > 0 && (
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="text-slate-500 font-medium">{selectedIds.size} selected:</span>
                   <button
                     onClick={() => handleBulkInclude(true)}
@@ -780,7 +787,7 @@ export const HistoricalLibraryPage: React.FC = () => {
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
+                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 whitespace-nowrap">
                     <tr>
                       <th className="px-4 py-3 w-10">
                         <input
@@ -829,7 +836,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                               className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                             />
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 whitespace-nowrap">
                             <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-2">
                               <span>{src.filename}</span>
                               {isActive && (
@@ -842,7 +849,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                               {src.file_hash ? `${src.file_hash.slice(0, 12)}...` : "Unindexed"}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                          <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
                             {src.start_time ? (
                               <span>
                                 {format12HourDateTime(src.start_time)} to {format12HourDateTime(src.end_time || src.start_time)}
@@ -851,10 +858,10 @@ export const HistoricalLibraryPage: React.FC = () => {
                               <span className="text-amber-600 dark:text-amber-400 font-medium">Pending ingestion commit</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-xs font-mono">
+                          <td className="px-4 py-3 text-xs font-mono whitespace-nowrap">
                             {(src.total_rows || 0).toLocaleString()}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 whitespace-nowrap">
                             <button
                               onClick={() => handleToggleInclude(src.id, src.is_included)}
                               className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
@@ -912,10 +919,10 @@ export const HistoricalLibraryPage: React.FC = () => {
       {currentTab === "cloud" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                 <div className="flex items-center gap-2">
-                  <Radio className="w-5 h-5 text-amber-600" />
+                  <Radio className="w-5 h-5 text-amber-600 shrink-0" />
                   <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                     Station & Device Hierarchy
                   </h2>
@@ -930,7 +937,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                   <div className="font-semibold text-slate-800 dark:text-slate-200">
                     {deyeStatus?.device_hierarchy?.installation_name || "SolarScope Primary Station"}
                   </div>
-                  <div className="text-slate-500 font-mono text-[11px] mt-0.5">
+                  <div className="text-slate-500 font-mono text-[11px] mt-0.5 break-all">
                     Station ID: {deyeStatus?.station_id || "STATION-2026"}
                   </div>
                 </div>
@@ -940,14 +947,14 @@ export const HistoricalLibraryPage: React.FC = () => {
                 </div>
 
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-1">
                     <span className="font-semibold text-slate-800 dark:text-slate-200">Deye Data Logger</span>
                     <span className="font-mono text-emerald-600 font-medium">5-min interval</span>
                   </div>
-                  <div className="text-slate-600 dark:text-slate-400 mt-1 font-mono">
+                  <div className="text-slate-600 dark:text-slate-400 mt-1 font-mono break-all">
                     Serial: {deyeStatus?.device_hierarchy?.logger?.logger_serial || "1251892903"}
                   </div>
-                  <div className="text-slate-500 text-[11px] mt-0.5 font-mono">
+                  <div className="text-slate-500 text-[11px] mt-0.5 font-mono break-all">
                     Firmware: {deyeStatus?.device_hierarchy?.logger?.firmware_version || "MW4_32_5407_SS_04_00.00.00.13"}
                   </div>
                 </div>
@@ -957,25 +964,25 @@ export const HistoricalLibraryPage: React.FC = () => {
                 </div>
 
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-1">
                     <span className="font-semibold text-slate-800 dark:text-slate-200">Hybrid Inverter</span>
                     <span className="font-mono text-slate-600 dark:text-slate-400">6.0 kW continuous</span>
                   </div>
-                  <div className="text-slate-600 dark:text-slate-400 mt-1 font-mono">
+                  <div className="text-slate-600 dark:text-slate-400 mt-1 font-mono break-all">
                     Serial: {deyeStatus?.device_hierarchy?.inverter?.inverter_serial || "2604282202"}
                   </div>
-                  <div className="text-slate-500 text-[11px] mt-0.5">
+                  <div className="text-slate-500 text-[11px] mt-0.5 break-all">
                     Model: {deyeStatus?.device_hierarchy?.inverter?.model || "SUN-6K-SG06LP1-EU-CM2"}
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="md:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+            <div className="md:col-span-2 bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                   <div className="flex items-center gap-2">
-                    <Cloud className="w-5 h-5 text-amber-600" />
+                    <Cloud className="w-5 h-5 text-amber-600 shrink-0" />
                     <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                       Cloud Sync Operations & Status
                     </h2>
@@ -1007,9 +1014,9 @@ export const HistoricalLibraryPage: React.FC = () => {
                 </div>
 
                 {deyeMessage && (
-                  <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-lg text-xs text-amber-800 dark:text-amber-300 mb-6 flex items-center justify-between">
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-lg text-xs text-amber-800 dark:text-amber-300 mb-6 flex items-center justify-between gap-2">
                     <span>{deyeMessage}</span>
-                    <button onClick={() => setDeyeMessage(null)} className="text-amber-600 hover:text-amber-800">
+                    <button onClick={() => setDeyeMessage(null)} className="text-amber-600 hover:text-amber-800 shrink-0">
                       Dismiss
                     </button>
                   </div>
@@ -1037,7 +1044,7 @@ export const HistoricalLibraryPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-5">
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-6 space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <CalendarDays className="w-5 h-5 text-amber-600" />
@@ -1105,7 +1112,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                   type="button"
                   onClick={() => handleSyncDateRange()}
                   disabled={rangeSyncing || deyeSyncing || !rangeStartDate || !rangeEndDate}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                  className="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shrink-0"
                 >
                   {rangeSyncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                   <span>Fetch Deye Cloud Range</span>
@@ -1114,26 +1121,33 @@ export const HistoricalLibraryPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
-                <Key className="w-5 h-5 text-amber-600" />
+                <Key className="w-5 h-5 text-amber-600 shrink-0" />
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-800 dark:text-slate-200">
                   Deye Cloud / Solarman API Credentials
                 </h3>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className={`px-2 py-0.5 text-xs font-semibold rounded ${
-                  deyeStatus?.is_configured
+                  deyeStatus?.is_demo
+                    ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-400"
+                    : deyeStatus?.is_configured
                     ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
                     : "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-400"
                 }`}>
-                  {deyeStatus?.is_configured ? "Configured & Ready" : "Credentials Required"}
+                  {deyeStatus?.is_demo
+                    ? "Demo Mode Active"
+                    : deyeStatus?.is_configured
+                    ? "Configured & Ready"
+                    : "Credentials Required"}
                 </span>
                 <button
                   type="button"
                   onClick={handleApplyDemoConfig}
-                  className="px-2.5 py-1 text-xs rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium transition-colors"
+                  disabled={savingConfig}
+                  className="px-2.5 py-1 text-xs rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium transition-colors disabled:opacity-50"
                 >
                   Use Demo Mode
                 </button>
@@ -1144,6 +1158,15 @@ export const HistoricalLibraryPage: React.FC = () => {
               Direct cloud sync polls telemetry from the Deye Cloud / Solarman Open API. If you do not have an API Developer account, you can click <strong>Use Demo Mode</strong> to simulate live synchronization, or upload Excel/CSV files directly in the Historical Datasets tab.
             </p>
 
+            {deyeStatus?.is_configured && !deyeStatus?.is_demo && (
+              <div className="px-3 py-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>
+                  Station credentials are securely stored on the server. All visitors share live Flow Graph telemetry automatically without needing to enter credentials.
+                </span>
+              </div>
+            )}
+
             <form onSubmit={handleSaveDeyeConfig} className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs pt-1">
               <div>
                 <label className="block font-medium text-slate-600 dark:text-slate-400 mb-1">
@@ -1153,7 +1176,10 @@ export const HistoricalLibraryPage: React.FC = () => {
                   type="text"
                   placeholder="e.g. STATION-2026"
                   value={configStationId}
-                  onChange={(e) => setConfigStationId(e.target.value)}
+                  onChange={(e) => {
+                    setConfigStationId(e.target.value);
+                    setCredentialsDirty(true);
+                  }}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
                 />
               </div>
@@ -1166,7 +1192,10 @@ export const HistoricalLibraryPage: React.FC = () => {
                   type="text"
                   placeholder="Open API App ID or 'demo'"
                   value={configAppId}
-                  onChange={(e) => setConfigAppId(e.target.value)}
+                  onChange={(e) => {
+                    setConfigAppId(e.target.value);
+                    setCredentialsDirty(true);
+                  }}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
                 />
               </div>
@@ -1179,7 +1208,10 @@ export const HistoricalLibraryPage: React.FC = () => {
                   type="password"
                   placeholder={deyeStatus?.has_app_secret ? "Saved (leave blank to keep)" : "App Secret Key"}
                   value={configAppSecret}
-                  onChange={(e) => setConfigAppSecret(e.target.value)}
+                  onChange={(e) => {
+                    setConfigAppSecret(e.target.value);
+                    setCredentialsDirty(true);
+                  }}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
                 />
               </div>
@@ -1192,7 +1224,10 @@ export const HistoricalLibraryPage: React.FC = () => {
                   type="text"
                   placeholder="Deye Cloud Email or Username"
                   value={configUsername}
-                  onChange={(e) => setConfigUsername(e.target.value)}
+                  onChange={(e) => {
+                    setConfigUsername(e.target.value);
+                    setCredentialsDirty(true);
+                  }}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
                 />
               </div>
@@ -1205,7 +1240,10 @@ export const HistoricalLibraryPage: React.FC = () => {
                   type="password"
                   placeholder={deyeStatus?.has_password ? "Saved (leave blank to keep)" : "Deye Cloud Account Password"}
                   value={configPassword}
-                  onChange={(e) => setConfigPassword(e.target.value)}
+                  onChange={(e) => {
+                    setConfigPassword(e.target.value);
+                    setCredentialsDirty(true);
+                  }}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
                 />
               </div>
@@ -1222,14 +1260,14 @@ export const HistoricalLibraryPage: React.FC = () => {
             </form>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-6">
             <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-4">
               Recent Synchronization Logs
             </h3>
             {deyeStatus?.recent_logs && deyeStatus.recent_logs.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800/50 uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-800">
+                  <thead className="bg-slate-50 dark:bg-slate-800/50 uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-800 whitespace-nowrap">
                     <tr>
                       <th className="px-4 py-2.5">Sync Timestamp</th>
                       <th className="px-4 py-2.5">Fetched Records</th>
@@ -1241,12 +1279,12 @@ export const HistoricalLibraryPage: React.FC = () => {
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {deyeStatus.recent_logs.map(log => (
                       <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                        <td className="px-4 py-2.5 font-mono text-slate-600 dark:text-slate-400">
+                        <td className="px-4 py-2.5 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
                           {format12HourDateTime(log.sync_time)}
                         </td>
-                        <td className="px-4 py-2.5 font-mono">{log.records_fetched}</td>
-                        <td className="px-4 py-2.5 font-mono">{log.records_inserted}</td>
-                        <td className="px-4 py-2.5">
+                        <td className="px-4 py-2.5 font-mono whitespace-nowrap">{log.records_fetched}</td>
+                        <td className="px-4 py-2.5 font-mono whitespace-nowrap">{log.records_inserted}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
                           <span className={`px-2 py-0.5 rounded font-semibold ${
                             log.status === "SUCCESS"
                               ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
@@ -1255,7 +1293,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                             {log.status}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5 text-slate-500">
+                        <td className="px-4 py-2.5 text-slate-500 min-w-[200px]">
                           {formatDateText(log.error_message || "Reconciled against local database without conflict")}
                         </td>
                       </tr>
@@ -1274,7 +1312,7 @@ export const HistoricalLibraryPage: React.FC = () => {
 
       {currentTab === "preview" && (
         <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
               Pre-Import Telemetry Inspection & Quality Verification
             </h2>
@@ -1282,7 +1320,7 @@ export const HistoricalLibraryPage: React.FC = () => {
               Inspect an inverter spreadsheet or CSV file before committing it to the permanent library. Inspects SHA-256 fingerprint, sampling interval consistency, duplicate detection against database, and signal mapping.
             </p>
 
-            <div className="p-8 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl text-center bg-slate-50/50 dark:bg-slate-800/30">
+            <div className="p-5 sm:p-8 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl text-center bg-slate-50/50 dark:bg-slate-800/30">
               <FileSearch className="w-10 h-10 text-slate-400 mx-auto mb-3" />
               <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Select an inverter telemetry file to inspect
@@ -1391,7 +1429,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                   <div className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3">
                     Detected Signal Mappings
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                  <div className="grid grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                     {Object.entries(previewResult.columns_detected).map(([canonical, header]) => (
                       <div key={canonical} className="p-2.5 bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-800">
                         <div className="text-slate-400 font-mono text-[10px]">{canonical}</div>
@@ -1401,7 +1439,7 @@ export const HistoricalLibraryPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 pt-2">
+                <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
                   <button
                     onClick={() => {
                       setPreviewResult(null);

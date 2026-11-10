@@ -27,3 +27,5 @@ Thumbs.db
 horizon/
 .vercel
 .env*
+
+.env*

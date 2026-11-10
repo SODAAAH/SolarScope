@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 
 from backend.app.config import settings
 from backend.app.storage.db import get_connection
-from backend.app.storage.file_store import save_uploaded_file, get_file_path
+from backend.app.storage.file_store import save_uploaded_file, get_file_path, resolve_dataset_path, extract_basename, delete_file
+from backend.app.storage.blob_sync import ensure_hydrated, persist_state
 from backend.app.ingestion.excel_reader import list_excel_sheets, read_excel_sheet
 from backend.app.ingestion.csv_reader import read_csv_file
 from backend.app.ingestion.column_mapper import build_column_mapping_preview
@@ -99,6 +100,24 @@ def invalidate_all_caches():
     _daily_summaries_cache.clear()
     _timeline_cache.clear()
 
+def _hydrate_state(force: bool = False) -> bool:
+    updated = ensure_hydrated(force=force)
+    if updated:
+        dataset_cache.clear()
+        invalidate_all_caches()
+        try:
+            from backend.app.integrations.deye_mcp import deye_mcp_client
+            deye_mcp_client.invalidate_cache(clear_last_real=False)
+        except Exception:
+            pass
+    return updated
+
+def _persist_state(
+    upload_files: Optional[List[Path]] = None,
+    deleted_filenames: Optional[List[str]] = None,
+) -> bool:
+    return persist_state(upload_files=upload_files, deleted_filenames=deleted_filenames)
+
 last_rate_check_cache: Dict[str, Any] = {
     "status": "verified_current",
     "message": "Using verified October 2026 schedule",
@@ -172,6 +191,7 @@ def get_health():
 
 @router.get("/settings")
 def get_settings():
+    _hydrate_state()
     conn = get_connection()
     row = conn.execute("SELECT * FROM system_settings WHERE project_id = 'default'").fetchone()
     conn.close()
@@ -181,6 +201,7 @@ def get_settings():
 
 @router.put("/settings")
 def update_settings(payload: SystemSettingsModel):
+    _hydrate_state(force=True)
     conn = get_connection()
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     conn.execute(
@@ -202,10 +223,13 @@ def update_settings(payload: SystemSettingsModel):
     )
     conn.commit()
     conn.close()
+    invalidate_all_caches()
+    _persist_state()
     return {"status": "updated", "settings": payload.model_dump()}
 
 @router.post("/datasets/upload")
 async def upload_dataset(file: UploadFile = File(...)):
+    _hydrate_state(force=True)
     filename = file.filename or "upload.xlsx"
     contents = await file.read()
     
@@ -216,19 +240,17 @@ async def upload_dataset(file: UploadFile = File(...)):
     existing_rows = conn.execute("SELECT id, filepath FROM datasets WHERE file_hash = ? OR filename = ?", (file_hash, filename)).fetchall()
     is_duplicate = len(existing_rows) > 0
     duplicate_of = existing_rows[0]["id"] if is_duplicate else None
+    deleted_names: List[str] = []
 
     for row in existing_rows:
         if row["filepath"]:
-            p = Path(row["filepath"])
-            if p.exists():
-                try:
-                    p.unlink()
-                except Exception:
-                    pass
+            old_name = extract_basename(row["filepath"])
+            if old_name:
+                deleted_names.append(old_name)
+            delete_file(row["filepath"], remove_remote=False)
         conn.execute("DELETE FROM column_mappings WHERE dataset_id = ?", (row["id"],))
         conn.execute("DELETE FROM datasets WHERE id = ?", (row["id"],))
-        if row["id"] in dataset_cache:
-            del dataset_cache[row["id"]]
+        dataset_cache.pop(row["id"], None)
 
     file_id, target_path = save_uploaded_file(filename, contents)
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -244,6 +266,9 @@ async def upload_dataset(file: UploadFile = File(...)):
     )
     conn.commit()
     conn.close()
+    invalidate_all_caches()
+    filtered_deleted = [n for n in deleted_names if n != target_path.name]
+    _persist_state(upload_files=[target_path], deleted_filenames=filtered_deleted or None)
 
     return {
         "dataset_id": file_id,
@@ -260,8 +285,10 @@ def _auto_commit_dataset_core(dataset_id: str, conn: Any) -> Dict[str, Any]:
     if not row:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    filepath = Path(row["filepath"])
+    filepath = resolve_dataset_path(row["filepath"])
     filename = row["filename"]
+    if not filepath or not filepath.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk.")
 
     if filename.lower().endswith((".xlsx", ".xlsm")):
         sheets = list_excel_sheets(filepath)
@@ -323,16 +350,20 @@ def _auto_commit_dataset_core(dataset_id: str, conn: Any) -> Dict[str, Any]:
 
 @router.post("/datasets/{dataset_id}/auto_commit")
 def auto_commit_single_dataset(dataset_id: str):
+    _hydrate_state(force=True)
     conn = get_connection()
     try:
         res = _auto_commit_dataset_core(dataset_id, conn)
         conn.commit()
+        invalidate_all_caches()
+        _persist_state()
         return res
     finally:
         conn.close()
 
 @router.post("/datasets/auto_commit_all")
 def auto_commit_all_datasets():
+    _hydrate_state(force=True)
     conn = get_connection()
     rows = conn.execute("SELECT id, filename FROM datasets WHERE total_rows = 0 OR total_rows IS NULL OR start_time IS NULL").fetchall()
     results = []
@@ -344,14 +375,20 @@ def auto_commit_all_datasets():
             results.append({"status": "error", "dataset_id": r["id"], "filename": r["filename"], "error": str(e)})
     conn.commit()
     conn.close()
+    invalidate_all_caches()
+    if results:
+        _persist_state()
     return {"total_processed": len(results), "committed": results}
 
 @router.post("/datasets/upload_batch")
 async def upload_datasets_batch(files: List[UploadFile] = File(...)):
+    _hydrate_state(force=True)
     results = []
     conn = get_connection()
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     seen_hashes = set()
+    uploaded_paths: List[Path] = []
+    deleted_names: List[str] = []
 
     for file in files:
         filename = file.filename or "upload.xlsx"
@@ -366,18 +403,16 @@ async def upload_datasets_batch(files: List[UploadFile] = File(...)):
         existing_rows = conn.execute("SELECT id, filepath FROM datasets WHERE file_hash = ? OR filename = ?", (file_hash, filename)).fetchall()
         for row in existing_rows:
             if row["filepath"]:
-                p = Path(row["filepath"])
-                if p.exists():
-                    try:
-                        p.unlink()
-                    except Exception:
-                        pass
+                old_name = extract_basename(row["filepath"])
+                if old_name:
+                    deleted_names.append(old_name)
+                delete_file(row["filepath"], remove_remote=False)
             conn.execute("DELETE FROM column_mappings WHERE dataset_id = ?", (row["id"],))
             conn.execute("DELETE FROM datasets WHERE id = ?", (row["id"],))
-            if row["id"] in dataset_cache:
-                del dataset_cache[row["id"]]
+            dataset_cache.pop(row["id"], None)
 
         file_id, target_path = save_uploaded_file(filename, contents)
+        uploaded_paths.append(target_path)
         sheets: List[str] = []
         if filename.lower().endswith((".xlsx", ".xlsm")):
             sheets = list_excel_sheets(target_path)
@@ -417,10 +452,15 @@ async def upload_datasets_batch(files: List[UploadFile] = File(...)):
 
     conn.commit()
     conn.close()
+    invalidate_all_caches()
+    uploaded_basenames = {p.name for p in uploaded_paths}
+    filtered_deleted = [n for n in deleted_names if n not in uploaded_basenames]
+    _persist_state(upload_files=uploaded_paths or None, deleted_filenames=filtered_deleted or None)
     return {"total_uploaded": len(results), "files": results}
 
 @router.get("/sources")
 def list_sources():
+    _hydrate_state()
     conn = get_connection()
     rows = conn.execute("SELECT * FROM datasets ORDER BY COALESCE(start_time, created_at) ASC, filename ASC").fetchall()
     conn.close()
@@ -435,6 +475,7 @@ def list_sources():
 
 @router.patch("/sources/{source_id}")
 def update_source(source_id: str, payload: UpdateSourceModel):
+    _hydrate_state(force=True)
     conn = get_connection()
     row = conn.execute("SELECT * FROM datasets WHERE id = ?", (source_id,)).fetchone()
     if not row:
@@ -450,38 +491,42 @@ def update_source(source_id: str, payload: UpdateSourceModel):
     conn.commit()
     conn.close()
     invalidate_all_caches()
+    _persist_state()
     return {"status": "updated", "source_id": source_id}
 
 @router.delete("/sources/{source_id}")
 def delete_source(source_id: str):
+    _hydrate_state(force=True)
     conn = get_connection()
     row = conn.execute("SELECT * FROM datasets WHERE id = ?", (source_id,)).fetchone()
     if not row:
         conn.close()
         raise HTTPException(status_code=404, detail="Source dataset not found")
 
-    filepath = Path(row["filepath"])
-    if filepath.exists():
-        try:
-            filepath.unlink()
-        except Exception:
-            pass
+    deleted_name = extract_basename(row["filepath"]) if row["filepath"] else ""
+    delete_file(row["filepath"], remove_remote=False)
 
     conn.execute("DELETE FROM column_mappings WHERE dataset_id = ?", (source_id,))
     conn.execute("DELETE FROM datasets WHERE id = ?", (source_id,))
     conn.commit()
     conn.close()
+    dataset_cache.pop(source_id, None)
     invalidate_all_caches()
+    _persist_state(deleted_filenames=[deleted_name] if deleted_name else None)
     return {"status": "deleted", "source_id": source_id}
 
 @router.post("/datasets/load_sample")
 def load_sample_dataset():
+    _hydrate_state(force=True)
     sample_file = settings.sample_dir / "Oct 21.xlsx"
     if not sample_file.exists():
+        static_sample = settings.base_dir / "data" / "sample" / "Oct 21.xlsx"
         fallback_path = Path("C:/Users/jahnm/Documents/solar/Oct 21.xlsx")
-        if fallback_path.exists():
+        src_sample = static_sample if static_sample.exists() else (fallback_path if fallback_path.exists() else None)
+        if src_sample is not None:
             import shutil
-            shutil.copy(str(fallback_path), str(sample_file))
+            sample_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(str(src_sample), str(sample_file))
         else:
             raise HTTPException(status_code=404, detail="Sample dataset Oct 21.xlsx not found.")
 
@@ -500,6 +545,8 @@ def load_sample_dataset():
     )
     conn.commit()
     conn.close()
+    invalidate_all_caches()
+    _persist_state(upload_files=[target_path])
 
     return {
         "dataset_id": file_id,
@@ -511,6 +558,7 @@ def load_sample_dataset():
 
 @router.get("/datasets/{dataset_id}/preview")
 def preview_dataset(dataset_id: str, sheet_name: Optional[str] = None):
+    _hydrate_state()
     conn = get_connection()
     row = conn.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
     if not row and dataset_id in ["all", "historical"]:
@@ -531,11 +579,11 @@ def preview_dataset(dataset_id: str, sheet_name: Optional[str] = None):
             "detected_end_time_12h": None
         }
 
-    filepath = Path(row["filepath"])
+    filepath = resolve_dataset_path(row["filepath"])
     filename = row["filename"]
     actual_id = row["id"]
 
-    if not filepath.exists():
+    if not filepath or not filepath.exists():
         return {
             "dataset_id": actual_id,
             "filename": filename,
@@ -582,14 +630,18 @@ def preview_dataset(dataset_id: str, sheet_name: Optional[str] = None):
 
 @router.post("/datasets/{dataset_id}/commit")
 def commit_dataset_mapping(dataset_id: str, payload: CommitMappingRequest):
+    _hydrate_state(force=True)
     conn = get_connection()
     row = conn.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
     if not row:
         conn.close()
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    filepath = Path(row["filepath"])
+    filepath = resolve_dataset_path(row["filepath"])
     filename = row["filename"]
+    if not filepath or not filepath.exists():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk.")
 
     if filename.lower().endswith((".xlsx", ".xlsm")):
         headers, all_records, total_count = read_excel_sheet(filepath, sheet_name=payload.selected_sheet)
@@ -619,6 +671,8 @@ def commit_dataset_mapping(dataset_id: str, payload: CommitMappingRequest):
     )
     conn.commit()
     conn.close()
+    invalidate_all_caches()
+    _persist_state()
 
     return {
         "status": "committed",
@@ -631,6 +685,7 @@ def commit_dataset_mapping(dataset_id: str, payload: CommitMappingRequest):
     }
 
 def _get_records(dataset_id: str) -> List[CanonicalRecord]:
+    _hydrate_state()
     if dataset_id in ["all", "historical"]:
         return _get_historical_records()
 
@@ -645,8 +700,8 @@ def _get_records(dataset_id: str) -> List[CanonicalRecord]:
     if not row:
         return _get_historical_records()
         
-    filepath = Path(row["filepath"])
-    if not filepath.exists():
+    filepath = resolve_dataset_path(row["filepath"])
+    if not filepath or not filepath.exists():
         raise HTTPException(status_code=404, detail="Dataset file missing on disk.")
         
     if mapping_row:
@@ -674,6 +729,7 @@ def _get_records(dataset_id: str) -> List[CanonicalRecord]:
 
 def _get_historical_records() -> List[CanonicalRecord]:
     global _historical_records_cache
+    _hydrate_state()
     if _historical_records_cache is not None:
         return _historical_records_cache
 
@@ -702,6 +758,7 @@ def _get_historical_records() -> List[CanonicalRecord]:
 
 @router.get("/datasets/{dataset_id}/summary")
 def get_executive_summary(dataset_id: str):
+    _hydrate_state()
     if dataset_id in _summary_cache:
         return _summary_cache[dataset_id]
     records = _get_records(dataset_id)
@@ -742,6 +799,7 @@ def get_executive_summary(dataset_id: str):
 
 @router.get("/datasets/{dataset_id}/timeline")
 def get_timeline_data(dataset_id: str, date: Optional[str] = Query(None)):
+    _hydrate_state()
     cache_key = f"{dataset_id}_{date or ''}"
     if cache_key in _timeline_cache:
         return _timeline_cache[cache_key]
@@ -909,6 +967,7 @@ def get_finance_analysis(
 
 @router.get("/historical/daily")
 def get_historical_daily(dataset_id: Optional[str] = None):
+    _hydrate_state()
     cache_key = dataset_id or "historical"
     if cache_key in _daily_summaries_cache:
         return _daily_summaries_cache[cache_key]
@@ -1088,6 +1147,7 @@ def download_report(report_id: str):
     )
 
 def _resolve_billing_profile(conn: Any, request: Optional[Request] = None) -> TEIBillingProfile:
+    current = get_billing_profile(conn)
     raw_profile = None
     if request is not None:
         raw_profile = request.headers.get("X-Billing-Profile") or request.cookies.get("solarscope_billing_profile")
@@ -1096,21 +1156,26 @@ def _resolve_billing_profile(conn: Any, request: Optional[Request] = None) -> TE
             decoded = urllib.parse.unquote(raw_profile)
             parsed = json.loads(decoded)
             if isinstance(parsed, dict):
-                profile = TEIBillingProfile(**parsed)
-                cycle_day = max(1, min(31, int(profile.billing_cycle_day or 25)))
-                start_dt, end_dt = compute_cycle_dates(cycle_day)
-                profile.billing_cycle_day = cycle_day
-                profile.cycle_start_date = start_dt.strftime("%Y-%m-%d")
-                profile.cycle_end_date = end_dt.strftime("%Y-%m-%d")
-                save_billing_profile(profile, conn)
-                conn.commit()
-                return get_billing_profile(conn)
+                incoming_ts = parsed.get("updated_at") or ""
+                current_ts = current.updated_at or ""
+                if isinstance(incoming_ts, str) and incoming_ts > current_ts:
+                    profile = TEIBillingProfile(**parsed)
+                    cycle_day = max(1, min(31, int(profile.billing_cycle_day or 25)))
+                    start_dt, end_dt = compute_cycle_dates(cycle_day)
+                    profile.billing_cycle_day = cycle_day
+                    profile.cycle_start_date = start_dt.strftime("%Y-%m-%d")
+                    profile.cycle_end_date = end_dt.strftime("%Y-%m-%d")
+                    save_billing_profile(profile, conn)
+                    conn.commit()
+                    _persist_state()
+                    return get_billing_profile(conn)
         except Exception:
             pass
-    return get_billing_profile(conn)
+    return current
 
 @router.get("/billing/overview")
 def get_billing_overview(request: Request, response: Response, dataset_id: Optional[str] = None):
+    _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     sched = get_active_rate_schedule(conn)
@@ -1121,6 +1186,7 @@ def get_billing_overview(request: Request, response: Response, dataset_id: Optio
 
 @router.get("/billing/progress")
 def get_billing_progress(request: Request, response: Response, dataset_id: Optional[str] = None):
+    _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     sched = get_active_rate_schedule(conn)
@@ -1131,6 +1197,7 @@ def get_billing_progress(request: Request, response: Response, dataset_id: Optio
 
 @router.get("/billing/statement")
 def get_billing_statement(request: Request, response: Response, mode: str = "expected", dataset_id: Optional[str] = None):
+    _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     sched = get_active_rate_schedule(conn)
@@ -1148,6 +1215,7 @@ def get_billing_statement(request: Request, response: Response, mode: str = "exp
 
 @router.get("/billing/profile")
 def get_billing_profile_endpoint(request: Request, response: Response):
+    _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     prof = _resolve_billing_profile(conn, request)
@@ -1156,12 +1224,14 @@ def get_billing_profile_endpoint(request: Request, response: Response):
 
 @router.put("/billing/profile")
 def update_billing_profile_endpoint(profile: TEIBillingProfile, response: Response):
+    _hydrate_state(force=True)
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     save_billing_profile(profile, conn)
     conn.commit()
     saved = get_billing_profile(conn)
     conn.close()
+    _persist_state()
     encoded = urllib.parse.quote(json.dumps(saved.model_dump()))
     response.set_cookie(
         key="solarscope_billing_profile",
@@ -1174,6 +1244,7 @@ def update_billing_profile_endpoint(profile: TEIBillingProfile, response: Respon
 
 @router.get("/billing/rates")
 def get_billing_rates(response: Response):
+    _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     rates = get_rate_history(conn)
@@ -1183,10 +1254,12 @@ def get_billing_rates(response: Response):
 @router.post("/billing/rates/check_now")
 def check_billing_rates_now():
     global last_rate_check_cache
+    _hydrate_state(force=True)
     conn = get_connection()
     res = check_official_tei_rates(conn, force_fetch=True)
     conn.commit()
     conn.close()
+    _persist_state()
     last_rate_check_cache = res
     return {
         "status": res["status"],
@@ -1200,6 +1273,7 @@ def check_billing_rates_now():
 def add_manual_billing_rate(payload: ManualRateScheduleRequest):
     global last_rate_check_cache
     import hashlib
+    _hydrate_state(force=True)
     conn = get_connection()
     active_sched = get_active_rate_schedule(conn)
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -1230,6 +1304,7 @@ def add_manual_billing_rate(payload: ManualRateScheduleRequest):
     save_rate_schedule(new_sched, conn)
     conn.commit()
     conn.close()
+    _persist_state()
     last_rate_check_cache = {
         "status": "manual_applied",
         "message": f"Manual rate schedule for {payload.effective_month} activated.",
@@ -1240,6 +1315,7 @@ def add_manual_billing_rate(payload: ManualRateScheduleRequest):
 
 @router.post("/billing/sensitivity")
 def calculate_sensitivity_endpoint(request: Request, response: Response, payload: SensitivityRequest, dataset_id: Optional[str] = None):
+    _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     sched = get_active_rate_schedule(conn)
@@ -1261,6 +1337,7 @@ def calculate_sensitivity_endpoint(request: Request, response: Response, payload
 
 @router.get("/billing/history")
 def get_historical_bills_endpoint(response: Response):
+    _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     bills = get_historical_bills_summary(conn)
@@ -1269,6 +1346,7 @@ def get_historical_bills_endpoint(response: Response):
 
 @router.post("/billing/history")
 def add_historical_bill_endpoint(payload: AddHistoricalBillRequest):
+    _hydrate_state(force=True)
     conn = get_connection()
     res = insert_historical_bill(
         billing_period_start=payload.billing_period_start,
@@ -1281,16 +1359,19 @@ def add_historical_bill_endpoint(payload: AddHistoricalBillRequest):
     )
     conn.commit()
     conn.close()
+    _persist_state()
     return res
 
 @router.delete("/billing/history/{bill_id}")
 def delete_historical_bill_endpoint(bill_id: str):
+    _hydrate_state(force=True)
     conn = get_connection()
     success = remove_historical_bill(bill_id, conn)
     conn.commit()
     conn.close()
     if not success:
         raise HTTPException(status_code=404, detail="Historical bill not found")
+    _persist_state()
     return {"status": "deleted", "id": bill_id}
 
 class DeyeConfigPayload(BaseModel):
@@ -1304,22 +1385,12 @@ class DeyeConfigPayload(BaseModel):
     reconciliation_policy: Optional[str] = "MERGE"
 
 @router.get("/deye/status")
-def get_deye_status_endpoint(request: Request, response: Response):
+def get_deye_status_endpoint(response: Response):
+    _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     client = DeyeCloudClient()
     status = client.get_status()
-    hdr_mode = (request.headers.get("X-Deye-Mode") or "").strip().lower()
-    hdr_token = (request.headers.get("X-Deye-Token") or "").strip()
-    hdr_station = (request.headers.get("X-Deye-Station-Id") or "").strip()
-    if not status.get("is_configured") and (hdr_token or hdr_mode == "demo"):
-        status["is_configured"] = True
-        status["is_demo"] = hdr_mode == "demo"
-        if hdr_station and not status.get("station_id"):
-            status["station_id"] = hdr_station
-        if status.get("device_hierarchy", {}).get("station"):
-            status["device_hierarchy"]["station"]["status"] = "CONFIGURED"
-            if hdr_station:
-                status["device_hierarchy"]["station"]["station_id"] = hdr_station
+    status["is_demo"] = status.get("app_id") == "demo" or status.get("username") == "demo"
     return status
 
 @router.post("/deye/config")
@@ -1328,16 +1399,12 @@ def save_deye_config_endpoint(payload: DeyeConfigPayload, response: Response):
     client = DeyeCloudClient()
     client.save_config(payload.model_dump())
     status = client.get_status()
-    is_demo = status.get("app_id") == "demo" or status.get("username") == "demo"
-    status["is_demo"] = is_demo
-    if not is_demo and status.get("is_configured"):
-        token = client.try_get_token()
-        if token:
-            status["access_token"] = token
+    status["is_demo"] = status.get("app_id") == "demo" or status.get("username") == "demo"
     return status
 
 @router.post("/deye/test")
 def test_deye_connection_endpoint(response: Response, payload: Optional[DeyeConfigPayload] = Body(default=None)):
+    _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     client = DeyeCloudClient()
     if payload and any([payload.station_id, payload.app_id, payload.app_secret, payload.username, payload.password]):
@@ -1352,10 +1419,12 @@ class DeyeSyncRangePayload(BaseModel):
 @router.post("/deye/sync")
 def sync_deye_endpoint(payload: Optional[DeyeConfigPayload] = Body(default=None)):
     try:
+        _hydrate_state(force=True)
         client = DeyeCloudClient()
         if payload and any([payload.station_id, payload.app_id, payload.app_secret, payload.username, payload.password]):
             client.save_config(payload.model_dump())
         res = client.sync_now()
+        dataset_cache.clear()
         invalidate_all_caches()
         return res
     except Exception as e:
@@ -1364,10 +1433,12 @@ def sync_deye_endpoint(payload: Optional[DeyeConfigPayload] = Body(default=None)
 @router.post("/deye/sync_range")
 def sync_deye_range_endpoint(payload: DeyeSyncRangePayload):
     try:
+        _hydrate_state(force=True)
         client = DeyeCloudClient()
         if payload.credentials and any([payload.credentials.station_id, payload.credentials.app_id, payload.credentials.app_secret, payload.credentials.username, payload.credentials.password]):
             client.save_config(payload.credentials.model_dump())
         res = client.sync_range(payload.start_date, payload.end_date)
+        dataset_cache.clear()
         invalidate_all_caches()
         return res
     except Exception as e:
@@ -1375,39 +1446,37 @@ def sync_deye_range_endpoint(payload: DeyeSyncRangePayload):
 
 @router.get("/deye/missing_dates")
 def get_deye_missing_dates_endpoint():
+    _hydrate_state()
     client = DeyeCloudClient()
     missing = client.get_missing_dates()
     return {"missing_dates": missing, "count": len(missing)}
 
 @router.post("/deye/sync_missing")
 def sync_deye_missing_endpoint():
+    _hydrate_state(force=True)
     client = DeyeCloudClient()
     res = client.sync_missing_dates()
+    dataset_cache.clear()
     invalidate_all_caches()
     return res
 
 @router.get("/deye/live_flow")
-def get_deye_live_flow_endpoint(request: Request, response: Response):
+def get_deye_live_flow_endpoint(response: Response):
+    _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     from backend.app.integrations.deye_mcp import deye_mcp_client
-    return deye_mcp_client.get_live_flow(
-        access_token_override=request.headers.get("X-Deye-Token"),
-        station_id_override=request.headers.get("X-Deye-Station-Id"),
-        mode_override=request.headers.get("X-Deye-Mode")
-    )
+    return deye_mcp_client.get_live_flow()
 
 @router.get("/deye/health")
-def get_deye_health_endpoint(request: Request, response: Response):
+def get_deye_health_endpoint(response: Response):
+    _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     from backend.app.integrations.deye_mcp import deye_mcp_client
-    return deye_mcp_client.get_station_health(
-        access_token_override=request.headers.get("X-Deye-Token"),
-        station_id_override=request.headers.get("X-Deye-Station-Id"),
-        mode_override=request.headers.get("X-Deye-Mode")
-    )
+    return deye_mcp_client.get_station_health()
 
 @router.get("/weather/intelligence")
 def get_weather_endpoint():
+    _hydrate_state()
     conn = get_connection()
     sys_row = conn.execute("SELECT pv_capacity_kwp, battery_capacity_kwh, reserve_soc FROM system_settings WHERE project_id = 'default'").fetchone()
     conn.close()
@@ -1418,7 +1487,7 @@ def get_weather_endpoint():
 
 @router.post("/ingestion/preview")
 async def preview_uploaded_files(file: UploadFile = File(...)):
-    temp_dir = Path("backend/temp_uploads")
+    temp_dir = settings.data_dir / "temp_uploads"
     temp_dir.mkdir(parents=True, exist_ok=True)
     temp_path = temp_dir / f"preview_{uuid.uuid4().hex}_{file.filename}"
     content = await file.read()

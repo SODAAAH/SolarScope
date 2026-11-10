@@ -152,8 +152,8 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
   const prodOption = makeDonutOption('Production', productionTotalKwh, prodSlices);
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm h-full flex flex-col justify-between interactive-card">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-sm h-full flex flex-col justify-between interactive-card">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <Tooltip
           title="Solar & Utilization Breakdown"
           content="Energy source origins for home consumption (grid, battery, solar), and the destination split for solar production (battery charging vs immediate appliance use)."
@@ -198,7 +198,7 @@ export const SolarUtilizationCard: React.FC<SolarUtilizationCardProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 my-auto">
+      <div className="grid grid-cols-1 min-[440px]:grid-cols-2 gap-4 my-auto">
         <div className="flex flex-col items-center">
           <div className="w-full h-36">
             <EChartComponent option={consOption} height={144} />

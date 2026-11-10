@@ -87,20 +87,20 @@ export const SettingsPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             System Settings & Verified Hardware Profile
           </h1>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
             Physical hardware nameplates, inverter electrical limits, battery BMS thresholds, and tariff defaults.
           </p>
         </div>
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
             <div className="flex items-center gap-2">
-              <Sun className="w-5 h-5 text-amber-500" />
+              <Sun className="w-5 h-5 text-amber-500 shrink-0" />
               <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
                 Photovoltaic Array Specifications
               </h2>
@@ -113,7 +113,7 @@ export const SettingsPage: React.FC = () => {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 Panel Manufacturer
@@ -165,15 +165,15 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
           <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
-            <Cpu className="w-5 h-5 text-blue-500" />
+            <Cpu className="w-5 h-5 text-blue-500 shrink-0" />
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
               Hybrid Inverter & Cloud Logger Hardware
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 Inverter Model
@@ -225,15 +225,15 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
           <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
-            <Battery className="w-5 h-5 text-teal-600" />
+            <Battery className="w-5 h-5 text-teal-600 shrink-0" />
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
               Battery Storage & BMS Current Thresholds
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 Battery Manufacturer / Model
@@ -287,15 +287,15 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
           <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
-            <Sliders className="w-5 h-5 text-slate-600" />
+            <Sliders className="w-5 h-5 text-slate-600 shrink-0" />
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
               Utility & Regional Configuration
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 Currency Code
@@ -348,10 +348,10 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-6">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-6 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center gap-2">
-              <Server className="w-5 h-5 text-amber-600" />
+              <Server className="w-5 h-5 text-amber-600 shrink-0" />
               <div>
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-800 dark:text-slate-200">
                   Deye Open MCP Integration & Diagnostic Engine
@@ -387,7 +387,7 @@ export const SettingsPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
               <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Analysis Architecture</div>
               <div className="mt-1 font-semibold text-slate-800 dark:text-slate-200 text-sm">
@@ -435,11 +435,11 @@ export const SettingsPage: React.FC = () => {
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                 Official Deye Open MCP Endpoint
               </div>
-              <span className="px-2.5 py-0.5 text-xs font-mono rounded bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200">
+              <span className="px-2.5 py-0.5 text-xs font-mono rounded bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 w-fit">
                 Streamable HTTP Transport
               </span>
             </div>
-            <div className="font-mono text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700">
+            <div className="font-mono text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 break-all">
               {mcpStats?.mcp_endpoint || "https://developer.deyecloud.com/openmcp/mcp"}
             </div>
             <div className="text-xs text-slate-500">
@@ -452,7 +452,7 @@ export const SettingsPage: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 shadow-xs disabled:opacity-50"
+            className="w-full sm:w-auto justify-center px-6 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 shadow-xs disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
             <span>{loading ? "Saving..." : "Save System Settings"}</span>

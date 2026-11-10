@@ -13,11 +13,17 @@ def get_db_path() -> Path:
     return settings.base_dir / "solarscope.db"
 
 def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(get_db_path()), check_same_thread=False)
+    conn = sqlite3.connect(str(get_db_path()), timeout=15.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
-def init_db():
+def init_db(hydrate: bool = True):
+    if hydrate:
+        try:
+            from backend.app.storage.blob_sync import ensure_hydrated
+            ensure_hydrated(force=False)
+        except Exception:
+            pass
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -234,6 +240,14 @@ def init_db():
     );
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS deye_live_cache (
+        cache_key TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    """)
+
     cursor.execute("PRAGMA table_info(datasets)")
     cols = [row["name"] for row in cursor.fetchall()]
     if "file_hash" not in cols:
@@ -301,39 +315,6 @@ def init_db():
                 0.95, 11.50, 0.0, "PHP", "Asia/Manila", now
             )
         )
-    else:
-        cursor.execute("""
-            UPDATE system_settings SET
-                pv_capacity_kwp = 6.2,
-                num_modules = 10,
-                module_wattage = 620.0,
-                panel_model = 'Canadian Solar',
-                panel_tech = 'N-Type TOPCon bifacial',
-                inverter_model = 'SUN-6K-SG06LP1-EU-CM2',
-                inverter_power_kw = 6.0,
-                inverter_serial = '2604282202',
-                inverter_max_apparent_va = 6600.0,
-                inverter_max_battery_current_a = 135.0,
-                mppt_voltage_min_v = 150.0,
-                mppt_voltage_max_v = 425.0,
-                pv_voltage_max_v = 500.0,
-                mppt_max_current_a = 18.0,
-                logger_serial = '1251892903',
-                logger_firmware = 'MW4_32_5407_SS_04_00.00.00.13',
-                logger_interval_min = 5,
-                battery_model = 'MENRED ESS',
-                battery_chemistry = 'LFP',
-                battery_voltage = 51.2,
-                battery_ah = 314.0,
-                battery_capacity_kwh = 16.08,
-                usable_capacity_kwh = 12.86,
-                reserve_soc = 20.0,
-                bms_max_charge_a = 100.0,
-                bms_max_discharge_a = 100.0,
-                max_charge_kw = 5.12,
-                max_discharge_kw = 5.12
-            WHERE project_id = 'default'
-        """)
 
     cursor.execute("SELECT id FROM deye_cloud_configs WHERE project_id = 'default'")
     if not cursor.fetchone():

@@ -159,7 +159,7 @@ export const OverviewPage: React.FC = () => {
 
   if (!activeDatasetId) {
     return (
-      <div className="max-w-xl mx-auto mt-20 p-8 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-center">
+      <div className="max-w-xl mx-auto mt-10 sm:mt-20 p-6 sm:p-8 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-center">
         <h2 className="text-base font-semibold mb-2">No Active Dataset</h2>
         <p className="text-xs text-slate-500 mb-6">
           Import your inverter export files in the Historical Library or connect Deye Cloud to inspect energy analytics.
@@ -170,23 +170,6 @@ export const OverviewPage: React.FC = () => {
         >
           Go to Data Library
         </button>
-      </div>
-    );
-  }
-
-  if (loading && !summary && !liveFlow) {
-    return (
-      <div className="h-64 flex items-center justify-center">
-        <div className="text-xs text-slate-500 font-mono">Calculating verified energy metrics...</div>
-      </div>
-    );
-  }
-
-  if (error && !summary && !liveFlow) {
-    return (
-      <div className="p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-md text-red-700 dark:text-red-300 text-xs flex items-center gap-2">
-        <AlertCircle className="h-4 w-4 shrink-0" />
-        <span>{error}</span>
       </div>
     );
   }
@@ -216,15 +199,18 @@ export const OverviewPage: React.FC = () => {
       }
     },
     legend: {
+      type: 'scroll',
       data: ['Solar (PV)', 'Grid', 'Battery', 'Consumption', 'SOC'],
       textStyle: { fontSize: 11, color: '#64748B' },
       top: 2,
-      right: 8
+      left: 0,
+      right: 0,
+      itemGap: 10
     },
     grid: {
       left: '3%',
       right: '4%',
-      top: '16%',
+      top: '20%',
       bottom: '10%',
       containLabel: true
     },
@@ -385,9 +371,12 @@ export const OverviewPage: React.FC = () => {
       }
     },
     legend: {
+      type: 'scroll',
       data: ['Production', 'Discharge', 'Purchased', 'Consumption', 'Charge', 'Grid Feed-in'],
       textStyle: { fontSize: 10, color: '#64748B' },
       top: 2,
+      left: 0,
+      right: 0,
       itemGap: 10,
       itemWidth: 10,
       itemHeight: 8
@@ -395,7 +384,7 @@ export const OverviewPage: React.FC = () => {
     grid: {
       left: '3%',
       right: '4%',
-      top: '18%',
+      top: '20%',
       bottom: '10%',
       containLabel: true
     },
@@ -516,7 +505,23 @@ export const OverviewPage: React.FC = () => {
     : balanceSelfConsPct;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-8">
+    <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-8">
+          {error && !summary && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs text-amber-800 dark:text-amber-300" role="alert">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>{error}</span>
+              </div>
+              <button
+                type="button"
+                onClick={fetchOverviewData}
+                className="px-3 py-1.5 rounded-md bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 font-medium text-amber-800 dark:text-amber-200 hover:bg-amber-100/60 dark:hover:bg-amber-900/40 transition-colors self-start sm:self-auto"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
             <div className="md:col-span-12 lg:col-span-5 flex flex-col card-stagger-1">
               <LiveFlowGraph
@@ -551,7 +556,7 @@ export const OverviewPage: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs card-stagger-4 interactive-card">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 shadow-xs card-stagger-4 interactive-card">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
                   <Tooltip
@@ -565,7 +570,7 @@ export const OverviewPage: React.FC = () => {
                   {timelineLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => {
                       const blob = new Blob([JSON.stringify(timeline, null, 2)], { type: 'application/json' });
@@ -619,11 +624,24 @@ export const OverviewPage: React.FC = () => {
                   </div>
                 </div>
               </div>
-              {powerProfileOption && <EChartComponent option={powerProfileOption} height={280} />}
+              {powerProfileOption ? (
+                <EChartComponent option={powerProfileOption} height={280} />
+              ) : (
+                <div className="h-[280px] flex items-center justify-center text-xs text-slate-400 dark:text-slate-500 gap-2">
+                  {loading || timelineLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+                      <span>Loading power profile...</span>
+                    </>
+                  ) : (
+                    <span>No timeline samples available for {formatDateMMDDYYYY(powerProfileDate)}</span>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs card-stagger-5 interactive-card">
-              <div className="flex items-center justify-between mb-3">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 shadow-xs card-stagger-5 interactive-card">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
                 <Tooltip
                   title="Generation & Usage History"
                   content="Stacked daily historical breakdown comparing rooftop solar generation, battery discharge/charge cycling, utility grid import, and household load."
@@ -631,7 +649,7 @@ export const OverviewPage: React.FC = () => {
                 >
                   <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-help">Generation & Usage History</h3>
                 </Tooltip>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => {
                       const csv = dailySummaries.map((d) => `${d.date},${d.pv_kwh},${d.load_kwh},${d.grid_import_kwh},${d.battery_discharge_kwh}`).join('\n');

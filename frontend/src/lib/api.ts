@@ -1,8 +1,19 @@
 const API_BASE = "/api";
 const BILLING_PROFILE_STORAGE_KEY = "solarscope_billing_profile";
-const DEYE_TOKEN_STORAGE_KEY = "solarscope_deye_token";
-const DEYE_STATION_STORAGE_KEY = "solarscope_deye_station_id";
-const DEYE_MODE_STORAGE_KEY = "solarscope_deye_mode";
+const LEGACY_DEYE_KEYS = [
+  "solarscope_deye_token",
+  "solarscope_deye_station_id",
+  "solarscope_deye_mode",
+];
+
+function clearLegacyDeyeStorage(): void {
+  try {
+    for (const k of LEGACY_DEYE_KEYS) {
+      localStorage.removeItem(k);
+    }
+    sessionStorage.removeItem("solarscope_cached_live_flow");
+  } catch {}
+}
 
 export function getStoredBillingProfile(): TEIBillingProfile | null {
   try {
@@ -21,54 +32,8 @@ export function setStoredBillingProfile(profile: TEIBillingProfile): void {
   } catch {}
 }
 
-function getBillingHeaders(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(BILLING_PROFILE_STORAGE_KEY);
-    if (!raw) return {};
-    return { "X-Billing-Profile": encodeURIComponent(raw) };
-  } catch {
-    return {};
-  }
-}
-
-export function persistDeyeSession(payload: {
-  access_token?: string;
-  station_id?: string;
-  is_demo?: boolean;
-  token_expired?: boolean;
-}): void {
-  try {
-    if (payload.token_expired) {
-      localStorage.removeItem(DEYE_TOKEN_STORAGE_KEY);
-    }
-    if (payload.is_demo === true) {
-      localStorage.setItem(DEYE_MODE_STORAGE_KEY, "demo");
-      localStorage.removeItem(DEYE_TOKEN_STORAGE_KEY);
-    } else {
-      if (payload.access_token) {
-        localStorage.setItem(DEYE_TOKEN_STORAGE_KEY, payload.access_token);
-        localStorage.setItem(DEYE_MODE_STORAGE_KEY, "live");
-      } else if (payload.is_demo === false) {
-        localStorage.setItem(DEYE_MODE_STORAGE_KEY, "live");
-      }
-    }
-    if (payload.station_id) {
-      localStorage.setItem(DEYE_STATION_STORAGE_KEY, payload.station_id);
-    }
-  } catch {}
-}
-
-function getDeyeHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {};
-  try {
-    const token = localStorage.getItem(DEYE_TOKEN_STORAGE_KEY);
-    const stationId = localStorage.getItem(DEYE_STATION_STORAGE_KEY);
-    const mode = localStorage.getItem(DEYE_MODE_STORAGE_KEY);
-    if (token) headers["X-Deye-Token"] = token;
-    if (stationId) headers["X-Deye-Station-Id"] = stationId;
-    if (mode) headers["X-Deye-Mode"] = mode;
-  } catch {}
-  return headers;
+export function persistDeyeSession(): void {
+  clearLegacyDeyeStorage();
 }
 
 export async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -360,32 +325,28 @@ export const api = {
   getDownloadUrl: (reportId: string) => `${API_BASE}/reports/${reportId}/download`,
   getBillingOverview: (datasetId?: string) => {
     const q = datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : "";
-    return fetchJson<BillForecastResponse>(`/billing/overview${q}`, {
-      headers: getBillingHeaders()
-    });
+    return fetchJson<BillForecastResponse>(`/billing/overview${q}`);
   },
   getBillingProgress: (datasetId?: string) => {
     const q = datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : "";
-    return fetchJson<BillingProgressResponse>(`/billing/progress${q}`, {
-      headers: getBillingHeaders()
-    });
+    return fetchJson<BillingProgressResponse>(`/billing/progress${q}`);
   },
   getBillingStatement: (mode: "actual" | "expected" | "lower" | "higher" = "expected", datasetId?: string) => {
     let url = `/billing/statement?mode=${mode}`;
     if (datasetId) url += `&dataset_id=${encodeURIComponent(datasetId)}`;
-    return fetchJson<StatementOfAccount>(url, {
-      headers: getBillingHeaders()
-    });
+    return fetchJson<StatementOfAccount>(url);
   },
-  getBillingProfile: () => {
-    return fetchJson<TEIBillingProfile>("/billing/profile", {
-      headers: getBillingHeaders()
-    });
+  getBillingProfile: async () => {
+    const prof = await fetchJson<TEIBillingProfile>("/billing/profile");
+    if (prof) {
+      setStoredBillingProfile(prof);
+    }
+    return prof;
   },
   updateBillingProfile: async (profile: TEIBillingProfile) => {
     const res = await fetchJson<{ status: string; profile: TEIBillingProfile }>("/billing/profile", {
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...getBillingHeaders() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(profile)
     });
     if (res && res.profile) {
@@ -415,7 +376,7 @@ export const api = {
     if (datasetId) url += `?dataset_id=${encodeURIComponent(datasetId)}`;
     return fetchJson<RateSensitivityResponse>(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...getBillingHeaders() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
   },
@@ -435,9 +396,8 @@ export const api = {
     });
   },
   getDeyeStatus: () => {
-    return fetchJson<DeyeStatusResponse>("/deye/status", {
-      headers: getDeyeHeaders()
-    });
+    clearLegacyDeyeStorage();
+    return fetchJson<DeyeStatusResponse>("/deye/status");
   },
   saveDeyeConfig: async (payload: DeyeConfigPayload) => {
     const res = await fetchJson<DeyeStatusResponse>("/deye/config", {
@@ -445,63 +405,40 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
-    const isDemo = res.is_demo || payload.app_id === "demo" || payload.username === "demo";
-    persistDeyeSession({
-      access_token: res.access_token,
-      station_id: res.station_id || payload.station_id,
-      is_demo: isDemo
-    });
+    clearLegacyDeyeStorage();
     try {
-      sessionStorage.removeItem("solarscope_cached_live_flow");
+      localStorage.removeItem("solarscope_cached_live_flow_v2");
     } catch {}
     return res;
   },
   testDeyeConnection: async (credentials?: DeyeConfigPayload) => {
-    const res = await fetchJson<{ success: boolean; message: string; access_token?: string; station_id?: string; is_demo?: boolean }>("/deye/test", {
+    const res = await fetchJson<{ success: boolean; message: string; station_id?: string; is_demo?: boolean }>("/deye/test", {
       method: "POST",
       headers: credentials ? { "Content-Type": "application/json" } : undefined,
       body: credentials ? JSON.stringify(credentials) : undefined
     });
     if (res.success) {
-      persistDeyeSession({
-        access_token: res.access_token,
-        station_id: res.station_id || credentials?.station_id,
-        is_demo: res.is_demo
-      });
+      clearLegacyDeyeStorage();
       try {
-        sessionStorage.removeItem("solarscope_cached_live_flow");
+        localStorage.removeItem("solarscope_cached_live_flow_v2");
       } catch {}
     }
     return res;
   },
   syncDeyeNow: async (credentials?: DeyeConfigPayload) => {
-    const res = await fetchJson<{ status: string; message: string; records_fetched: number; records_inserted: number; access_token?: string; station_id?: string; is_demo?: boolean }>("/deye/sync", {
+    const res = await fetchJson<{ status: string; message: string; records_fetched: number; records_inserted: number; station_id?: string; is_demo?: boolean }>("/deye/sync", {
       method: "POST",
       headers: credentials ? { "Content-Type": "application/json" } : undefined,
       body: credentials ? JSON.stringify(credentials) : undefined
     });
-    if (res.access_token || res.is_demo !== undefined) {
-      persistDeyeSession({
-        access_token: res.access_token,
-        station_id: res.station_id || credentials?.station_id,
-        is_demo: res.is_demo
-      });
-    }
     return res;
   },
   syncDeyeRange: async (startDate: string, endDate: string, credentials?: DeyeConfigPayload) => {
-    const res = await fetchJson<{ status: string; message: string; records_inserted: number; datasets_created?: string[]; days_count?: number; dataset_id?: string; filename?: string; access_token?: string; station_id?: string; is_demo?: boolean }>("/deye/sync_range", {
+    const res = await fetchJson<{ status: string; message: string; records_inserted: number; datasets_created?: string[]; days_count?: number; dataset_id?: string; filename?: string; station_id?: string; is_demo?: boolean }>("/deye/sync_range", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ start_date: startDate, end_date: endDate, credentials })
     });
-    if (res.access_token || res.is_demo !== undefined) {
-      persistDeyeSession({
-        access_token: res.access_token,
-        station_id: res.station_id || credentials?.station_id,
-        is_demo: res.is_demo
-      });
-    }
     return res;
   },
   getDeyeMissingDates: () => {
@@ -513,23 +450,12 @@ export const api = {
     });
   },
   getDeyeLiveFlow: async () => {
-    const res = await fetchJson<LiveFlowResponse>("/deye/live_flow", {
-      headers: getDeyeHeaders()
-    });
-    if (res && (res.access_token || res.token_expired || res.data_source === "demo")) {
-      persistDeyeSession({
-        access_token: res.access_token,
-        station_id: res.station_id,
-        is_demo: res.data_source === "demo",
-        token_expired: res.token_expired
-      });
-    }
-    return res;
+    clearLegacyDeyeStorage();
+    return fetchJson<LiveFlowResponse>("/deye/live_flow");
   },
   getDeyeHealth: () => {
-    return fetchJson<StationHealthResponse>("/deye/health", {
-      headers: getDeyeHeaders()
-    });
+    clearLegacyDeyeStorage();
+    return fetchJson<StationHealthResponse>("/deye/health");
   },
   getWeatherIntelligence: () => {
     return fetchJson<WeatherIntelligenceResponse>("/weather/intelligence");
@@ -794,7 +720,6 @@ export interface DeyeConfigPayload {
 export interface DeyeStatusResponse {
   is_configured: boolean;
   is_demo?: boolean;
-  access_token?: string;
   has_app_secret?: boolean;
   has_password?: boolean;
   station_id: string;
@@ -959,7 +884,6 @@ export interface LiveFlowResponse {
   data_source?: "live" | "demo" | "cached" | "offline";
   error?: string | null;
   token_expired?: boolean;
-  access_token?: string;
   station_name: string;
   station_id: string;
   inverter_model: string;

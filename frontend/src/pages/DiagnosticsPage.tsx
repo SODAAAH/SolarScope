@@ -60,12 +60,15 @@ export const DiagnosticsPage: React.FC = () => {
       {
         type: "sankey",
         layout: "none",
+        left: "2%",
+        right: "16%",
+        nodeWidth: 16,
         emphasis: { focus: "adjacency" },
         nodeAlign: "justify",
         data: balance.sankey_data.nodes,
         links: balance.sankey_data.links,
         lineStyle: { color: "gradient", curveness: 0.5, opacity: 0.35 },
-        label: { color: "#475569", fontSize: 11 }
+        label: { color: "#475569", fontSize: 10 }
       }
     ]
   } : {};
@@ -74,7 +77,7 @@ export const DiagnosticsPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             System Diagnostics & Physical Health
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
@@ -88,10 +91,10 @@ export const DiagnosticsPage: React.FC = () => {
         )}
       </div>
 
-      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-fit">
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-full sm:w-fit max-w-full overflow-x-auto no-scrollbar">
         <button
           onClick={() => setTab("balance")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "balance"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -103,7 +106,7 @@ export const DiagnosticsPage: React.FC = () => {
 
         <button
           onClick={() => setTab("anomalies")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "anomalies"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -115,7 +118,7 @@ export const DiagnosticsPage: React.FC = () => {
 
         <button
           onClick={() => setTab("hardware")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "hardware"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -128,8 +131,8 @@ export const DiagnosticsPage: React.FC = () => {
 
       {currentTab === "balance" && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-1 interactive-card">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-1 interactive-card">
               <Tooltip
                 title="Kirchhoff Node Balance Check"
                 content="First-principles verification that total energy into the inverter equals total energy out plus conversion and standby losses."
@@ -154,7 +157,7 @@ export const DiagnosticsPage: React.FC = () => {
               </p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-4 interactive-card">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-4 interactive-card">
               <Tooltip
                 title="Solar Self-Sufficiency"
                 content="The percentage of your home electricity supplied by your own solar panels and battery storage without relying on utility purchases."
@@ -170,7 +173,7 @@ export const DiagnosticsPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-1">Percentage of home electricity supplied by solar and battery</p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-4 interactive-card">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-4 interactive-card">
               <Tooltip
                 title="Solar Self-Consumption"
                 content="The percentage of generated solar electricity that was directly used by your home appliances or stored in your battery rather than exported."
@@ -187,7 +190,7 @@ export const DiagnosticsPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-4 interactive-card">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-4 interactive-card">
             <Tooltip
               title="Energy Flow Distribution"
               content="Sankey diagram showing conservation of energy: tracing energy origins (solar PV, TEI grid, battery discharge) to destinations (home consumption, battery storage, and inverter standby tare)."
@@ -197,16 +200,16 @@ export const DiagnosticsPage: React.FC = () => {
                 Energy Flow Distribution (Sankey Flow)
               </h3>
             </Tooltip>
-            <EChartComponent option={sankeyOption} height="360px" />
+            <EChartComponent option={sankeyOption} height="340px" />
           </div>
         </div>
       )}
 
       {currentTab === "anomalies" && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-semibold text-slate-500">Filter Severity:</span>
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               {["ALL", "HIGH", "MEDIUM", "LOW"].map((sev) => (
                 <button
                   key={sev}
@@ -232,8 +235,8 @@ export const DiagnosticsPage: React.FC = () => {
               filteredAnomalies.map((item, idx) => (
                 <div key={idx} className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-start gap-3">
                   <AlertTriangle className={`w-5 h-5 shrink-0 mt-0.5 ${item.severity === "HIGH" ? "text-rose-500" : item.severity === "MEDIUM" ? "text-amber-500" : "text-blue-500"}`} />
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                       <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title || item.type}</span>
                       <span className="text-xs text-slate-500 font-mono">{format12HourDateTime(item.timestamp)}</span>
                     </div>
@@ -248,7 +251,7 @@ export const DiagnosticsPage: React.FC = () => {
 
       {currentTab === "hardware" && (
         <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <Tooltip
               title="Hardware Specification Limits"
               content="Physical nameplate ratings, continuous inverter thresholds, and BMS firmware cutoff parameters governing safe system dispatch."
@@ -261,29 +264,29 @@ export const DiagnosticsPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
               <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg space-y-2">
                 <span className="font-semibold text-slate-800 dark:text-slate-200 block">Deye Hybrid Inverter</span>
-                <div className="flex justify-between text-slate-500"><span>Model:</span><span className="font-mono text-slate-700 dark:text-slate-300">{settings?.inverter_model || "SUN-6K-SG06LP1-EU-CM2"}</span></div>
-                <div className="flex justify-between text-slate-500"><span>Serial:</span><span className="font-mono text-slate-700 dark:text-slate-300">{settings?.inverter_serial || "2604282202"}</span></div>
-                <div className="flex justify-between text-slate-500"><span>Rated Continuous:</span><span className="font-mono text-slate-700 dark:text-slate-300">{settings?.inverter_power_kw ? `${settings.inverter_power_kw * 1000} W` : "6,000 W"}</span></div>
-                <div className="flex justify-between text-slate-500"><span>Max Apparent Output:</span><span className="font-mono text-slate-700 dark:text-slate-300">{settings?.inverter_max_apparent_va ? `${settings.inverter_max_apparent_va} VA` : "6,600 VA"}</span></div>
-                <div className="flex justify-between text-slate-500"><span>Inverter Battery Max:</span><span className="font-mono text-slate-700 dark:text-slate-300">{settings?.inverter_max_battery_current_a ? `${settings.inverter_max_battery_current_a} A` : "135 A"}</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Model:</span><span className="font-mono text-slate-700 dark:text-slate-300 break-all text-right">{settings?.inverter_model || "SUN-6K-SG06LP1-EU-CM2"}</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Serial:</span><span className="font-mono text-slate-700 dark:text-slate-300 break-all text-right">{settings?.inverter_serial || "2604282202"}</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Rated Continuous:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">{settings?.inverter_power_kw ? `${settings.inverter_power_kw * 1000} W` : "6,000 W"}</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Max Apparent Output:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">{settings?.inverter_max_apparent_va ? `${settings.inverter_max_apparent_va} VA` : "6,600 VA"}</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Inverter Battery Max:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">{settings?.inverter_max_battery_current_a ? `${settings.inverter_max_battery_current_a} A` : "135 A"}</span></div>
               </div>
 
               <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg space-y-2">
                 <span className="font-semibold text-slate-800 dark:text-slate-200 block">MENRED ESS Battery</span>
-                <div className="flex justify-between text-slate-500"><span>Chemistry:</span><span className="font-mono text-slate-700 dark:text-slate-300">LiFePO4</span></div>
-                <div className="flex justify-between text-slate-500"><span>Nominal Voltage:</span><span className="font-mono text-slate-700 dark:text-slate-300">51.2 V (48V class)</span></div>
-                <div className="flex justify-between text-slate-500"><span>Capacity:</span><span className="font-mono text-slate-700 dark:text-slate-300">314 Ah (16.08 kWh)</span></div>
-                <div className="flex justify-between text-slate-500"><span>BMS Current Limit:</span><span className="font-mono text-slate-700 dark:text-slate-300">100 A Enforced</span></div>
-                <div className="flex justify-between text-slate-500"><span>Usable Storage:</span><span className="font-mono text-slate-700 dark:text-slate-300">12.86 kWh (80% DoD)</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Chemistry:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">LiFePO4</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Nominal Voltage:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">51.2 V (48V class)</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Capacity:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">314 Ah (16.08 kWh)</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>BMS Current Limit:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">100 A Enforced</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Usable Storage:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">12.86 kWh (80% DoD)</span></div>
               </div>
 
               <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg space-y-2">
                 <span className="font-semibold text-slate-800 dark:text-slate-200 block">Canadian Solar Panels</span>
-                <div className="flex justify-between text-slate-500"><span>Quantity:</span><span className="font-mono text-slate-700 dark:text-slate-300">10 Panels</span></div>
-                <div className="flex justify-between text-slate-500"><span>Rating per Panel:</span><span className="font-mono text-slate-700 dark:text-slate-300">620 W TOPCon</span></div>
-                <div className="flex justify-between text-slate-500"><span>Total Array:</span><span className="font-mono text-slate-700 dark:text-slate-300">6,200 Wp (6.2 kWp)</span></div>
-                <div className="flex justify-between text-slate-500"><span>MPPT Voltage Range:</span><span className="font-mono text-slate-700 dark:text-slate-300">150V - 425V DC</span></div>
-                <div className="flex justify-between text-slate-500"><span>Max PV Voltage:</span><span className="font-mono text-slate-700 dark:text-slate-300">500V DC</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Quantity:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">10 Panels</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Rating per Panel:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">620 W TOPCon</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Total Array:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">6,200 Wp (6.2 kWp)</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>MPPT Voltage Range:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">150V - 425V DC</span></div>
+                <div className="flex justify-between gap-2 text-slate-500"><span>Max PV Voltage:</span><span className="font-mono text-slate-700 dark:text-slate-300 text-right">500V DC</span></div>
               </div>
             </div>
           </div>

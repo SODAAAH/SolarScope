@@ -27,7 +27,7 @@ export const LiveSummaryCard: React.FC<LiveSummaryCardProps> = ({
   const animSelfCons = useAnimatedNumber(selfConsumptionRate, 600, 1);
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm h-full flex flex-col justify-between interactive-card">
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-sm h-full flex flex-col justify-between interactive-card">
       <div>
         <div className="flex items-center justify-between mb-4">
           <Tooltip

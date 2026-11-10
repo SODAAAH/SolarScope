@@ -139,19 +139,19 @@ export const ScenariosPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             What-If Simulator & Hardware Upgrades
           </h1>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
             Simulate Canadian Solar PV additions and MENRED ESS battery expansion under strict inverter and BMS limits.
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-fit">
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-full sm:w-fit max-w-full overflow-x-auto no-scrollbar whitespace-nowrap">
         <button
           onClick={() => setTab("upgrades")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "upgrades"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -162,7 +162,7 @@ export const ScenariosPage: React.FC = () => {
         </button>
         <button
           onClick={() => setTab("load_shift")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "load_shift"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -173,7 +173,7 @@ export const ScenariosPage: React.FC = () => {
         </button>
         <button
           onClick={() => setTab("finance")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "finance"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -186,11 +186,11 @@ export const ScenariosPage: React.FC = () => {
 
       {currentTab === "upgrades" && (
         <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
               Inverter & BMS Electrical Constraints Enforced
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 text-xs">
               <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                 <span className="text-slate-500">Inverter AC Continuous</span>
                 <div className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1">
@@ -223,7 +223,7 @@ export const ScenariosPage: React.FC = () => {
           </div>
 
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800">
+            <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800">
               <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Hardware Expansion Comparison Scenarios
               </h3>
@@ -233,7 +233,7 @@ export const ScenariosPage: React.FC = () => {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/50 uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-800">
+                <thead className="bg-slate-50 dark:bg-slate-800/50 uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-800 whitespace-nowrap">
                   <tr>
                     <th className="px-4 py-3">Configuration Option</th>
                     <th className="px-4 py-3">Added Storage / PV</th>
@@ -251,20 +251,20 @@ export const ScenariosPage: React.FC = () => {
                         {opt.name}
                         <div className="text-[10px] font-normal text-slate-500">{opt.description}</div>
                       </td>
-                      <td className="px-4 py-3 font-mono">
+                      <td className="px-4 py-3 font-mono whitespace-nowrap">
                         {opt.added_battery_kwh > 0 && `+${opt.added_battery_kwh} kWh`}
                         {opt.added_battery_kwh > 0 && opt.added_pv_kwp > 0 && " | "}
                         {opt.added_pv_kwp > 0 && `+${opt.added_pv_kwp} kWp`}
                       </td>
-                      <td className="px-4 py-3 font-mono">PHP {opt.estimated_cost_php.toLocaleString()}</td>
-                      <td className="px-4 py-3 font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                      <td className="px-4 py-3 font-mono whitespace-nowrap">PHP {opt.estimated_cost_php.toLocaleString()}</td>
+                      <td className="px-4 py-3 font-mono whitespace-nowrap text-emerald-600 dark:text-emerald-400 font-semibold">
                         -{opt.daily_grid_reduction_kwh.toFixed(1)} kWh/day
                       </td>
-                      <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-slate-100">
+                      <td className="px-4 py-3 font-mono whitespace-nowrap font-bold text-slate-900 dark:text-slate-100">
                         PHP {opt.monthly_savings_php.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </td>
-                      <td className="px-4 py-3 font-mono">{opt.payback_years.toFixed(1)} yrs</td>
-                      <td className="px-4 py-3 font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                      <td className="px-4 py-3 font-mono whitespace-nowrap">{opt.payback_years.toFixed(1)} yrs</td>
+                      <td className="px-4 py-3 font-mono whitespace-nowrap text-emerald-600 dark:text-emerald-400 font-bold">
                         PHP {opt.ten_year_npv_php.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </td>
                     </tr>
@@ -277,14 +277,14 @@ export const ScenariosPage: React.FC = () => {
       )}
 
       {currentTab === "load_shift" && (
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
             Interactive Parametric Upgrade Controls
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <div className="flex justify-between text-xs">
+              <div className="flex flex-wrap justify-between gap-1 text-xs">
                 <span className="font-medium text-slate-700 dark:text-slate-300">Additional Battery Storage</span>
                 <span className="font-bold text-amber-600 dark:text-amber-400">{addBattery.toFixed(1)} kWh</span>
               </div>
@@ -300,7 +300,7 @@ export const ScenariosPage: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <div className="flex justify-between text-xs">
+              <div className="flex flex-wrap justify-between gap-1 text-xs">
                 <span className="font-medium text-slate-700 dark:text-slate-300">Additional Canadian Solar Panels</span>
                 <span className="font-bold text-amber-600 dark:text-amber-400">{addPv.toFixed(2)} kWp ({Math.round(addPv / 0.62)} panels)</span>
               </div>
@@ -316,7 +316,7 @@ export const ScenariosPage: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <div className="flex justify-between text-xs">
+              <div className="flex flex-wrap justify-between gap-1 text-xs">
                 <span className="font-medium text-slate-700 dark:text-slate-300">Minimum Battery Reserve State</span>
                 <span className="font-bold text-amber-600 dark:text-amber-400">{reserveSoc}%</span>
               </div>
@@ -332,7 +332,7 @@ export const ScenariosPage: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <div className="flex justify-between text-xs">
+              <div className="flex flex-wrap justify-between gap-1 text-xs">
                 <span className="font-medium text-slate-700 dark:text-slate-300">Load Shifted into Peak Solar Hours</span>
                 <span className="font-bold text-amber-600 dark:text-amber-400">{shiftLoad.toFixed(1)} kWh/day</span>
               </div>
@@ -352,14 +352,14 @@ export const ScenariosPage: React.FC = () => {
             <button
               onClick={runSimulation}
               disabled={loading}
-              className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg transition-colors"
             >
               {loading ? "Simulating..." : "Recalculate Simulation"}
             </button>
           </div>
 
           {modeled && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
               <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                 <span className="text-xs text-slate-500">Modeled Daily Grid Import</span>
                 <div className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
@@ -397,11 +397,11 @@ export const ScenariosPage: React.FC = () => {
 
       {currentTab === "finance" && (
         <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
               Tariff & CAPEX Settings
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 items-end">
               <div>
                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Tariff Structure</label>
                 <select
@@ -448,7 +448,7 @@ export const ScenariosPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Observed Daily Cost</span>
               <div className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
@@ -479,8 +479,8 @@ export const ScenariosPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="flex justify-between items-center mb-4">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-4">
               <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 10-Year Discounted Cash Flow NPV & System Payback
               </h3>
@@ -488,7 +488,7 @@ export const ScenariosPage: React.FC = () => {
                 Payback: {paybackYear ? `${paybackYear} Years` : "> 10 Years"}
               </span>
             </div>
-            <EChartComponent option={cashFlowOption} height="320px" />
+            <EChartComponent option={cashFlowOption} height="290px" />
           </div>
         </div>
       )}

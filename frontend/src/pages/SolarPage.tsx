@@ -69,7 +69,15 @@ export const SolarPage: React.FC = () => {
   const forecastHourlyOption = weather?.hourly_forecast ? {
     ...baseOpt,
     tooltip: { ...baseOpt.tooltip, trigger: "axis" },
-    legend: { data: ["Estimated Solar Power (kW)", "Solar Radiation (W/m²)"], top: 0, textStyle: { color: "#64748B" } },
+    legend: {
+      type: "scroll",
+      data: ["Estimated Solar Power (kW)", "Solar Radiation (W/m²)"],
+      top: 0,
+      left: 0,
+      right: 0,
+      textStyle: { color: "#64748B", fontSize: 11 }
+    },
+    grid: { left: "3%", right: "4%", top: "18%", bottom: "10%", containLabel: true },
     xAxis: {
       ...baseOpt.xAxis,
       data: weather.hourly_forecast.map((f) => formatHourLabel12(f.hour))
@@ -101,7 +109,7 @@ export const SolarPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             Solar Photovoltaic Generation & Weather Intelligence
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
@@ -110,10 +118,10 @@ export const SolarPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-fit">
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-full sm:w-fit max-w-full overflow-x-auto no-scrollbar">
         <button
           onClick={() => setTab("production")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "production"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -125,7 +133,7 @@ export const SolarPage: React.FC = () => {
 
         <button
           onClick={() => setTab("weather")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "weather"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -137,7 +145,7 @@ export const SolarPage: React.FC = () => {
 
         <button
           onClick={() => setTab("forecast")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "forecast"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -150,8 +158,8 @@ export const SolarPage: React.FC = () => {
 
       {currentTab === "production" && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-1 interactive-card">
+          <div className="grid grid-cols-1 min-[440px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-1 interactive-card">
               <Tooltip
                 title="Total Solar Generated"
                 content="Total clean electrical energy produced by your rooftop solar PV array over the selected period."
@@ -167,7 +175,7 @@ export const SolarPage: React.FC = () => {
               <span className="text-xs text-slate-500 block mt-1">Trapezoidal integration</span>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-2 interactive-card">
+            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-2 interactive-card">
               <Tooltip
                 title="Specific PV Yield"
                 content="Standard normalized metric measuring kilowatt-hours generated per kilowatt-peak of installed DC solar panel capacity (6.2 kWp)."
@@ -183,7 +191,7 @@ export const SolarPage: React.FC = () => {
               <span className="text-xs text-slate-500 block mt-1">Capacity: {solar?.pv_capacity_kwp || 6.2} kWp</span>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-3 interactive-card">
+            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-3 interactive-card">
               <Tooltip
                 title="Peak PV Power"
                 content="The highest instantaneous solar direct-current output recorded during the active observation period."
@@ -198,7 +206,7 @@ export const SolarPage: React.FC = () => {
               <span className="text-xs text-slate-500 block mt-1">At {solar?.peak_power_time_12h || "12:15 PM"}</span>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-4 interactive-card">
+            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm card-stagger-4 interactive-card">
               <Tooltip
                 title="Inverter AC Saturation & Clipping"
                 content="Energy lost when DC array production exceeds the continuous AC inverter threshold (6.0 kW). System operates safely within continuous ratings."
@@ -214,7 +222,7 @@ export const SolarPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-5 interactive-card">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm card-stagger-5 interactive-card">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
               Hourly Solar Energy Generation Profile
             </h3>
@@ -225,9 +233,9 @@ export const SolarPage: React.FC = () => {
 
       {currentTab === "weather" && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
-              <Cloud className="w-8 h-8 text-slate-400" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+              <Cloud className="w-8 h-8 text-slate-400 shrink-0" />
               <div>
                 <Tooltip
                     title="Atmospheric Cloud Cover"
@@ -243,8 +251,8 @@ export const SolarPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
-              <Sun className="w-8 h-8 text-amber-500" />
+            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+              <Sun className="w-8 h-8 text-amber-500 shrink-0" />
               <div>
                 <Tooltip
                     title="Solar Irradiance (GHI)"
@@ -261,8 +269,8 @@ export const SolarPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
-              <Thermometer className="w-8 h-8 text-rose-500" />
+            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+              <Thermometer className="w-8 h-8 text-rose-500 shrink-0" />
               <div>
                 <Tooltip
                     title="Outdoor Ambient Temperature"
@@ -289,8 +297,8 @@ export const SolarPage: React.FC = () => {
 
       {currentTab === "forecast" && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="grid grid-cols-1 min-[440px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Expected Tomorrow Yield"
                 content="Projected kilowatt-hours of solar energy tomorrow based on solar irradiation models, sun angle, and cloud forecast."
@@ -305,7 +313,7 @@ export const SolarPage: React.FC = () => {
               <span className="text-xs text-slate-500 block mt-1">Range: {weather?.tomorrow_forecast.conservative_solar_kwh || 18} - {weather?.tomorrow_forecast.optimistic_solar_kwh || 25} kWh</span>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Full Battery Charge Probability"
                 content="Statistical likelihood that solar generation tomorrow will exceed daily loads enough to fill the battery to 100% SOC before sunset."
@@ -320,7 +328,7 @@ export const SolarPage: React.FC = () => {
               <span className="text-xs text-slate-500 block mt-1">Likelihood battery reaches 100%</span>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Projected Sunset Battery SOC"
                 content="Forecasted battery state-of-charge percentage at approximately 6:00 PM sunset tomorrow before evening discharge begins."
@@ -335,7 +343,7 @@ export const SolarPage: React.FC = () => {
               <span className="text-xs text-slate-500 block mt-1">Projected state of charge at 6 PM</span>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Projected Night Autonomy"
                 content="Estimated duration the battery will sustain household evening and overnight loads without buying electricity from TEI."
@@ -351,7 +359,7 @@ export const SolarPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
               Hourly Solar Radiation & Expected PV Output Forecast (Tomorrow)
             </h3>

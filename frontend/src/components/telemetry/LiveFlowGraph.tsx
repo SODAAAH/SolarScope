@@ -12,7 +12,7 @@ interface LiveFlowGraphProps {
   onRefreshRequested?: () => void;
 }
 
-const LIVE_FLOW_CACHE_KEY = 'solarscope_cached_live_flow';
+const LIVE_FLOW_CACHE_KEY = 'solarscope_cached_live_flow_v2';
 const REFRESH_INTERVAL_SEC = 15;
 
 const NEUTRAL_NODES: LiveFlowResponse['nodes'] = {
@@ -34,7 +34,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
       return initialData;
     }
     try {
-      const saved = sessionStorage.getItem(LIVE_FLOW_CACHE_KEY);
+      const saved = localStorage.getItem(LIVE_FLOW_CACHE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as LiveFlowResponse;
         if (parsed && (parsed.is_live || parsed.data_source === 'demo')) {
@@ -74,7 +74,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
           setData(res);
           try {
             if (res.is_live || res.data_source === 'demo') {
-              sessionStorage.setItem(LIVE_FLOW_CACHE_KEY, JSON.stringify(res));
+              localStorage.setItem(LIVE_FLOW_CACHE_KEY, JSON.stringify(res));
             }
           } catch {}
           if (onFlowUpdateRef.current) {
@@ -82,7 +82,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
           }
         } else {
           setData((prev) => {
-            if (prev && (prev.is_live || prev.data_source === 'demo' || prev.data_source === 'cached')) {
+            if (prev && (prev.is_live || prev.data_source === 'cached')) {
               return {
                 ...prev,
                 is_live: false,
@@ -174,9 +174,9 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
   const loadSpeed = getSpeed(nodes.load.power_w);
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm h-full flex flex-col justify-between interactive-card">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-sm h-full flex flex-col justify-between interactive-card">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
+        <div className="flex items-center gap-2 min-w-0">
           <Tooltip
             title="Live Energy Flow"
             content="Real-time physical power vectors showing current generation, battery charge/discharge, grid import/export, and home consumption."
@@ -185,20 +185,20 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 cursor-help">Flow Graph</h3>
           </Tooltip>
           {data?.last_update_time && (
-            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded shrink-0">
               {format12HourTime(data.last_update_time, true)}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {sourceState === 'live' && (
             <Tooltip
               title="Deye Cloud Synchronized"
               content="Connected directly to Deye OpenAPI station telemetry."
               position="bottom"
             >
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+              <span className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-[11px] font-medium rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Live
               </span>
@@ -213,7 +213,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
             >
               <Link
                 to="/library?tab=cloud"
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                 Demo
@@ -227,7 +227,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
               content={data?.error || 'Live telemetry temporarily unreachable; retaining your last verified reading until next refresh.'}
               position="bottom"
             >
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 cursor-help">
+              <span className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 cursor-help">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                 Cached
               </span>
@@ -242,7 +242,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
             >
               <Link
                 to="/library?tab=cloud"
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
               >
                 <WifiOff className="h-3 w-3 text-slate-400" />
                 <span>Offline</span>
@@ -256,6 +256,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
             position="bottom"
           >
             <button
+              type="button"
               onClick={() => setAutoRefresh(!autoRefresh)}
               className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
                 autoRefresh
@@ -268,6 +269,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
           </Tooltip>
 
           <button
+            type="button"
             onClick={() => fetchFlowData(true)}
             disabled={loading}
             title={autoRefresh ? `Auto-refresh in ${secondsUntilRefresh}s` : 'Manual refresh'}
@@ -278,8 +280,8 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
         </div>
       </div>
 
-      <div className="relative w-full aspect-[500/320] select-none bg-slate-50/50 dark:bg-slate-950/40 rounded-lg p-2 overflow-visible border border-slate-100 dark:border-slate-800/60">
-        <svg viewBox="0 0 500 320" className="w-full h-full overflow-visible">
+      <div className="relative w-full aspect-[500/320] min-h-[210px] select-none bg-slate-50/50 dark:bg-slate-950/40 rounded-lg border border-slate-100 dark:border-slate-800/60 overflow-visible">
+        <svg viewBox="0 0 500 320" className="w-full h-full pointer-events-none">
           <defs>
             <filter id="glow-solar" x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur stdDeviation="3" result="blur" />
@@ -379,76 +381,73 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
               </circle>
             </>
           )}
+        </svg>
 
-          <foreignObject x="15" y="32" width="120" height="110" style={{ overflow: 'visible' }}>
-            <div className="flex flex-col items-center">
-              <Tooltip
-                title="Rooftop Solar PV Array"
-                content="Real-time direct-current (DC) power generated by your photovoltaic rooftop panels right now."
-                provenance="Measured"
-                position="bottom"
-              >
-                <div className="flex flex-col items-center cursor-help">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-                    pvActive
-                      ? 'bg-amber-500/10 border-amber-500/40 text-amber-500 shadow-sm shadow-amber-500/20'
-                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-                  }`}>
-                    <Sun className={`h-6 w-6 ${pvActive ? 'text-amber-500' : 'text-slate-400'}`} />
-                  </div>
-                  <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                    {formatPower(nodes.solar.power_w, nodes.solar.power_kw)}
-                  </span>
+        <div className="absolute inset-0 pointer-events-none">
+          <div style={{ left: '15%', top: '18.75%' }} className="absolute -translate-x-1/2 -mt-5 min-[400px]:-mt-6 sm:-mt-7 pointer-events-auto">
+            <Tooltip
+              title="Rooftop Solar PV Array"
+              content="Real-time direct-current (DC) power generated by your photovoltaic rooftop panels right now."
+              provenance="Measured"
+              position="bottom"
+            >
+              <div className="flex flex-col items-center cursor-help">
+                <div className={`w-10 h-10 min-[400px]:w-12 min-[400px]:h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center border transition-all ${
+                  pvActive
+                    ? 'bg-amber-500/10 border-amber-500/40 text-amber-500 shadow-sm shadow-amber-500/20'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                }`}>
+                  <Sun className={`h-4 w-4 sm:h-6 sm:w-6 ${pvActive ? 'text-amber-500' : 'text-slate-400'}`} />
                 </div>
-              </Tooltip>
-            </div>
-          </foreignObject>
+                <span className="mt-1 text-[10px] sm:text-xs font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                  {formatPower(nodes.solar.power_w, nodes.solar.power_kw)}
+                </span>
+              </div>
+            </Tooltip>
+          </div>
 
-          <foreignObject x="365" y="32" width="120" height="130" style={{ overflow: 'visible' }}>
-            <div className="flex flex-col items-center">
-              <Tooltip
-                title="Utility Grid Connection (TEI)"
-                content="Current power exchange with the TEI electric grid. Positive watts indicate importing power; negative watts indicate exporting surplus solar."
-                provenance="Measured"
-                position="bottom"
-              >
-                <div className="flex flex-col items-center cursor-help">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-                    gridImporting
-                      ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-500 shadow-sm shadow-indigo-500/20'
-                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-                  }`}>
-                    <Zap className={`h-6 w-6 ${gridImporting ? 'text-indigo-500' : 'text-slate-400'}`} />
-                  </div>
-                  <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                    {formatPower(nodes.grid.power_w, nodes.grid.power_kw)}
-                  </span>
-                  <div className={`mt-1 flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[10px] font-medium ${
-                    nodes.grid.status_label === 'On grid'
-                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400'
-                      : nodes.grid.status_label === 'Off grid'
-                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400'
-                        : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
-                  }`}>
-                    <CheckCircle2 className="h-2.5 w-2.5" />
-                    <span>{nodes.grid.status_label}</span>
-                  </div>
+          <div style={{ left: '85%', top: '18.75%' }} className="absolute -translate-x-1/2 -mt-5 min-[400px]:-mt-6 sm:-mt-7 pointer-events-auto">
+            <Tooltip
+              title="Utility Grid Connection (TEI)"
+              content="Current power exchange with the TEI electric grid. Positive watts indicate importing power; negative watts indicate exporting surplus solar."
+              provenance="Measured"
+              position="bottom"
+            >
+              <div className="flex flex-col items-center cursor-help">
+                <div className={`w-10 h-10 min-[400px]:w-12 min-[400px]:h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center border transition-all ${
+                  gridImporting
+                    ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-500 shadow-sm shadow-indigo-500/20'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                }`}>
+                  <Zap className={`h-4 w-4 sm:h-6 sm:w-6 ${gridImporting ? 'text-indigo-500' : 'text-slate-400'}`} />
                 </div>
-              </Tooltip>
-            </div>
-          </foreignObject>
+                <span className="mt-1 text-[10px] sm:text-xs font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                  {formatPower(nodes.grid.power_w, nodes.grid.power_kw)}
+                </span>
+                <div className={`mt-0.5 sm:mt-1 flex items-center gap-0.5 sm:gap-1 px-1.5 py-0.5 rounded-full border text-[9px] sm:text-[10px] font-medium whitespace-nowrap ${
+                  nodes.grid.status_label === 'On grid'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400'
+                    : nodes.grid.status_label === 'Off grid'
+                      ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400'
+                      : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
+                }`}>
+                  <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
+                  <span>{nodes.grid.status_label}</span>
+                </div>
+              </div>
+            </Tooltip>
+          </div>
 
-          <foreignObject x="208" y="103" width="84" height="64" style={{ overflow: 'visible' }}>
+          <div style={{ left: '50%', top: '42.2%' }} className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto">
             <Tooltip
               title="Hybrid Inverter"
               content="Central bi-directional inverter managing power conversion between solar DC, battery storage, and 230V AC home appliances."
               provenance="Measured"
               position="top"
-              className="w-full h-full"
             >
-              <div className="w-full h-full rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-sm flex flex-col items-center justify-center p-1.5 cursor-help">
-                <div className="w-6 h-4 rounded-sm border border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-1">
-                  <div className={`w-2 h-2 rounded-full ${
+              <div className="w-[68px] h-[44px] min-[400px]:w-[78px] min-[400px]:h-[54px] sm:w-[86px] sm:h-[64px] rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-sm flex flex-col items-center justify-center p-1 sm:p-1.5 cursor-help">
+                <div className="w-5 h-3.5 sm:w-6 sm:h-4 rounded-sm border border-slate-400 dark:border-slate-500 bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-0.5 sm:mb-1">
+                  <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${
                     sourceState === 'live'
                       ? 'bg-emerald-500 animate-pulse'
                       : sourceState === 'demo' || sourceState === 'cached'
@@ -456,89 +455,83 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
                         : 'bg-slate-400'
                   }`} />
                 </div>
-                <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">Inverter</span>
+                <span className="text-[10px] sm:text-[11px] font-semibold text-slate-800 dark:text-slate-200">Inverter</span>
               </div>
             </Tooltip>
-          </foreignObject>
+          </div>
 
-          <foreignObject x="15" y="172" width="120" height="130" style={{ overflow: 'visible' }}>
-            <div className="flex flex-col items-center pt-5">
-              <Tooltip
-                title="Battery Storage (LiFePO4)"
-                content="State of Charge (SOC) and real-time charging or discharging rate of your lithium iron phosphate home battery system."
-                formula="SOC(t) = Q_rem(t) / Q_nominal × 100%"
-                provenance="Measured"
-                position="top"
-              >
-                <div className="flex flex-col items-center cursor-help">
-                  <div className="relative">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-                      battDischarging || battCharging
-                        ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-500 shadow-sm shadow-emerald-500/20'
-                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-                    }`}>
-                      <Battery className={`h-6 w-6 ${battDischarging || battCharging ? 'text-emerald-500' : 'text-slate-400'}`} />
-                    </div>
-                    <span className="absolute -top-2 -right-2 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold shadow-sm">
-                      {nodes.battery.soc_percent.toFixed(0)}%
-                    </span>
-                  </div>
-                  <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                    {formatPower(nodes.battery.power_w, nodes.battery.power_kw)}
-                  </span>
-                </div>
-              </Tooltip>
-            </div>
-          </foreignObject>
-
-          <foreignObject x="190" y="197" width="120" height="110" style={{ overflow: 'visible' }}>
-            <div className="flex flex-col items-center">
-              <Tooltip
-                title="Critical UPS Backup Port"
-                content="Protected household circuits connected to the inverter dedicated emergency EPS backup port, running seamlessly without grid outages."
-                provenance="Measured"
-                position="top"
-              >
-                <div className="flex flex-col items-center cursor-help">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-                    upsActive
-                      ? 'bg-sky-500/10 border-sky-500/40 text-sky-500 shadow-sm shadow-sky-500/20'
+          <div style={{ left: '15%', top: '68.75%' }} className="absolute -translate-x-1/2 -mt-5 min-[400px]:-mt-6 sm:-mt-7 pointer-events-auto">
+            <Tooltip
+              title="Battery Storage (LiFePO4)"
+              content="State of Charge (SOC) and real-time charging or discharging rate of your lithium iron phosphate home battery system."
+              formula="SOC(t) = Q_rem(t) / Q_nominal × 100%"
+              provenance="Measured"
+              position="top"
+            >
+              <div className="flex flex-col items-center cursor-help">
+                <div className="relative">
+                  <div className={`w-10 h-10 min-[400px]:w-12 min-[400px]:h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center border transition-all ${
+                    battDischarging || battCharging
+                      ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-500 shadow-sm shadow-emerald-500/20'
                       : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
                   }`}>
-                    <ShieldCheck className={`h-6 w-6 ${upsActive ? 'text-sky-500' : 'text-slate-400'}`} />
+                    <Battery className={`h-4 w-4 sm:h-6 sm:w-6 ${battDischarging || battCharging ? 'text-emerald-500' : 'text-slate-400'}`} />
                   </div>
-                  <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                    {formatPower(nodes.ups.power_w, nodes.ups.power_kw)}
+                  <span className="absolute -top-2 -right-2 px-1 sm:px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[9px] sm:text-[10px] font-bold shadow-sm">
+                    {nodes.battery.soc_percent.toFixed(0)}%
                   </span>
                 </div>
-              </Tooltip>
-            </div>
-          </foreignObject>
+                <span className="mt-1 text-[10px] sm:text-xs font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                  {formatPower(nodes.battery.power_w, nodes.battery.power_kw)}
+                </span>
+              </div>
+            </Tooltip>
+          </div>
 
-          <foreignObject x="365" y="192" width="120" height="110" style={{ overflow: 'visible' }}>
-            <div className="flex flex-col items-center">
-              <Tooltip
-                title="Household Consumption"
-                content="Total instantaneous power consumed across all circuits, appliances, air conditioners, and devices in your home."
-                provenance="Measured"
-                position="top"
-              >
-                <div className="flex flex-col items-center cursor-help">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${
-                    loadActive
-                      ? 'bg-orange-500/10 border-orange-500/40 text-orange-500 shadow-sm shadow-orange-500/20'
-                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-                  }`}>
-                    <Home className={`h-6 w-6 ${loadActive ? 'text-orange-500' : 'text-slate-400'}`} />
-                  </div>
-                  <span className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                    {formatPower(nodes.load.power_w, nodes.load.power_kw)}
-                  </span>
+          <div style={{ left: '50%', top: '61.5%' }} className="absolute -translate-x-1/2 pointer-events-auto">
+            <Tooltip
+              title="Critical UPS Backup Port"
+              content="Protected household circuits connected to the inverter dedicated emergency EPS backup port, running seamlessly without grid outages."
+              provenance="Measured"
+              position="top"
+            >
+              <div className="flex flex-col items-center cursor-help">
+                <div className={`w-10 h-10 min-[400px]:w-12 min-[400px]:h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center border transition-all ${
+                  upsActive
+                    ? 'bg-sky-500/10 border-sky-500/40 text-sky-500 shadow-sm shadow-sky-500/20'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                }`}>
+                  <ShieldCheck className={`h-4 w-4 sm:h-6 sm:w-6 ${upsActive ? 'text-sky-500' : 'text-slate-400'}`} />
                 </div>
-              </Tooltip>
-            </div>
-          </foreignObject>
-        </svg>
+                <span className="mt-1 text-[10px] sm:text-xs font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                  {formatPower(nodes.ups.power_w, nodes.ups.power_kw)}
+                </span>
+              </div>
+            </Tooltip>
+          </div>
+
+          <div style={{ left: '85%', top: '68.75%' }} className="absolute -translate-x-1/2 -mt-5 min-[400px]:-mt-6 sm:-mt-7 pointer-events-auto">
+            <Tooltip
+              title="Household Consumption"
+              content="Total instantaneous power consumed across all circuits, appliances, air conditioners, and devices in your home."
+              provenance="Measured"
+              position="top"
+            >
+              <div className="flex flex-col items-center cursor-help">
+                <div className={`w-10 h-10 min-[400px]:w-12 min-[400px]:h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center border transition-all ${
+                  loadActive
+                    ? 'bg-orange-500/10 border-orange-500/40 text-orange-500 shadow-sm shadow-orange-500/20'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                }`}>
+                  <Home className={`h-4 w-4 sm:h-6 sm:w-6 ${loadActive ? 'text-orange-500' : 'text-slate-400'}`} />
+                </div>
+                <span className="mt-1 text-[10px] sm:text-xs font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                  {formatPower(nodes.load.power_w, nodes.load.power_kw)}
+                </span>
+              </div>
+            </Tooltip>
+          </div>
+        </div>
       </div>
     </div>
   );

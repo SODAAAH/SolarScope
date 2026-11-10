@@ -4,6 +4,8 @@ node_modules
 venv
 horizon
 .agents
+.env*
+*.db
 backend/solarscope.db
 backend/data/uploads/*
 !backend/data/uploads/.gitkeep

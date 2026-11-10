@@ -4,9 +4,11 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import hashlib
+import time
 import datetime
 from typing import Dict, Any, List, Optional
 from backend.app.storage.db import get_connection
+from backend.app.storage.blob_sync import ensure_hydrated
 
 MANILA_TZ = datetime.timezone(datetime.timedelta(hours=8))
 
@@ -32,7 +34,53 @@ class DeyeMCPClient:
         self._cached_live_flow_times: Dict[str, float] = {}
         self._last_real_flows: Dict[str, Dict[str, Any]] = {}
 
+    def invalidate_cache(self, clear_last_real: bool = False) -> None:
+        self._cached_token = None
+        self._token_expiry = None
+        self._last_auth_error = None
+        self._cached_live_flows.clear()
+        self._cached_live_flow_times.clear()
+        if clear_last_real:
+            self._last_real_flows.clear()
+
+    def _cred_signature(self, creds: Dict[str, str]) -> str:
+        raw = f"{creds.get('station_id', '')}:{creds.get('app_id', '')}:{creds.get('username', '')}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+
+    def _save_db_last_flow(self, cache_key: str, flow_res: Dict[str, Any]) -> None:
+        try:
+            clean = dict(flow_res)
+            clean.pop("access_token", None)
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            conn = get_connection()
+            conn.execute(
+                """INSERT OR REPLACE INTO deye_live_cache (cache_key, payload_json, updated_at)
+                   VALUES (?, ?, ?)""",
+                (cache_key, json.dumps(clean), now_iso)
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+    def _load_db_last_flow(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        try:
+            conn = get_connection()
+            row = conn.execute(
+                "SELECT payload_json FROM deye_live_cache WHERE cache_key = ?",
+                (cache_key,)
+            ).fetchone()
+            conn.close()
+            if row and row["payload_json"]:
+                parsed = json.loads(row["payload_json"])
+                if isinstance(parsed, dict):
+                    return parsed
+        except Exception:
+            pass
+        return None
+
     def _get_credentials(self) -> Dict[str, str]:
+        ensure_hydrated(force=False)
         conn = get_connection()
         cfg = conn.execute("SELECT * FROM deye_cloud_configs WHERE project_id = ?", (self.project_id,)).fetchone()
         sys_row = conn.execute("SELECT * FROM system_settings WHERE project_id = ?", (self.project_id,)).fetchone()
@@ -95,29 +143,38 @@ class DeyeMCPClient:
         payload = json.dumps(auth_body).encode("utf-8")
 
         token_url = f"{self.base_url}/v1.0/account/token?appId={urllib.parse.quote(creds['app_id'])}"
-        try:
-            req = urllib.request.Request(token_url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                if data.get("success") and "accessToken" in data:
-                    self._cached_token = data["accessToken"]
-                    expires_sec = data.get("expiresIn")
-                    try:
-                        ttl = max(300, int(expires_sec)) - 60 if expires_sec else 86400
-                    except Exception:
-                        ttl = 86400
-                    self._token_expiry = now + datetime.timedelta(seconds=ttl)
-                    self._last_auth_error = None
-                    return self._cached_token
-                self._last_auth_error = data.get("msg") or "Deye authentication rejected"
-        except urllib.error.HTTPError as he:
+        for attempt in range(2):
             try:
-                err_data = json.loads(he.read().decode("utf-8"))
-                self._last_auth_error = err_data.get("msg") or f"HTTP {he.code}: {he.reason}"
-            except Exception:
-                self._last_auth_error = f"HTTP {he.code}: {he.reason}"
-        except Exception as e:
-            self._last_auth_error = str(e)
+                req = urllib.request.Request(token_url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if data.get("success") and "accessToken" in data:
+                        self._cached_token = data["accessToken"]
+                        expires_sec = data.get("expiresIn")
+                        try:
+                            ttl = max(300, int(expires_sec)) - 60 if expires_sec else 86400
+                        except Exception:
+                            ttl = 86400
+                        self._token_expiry = now + datetime.timedelta(seconds=ttl)
+                        self._last_auth_error = None
+                        return self._cached_token
+                    self._last_auth_error = data.get("msg") or "Deye authentication rejected"
+                    break
+            except urllib.error.HTTPError as he:
+                try:
+                    err_data = json.loads(he.read().decode("utf-8"))
+                    self._last_auth_error = err_data.get("msg") or f"HTTP {he.code}: {he.reason}"
+                except Exception:
+                    self._last_auth_error = f"HTTP {he.code}: {he.reason}"
+                if he.code in (500, 502, 503, 504) and attempt == 0:
+                    time.sleep(0.3)
+                    continue
+                break
+            except Exception as e:
+                self._last_auth_error = str(e)
+                if attempt == 0:
+                    time.sleep(0.3)
+                    continue
         return None
 
     def execute_read_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -200,7 +257,7 @@ class DeyeMCPClient:
                 method="POST"
             )
             try:
-                with urllib.request.urlopen(req, timeout=8) as resp:
+                with urllib.request.urlopen(req, timeout=10) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     if data.get("success") is False:
                         if attempt == 0 and has_server_creds and self._is_auth_failure(None, data):
@@ -259,6 +316,9 @@ class DeyeMCPClient:
                     if refreshed:
                         token = refreshed
                         continue
+                if attempt == 0 and he.code in (500, 502, 503, 504):
+                    time.sleep(0.3)
+                    continue
                 err_msg = (err_data.get("msg") if err_data else None) or f"HTTP {he.code}: {he.reason}"
                 return {
                     "success": False,
@@ -266,6 +326,9 @@ class DeyeMCPClient:
                     "token_expired": self._is_auth_failure(he.code, err_data) and not has_server_creds
                 }
             except Exception as e:
+                if attempt == 0:
+                    time.sleep(0.3)
+                    continue
                 return {"success": False, "error": str(e)}
         return {"success": False, "error": "Deye station query failed"}
 
@@ -665,8 +728,7 @@ class DeyeMCPClient:
         grid_w: float,
         soc: float,
         ups_w: float,
-        dataset_metrics: Dict[str, Any],
-        access_token: Optional[str] = None
+        dataset_metrics: Dict[str, Any]
     ) -> Dict[str, Any]:
         batt_state = "IDLE"
         if batt_w > 10.0:
@@ -737,8 +799,6 @@ class DeyeMCPClient:
             "summary": dataset_metrics["summary"],
             "utilization": dataset_metrics["utilization"]
         }
-        if access_token:
-            payload["access_token"] = access_token
         return payload
 
     def get_live_flow(
@@ -759,13 +819,17 @@ class DeyeMCPClient:
         else:
             is_demo = creds["app_id"] == "demo" or creds["username"] == "demo"
 
-        cache_key = f"{'demo' if is_demo else 'live'}:{station_id}"
+        if not is_demo:
+            cred_sig = self._cred_signature(creds)
+            cache_key = f"live:{station_id}:{cred_sig}"
+        else:
+            cache_key = f"demo:{station_id}"
         now_ts = datetime.datetime.now().timestamp()
 
         if not is_demo:
             cached_flow = self._cached_live_flows.get(cache_key)
             cached_time = self._cached_live_flow_times.get(cache_key, 0.0)
-            if cached_flow is not None and (now_ts - cached_time) < 12.0:
+            if cached_flow is not None and (now_ts - cached_time) < 10.0:
                 refreshed_copy = dict(cached_flow)
                 dataset_metrics = self._get_dataset_summary_metrics()
                 refreshed_copy["summary"] = dataset_metrics["summary"]
@@ -848,15 +912,15 @@ class DeyeMCPClient:
                 grid_w=grid_w,
                 soc=soc,
                 ups_w=ups_w,
-                dataset_metrics=dataset_metrics,
-                access_token=latest_res.get("token_used")
+                dataset_metrics=dataset_metrics
             )
             self._cached_live_flows[cache_key] = flow_res
             self._cached_live_flow_times[cache_key] = datetime.datetime.now().timestamp()
             self._last_real_flows[cache_key] = flow_res
+            self._save_db_last_flow(cache_key, flow_res)
             return flow_res
 
-        last_real = self._last_real_flows.get(cache_key)
+        last_real = self._last_real_flows.get(cache_key) or self._load_db_last_flow(cache_key)
         if last_real is not None:
             cached_copy = dict(last_real)
             cached_copy["is_live"] = False

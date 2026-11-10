@@ -366,26 +366,34 @@ export const BillIntelligencePage: React.FC = () => {
       }
     },
     legend: {
+      type: "scroll",
       data: ["Electricity Purchased (kWh)", "Estimated Cost (₱)"],
       bottom: 0,
-      textStyle: { color: "#64748b" }
+      left: 0,
+      right: 0,
+      textStyle: { color: "#64748b", fontSize: 11 }
     },
-    grid: { left: "4%", right: "4%", top: "8%", bottom: "16%", containLabel: true },
+    grid: { left: "3%", right: "3%", top: "12%", bottom: "18%", containLabel: true },
     xAxis: {
       type: "category",
       data: chartTimeline.map(t => t.day_label),
+      axisLabel: { fontSize: 10 },
       axisLine: { lineStyle: { color: "#94a3b8" } }
     },
     yAxis: [
       {
         type: "value",
-        name: "Electricity (kWh)",
+        name: "kWh",
+        nameTextStyle: { fontSize: 10, color: "#64748b" },
+        axisLabel: { fontSize: 10 },
         axisLine: { lineStyle: { color: "#94a3b8" } },
         splitLine: { lineStyle: { color: "#e2e8f0", type: "dashed" } }
       },
       {
         type: "value",
-        name: "Estimated Cost (₱)",
+        name: "Cost (₱)",
+        nameTextStyle: { fontSize: 10, color: "#64748b" },
+        axisLabel: { fontSize: 10 },
         axisLine: { lineStyle: { color: "#94a3b8" } },
         splitLine: { show: false }
       }
@@ -423,7 +431,7 @@ export const BillIntelligencePage: React.FC = () => {
             <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
               <ReceiptText className="w-5 h-5" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
               Bill Intelligence — TEI Electricity Statement Estimator
             </h1>
           </div>
@@ -470,7 +478,7 @@ export const BillIntelligencePage: React.FC = () => {
             Projections calculated using verified published tariffs and active cycle meter readings.
           </span>
         </div>
-        <div className="flex items-center gap-3 text-[11px] font-mono text-slate-500">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] font-mono text-slate-500">
           <span>Schedule: {forecast?.active_rate_effective_month || "October 2026"}</span>
           {checkMessage && (
             <span className="text-emerald-600 dark:text-emerald-400 font-sans font-medium flex items-center gap-1">
@@ -498,7 +506,7 @@ export const BillIntelligencePage: React.FC = () => {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-2 card-stagger-1 interactive-card">
+        <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-2 card-stagger-1 interactive-card">
           <div className="flex items-center justify-between">
             <Tooltip
               title="Estimated TEI Bill Forecast"
@@ -517,13 +525,13 @@ export const BillIntelligencePage: React.FC = () => {
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
             ₱{forecast?.expected_estimate.estimated_total_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0.00"}
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-slate-100 dark:border-slate-800">
             <span>Range: ₱{forecast?.lower_estimate.estimated_total_amount.toFixed(0)} - ₱{forecast?.higher_estimate.estimated_total_amount.toFixed(0)}</span>
             <span className="text-amber-600 dark:text-amber-400 font-medium">{forecast?.days_remaining || 0} days remaining</span>
           </div>
         </div>
 
-        <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-2 card-stagger-2 interactive-card">
+        <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-2 card-stagger-2 interactive-card">
           <div className="flex items-center justify-between">
             <Tooltip
               title="Current Cycle Grid Imports"
@@ -542,13 +550,13 @@ export const BillIntelligencePage: React.FC = () => {
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
             {forecast?.actual_imported_kwh.toFixed(1) || "0.0"} <span className="text-sm font-normal text-slate-500">kWh</span>
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-slate-100 dark:border-slate-800">
             <span>Projected total: {forecast?.expected_estimate.total_projected_kwh.toFixed(1)} kWh</span>
             <span>{forecast?.expected_estimate.daily_import_rate_kwh.toFixed(1)} kWh/day</span>
           </div>
         </div>
 
-        <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-2 card-stagger-3 interactive-card">
+        <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-2 card-stagger-3 interactive-card">
           <div className="flex items-center justify-between">
             <Tooltip
               title="Estimated Cycle Solar Savings"
@@ -567,13 +575,13 @@ export const BillIntelligencePage: React.FC = () => {
           <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
             ₱{forecast?.solar_savings.savings_pesos.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0.00"}
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-slate-100 dark:border-slate-800">
             <span>Bill without solar: ₱{forecast?.solar_savings.bill_without_solar.toFixed(2)}</span>
             <span>Avoided {forecast?.solar_savings.avoided_grid_kwh.toFixed(0)} kWh</span>
           </div>
         </div>
 
-        <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-2">
+        <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm space-y-2">
           <div className="flex items-center justify-between">
             <Tooltip
               title="Active TEI Generation Charge"
@@ -592,14 +600,14 @@ export const BillIntelligencePage: React.FC = () => {
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
             ₱{forecast?.active_generation_charge.toFixed(5) || "6.74890"} <span className="text-sm font-normal text-slate-500">/kWh</span>
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-slate-100 dark:border-slate-800">
             <span>+ Gen VAT ₱{forecast?.active_generation_vat.toFixed(5)}</span>
             <span>Cycle: {forecast?.billing_cycle_start ? formatDateMMDDYYYY(forecast.billing_cycle_start) : "10/25/2026"} to {forecast?.billing_cycle_end ? formatDateMMDDYYYY(forecast.billing_cycle_end) : "11/25/2026"}</span>
           </div>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+      <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -609,7 +617,7 @@ export const BillIntelligencePage: React.FC = () => {
               Tracking observed electricity purchases and projected costs toward your next meter reading date ({forecast?.next_meter_reading_date ? formatDateMMDDYYYY(forecast.next_meter_reading_date) : "11/25/2026"}).
             </p>
           </div>
-          <div className="flex items-center gap-3 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-coral-500 inline-block" style={{ backgroundColor: theme.colors.coral }}></span>
               Observed Purchases
@@ -623,10 +631,10 @@ export const BillIntelligencePage: React.FC = () => {
         <EChartComponent option={progressOption} height={280} loading={loading} />
       </div>
 
-      <div className="flex border-b border-slate-200 dark:border-slate-800 gap-2">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 gap-1 sm:gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
         <button
           onClick={() => setActiveTab("statement")}
-          className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 sm:px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
             activeTab === "statement"
               ? "border-amber-600 text-amber-600 dark:text-amber-400"
               : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
@@ -638,7 +646,7 @@ export const BillIntelligencePage: React.FC = () => {
 
         <button
           onClick={() => setActiveTab("savings")}
-          className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 sm:px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
             activeTab === "savings"
               ? "border-amber-600 text-amber-600 dark:text-amber-400"
               : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
@@ -650,7 +658,7 @@ export const BillIntelligencePage: React.FC = () => {
 
         <button
           onClick={() => setActiveTab("sensitivity")}
-          className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 sm:px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
             activeTab === "sensitivity"
               ? "border-amber-600 text-amber-600 dark:text-amber-400"
               : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
@@ -662,7 +670,7 @@ export const BillIntelligencePage: React.FC = () => {
 
         <button
           onClick={() => setActiveTab("history")}
-          className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 sm:px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
             activeTab === "history"
               ? "border-amber-600 text-amber-600 dark:text-amber-400"
               : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
@@ -674,7 +682,7 @@ export const BillIntelligencePage: React.FC = () => {
 
         <button
           onClick={() => setActiveTab("rates")}
-          className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 sm:px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
             activeTab === "rates"
               ? "border-amber-600 text-amber-600 dark:text-amber-400"
               : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
@@ -687,10 +695,10 @@ export const BillIntelligencePage: React.FC = () => {
 
       {activeTab === "statement" && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-slate-500">Statement View Mode:</span>
-              <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0">
+              <span className="text-xs font-medium text-slate-500 shrink-0">Statement View Mode:</span>
+              <div className="flex flex-wrap bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs gap-0.5">
                 <button
                   onClick={() => setStatementMode("expected")}
                   className={`px-3 py-1 rounded-md font-medium transition-colors ${
@@ -734,13 +742,13 @@ export const BillIntelligencePage: React.FC = () => {
               </div>
             </div>
 
-            <div className="text-xs text-slate-500">
+            <div className="text-xs text-slate-500 shrink-0">
               Effective Average Rate: <span className="font-semibold text-slate-800 dark:text-slate-200">₱{currentStatement?.effective_average_rate_per_kwh.toFixed(4)}/kWh</span>
             </div>
           </div>
 
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                   Itemized Electricity Charges & Taxes
@@ -1001,42 +1009,42 @@ export const BillIntelligencePage: React.FC = () => {
               )}
             </div>
 
-            <div className="p-5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+            <div className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 space-y-2">
+              <div className="flex items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-400">
                 <span>Subtotal Electricity Charges (Generation, Transmission, Distribution, Universal):</span>
-                <span className="font-medium tabular-nums text-slate-800 dark:text-slate-200">₱{currentStatement?.subtotal_electricity_charges.toFixed(2)}</span>
+                <span className="font-medium tabular-nums shrink-0 text-slate-800 dark:text-slate-200">₱{currentStatement?.subtotal_electricity_charges.toFixed(2)}</span>
               </div>
-              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+              <div className="flex items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-400">
                 <span>Government Taxes (VAT, Franchise, RPT):</span>
-                <span className="font-medium tabular-nums text-slate-800 dark:text-slate-200">+₱{currentStatement?.government_taxes.toFixed(2)}</span>
+                <span className="font-medium tabular-nums shrink-0 text-slate-800 dark:text-slate-200">+₱{currentStatement?.government_taxes.toFixed(2)}</span>
               </div>
               {(currentStatement?.discounts || 0) + (currentStatement?.net_metering_credits || 0) > 0 && (
-                <div className="flex items-center justify-between text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                <div className="flex items-center justify-between gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
                   <span>Discounts & Solar Export Credits:</span>
-                  <span className="tabular-nums">-₱{((currentStatement?.discounts || 0) + (currentStatement?.net_metering_credits || 0)).toFixed(2)}</span>
+                  <span className="tabular-nums shrink-0">-₱{((currentStatement?.discounts || 0) + (currentStatement?.net_metering_credits || 0)).toFixed(2)}</span>
                 </div>
               )}
 
-              <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between text-sm font-semibold text-slate-800 dark:text-slate-200">
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 text-sm font-semibold text-slate-800 dark:text-slate-200">
                 <span>Total Current Month Electricity Charges:</span>
-                <span className="tabular-nums">₱{currentStatement?.total_current_charges.toFixed(2)}</span>
+                <span className="tabular-nums shrink-0">₱{currentStatement?.total_current_charges.toFixed(2)}</span>
               </div>
 
               {(currentStatement?.previous_unpaid_balance || 0) > 0 && (
-                <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+                <div className="flex items-center justify-between gap-2 text-xs text-slate-500 pt-1">
                   <span>Previous Unpaid Account Balance:</span>
-                  <span className="tabular-nums">+₱{currentStatement?.previous_unpaid_balance.toFixed(2)}</span>
+                  <span className="tabular-nums shrink-0">+₱{currentStatement?.previous_unpaid_balance.toFixed(2)}</span>
                 </div>
               )}
 
               {(currentStatement?.payments_received || 0) > 0 && (
-                <div className="flex items-center justify-between text-xs text-emerald-600 dark:text-emerald-400 pt-1">
+                <div className="flex items-center justify-between gap-2 text-xs text-emerald-600 dark:text-emerald-400 pt-1">
                   <span>Payments Received & Recorded:</span>
-                  <span className="tabular-nums">-₱{currentStatement?.payments_received.toFixed(2)}</span>
+                  <span className="tabular-nums shrink-0">-₱{currentStatement?.payments_received.toFixed(2)}</span>
                 </div>
               )}
 
-              <div className="pt-3 border-t-2 border-slate-900 dark:border-slate-100 flex items-center justify-between">
+              <div className="pt-3 border-t-2 border-slate-900 dark:border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <div className="text-base font-bold text-slate-900 dark:text-slate-100">
                     Estimated Total Amount Due:
@@ -1045,7 +1053,7 @@ export const BillIntelligencePage: React.FC = () => {
                     Payment Due Date: Approximate 10 days after expected meter reading
                   </div>
                 </div>
-                <div className="text-2xl font-black text-amber-600 dark:text-amber-400 tabular-nums">
+                <div className="text-2xl font-black text-amber-600 dark:text-amber-400 tabular-nums shrink-0">
                   ₱{currentStatement?.total_amount_due.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
@@ -1056,12 +1064,12 @@ export const BillIntelligencePage: React.FC = () => {
 
       {activeTab === "savings" && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <div className="p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
+            <div className="p-4 sm:p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                 Modeled Bill Without Solar
               </span>
-              <div className="text-3xl font-bold text-slate-800 dark:text-slate-200 tabular-nums">
+              <div className="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-slate-200 tabular-nums">
                 ₱{forecast?.solar_savings.bill_without_solar.toFixed(2)}
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
@@ -1069,11 +1077,11 @@ export const BillIntelligencePage: React.FC = () => {
               </p>
             </div>
 
-            <div className="p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+            <div className="p-4 sm:p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                 Actual / Projected Bill With Solar
               </span>
-              <div className="text-3xl font-bold text-slate-800 dark:text-slate-200 tabular-nums">
+              <div className="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-slate-200 tabular-nums">
                 ₱{forecast?.solar_savings.bill_with_solar.toFixed(2)}
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
@@ -1081,16 +1089,16 @@ export const BillIntelligencePage: React.FC = () => {
               </p>
             </div>
 
-            <div className="p-6 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-900 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
+            <div className="p-4 sm:p-6 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-900 shadow-sm space-y-3">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
                   Total Avoided Electricity Cost
                 </span>
-                <span className="text-xs font-bold text-amber-700 dark:text-amber-300">
+                <span className="text-xs font-bold text-amber-700 dark:text-amber-300 shrink-0">
                   {forecast?.solar_savings.savings_percentage.toFixed(0)}% Off
                 </span>
               </div>
-              <div className="text-3xl font-black text-amber-700 dark:text-amber-400 tabular-nums">
+              <div className="text-2xl sm:text-3xl font-black text-amber-700 dark:text-amber-400 tabular-nums">
                 ₱{forecast?.solar_savings.savings_pesos.toFixed(2)}
               </div>
               <p className="text-xs text-amber-900/80 dark:text-amber-200/80 leading-relaxed">
@@ -1099,7 +1107,7 @@ export const BillIntelligencePage: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="p-4 sm:p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
               Where Did Your Avoided Electricity Costs Come From?
             </h3>
@@ -1141,7 +1149,7 @@ export const BillIntelligencePage: React.FC = () => {
 
       {activeTab === "sensitivity" && (
         <div className="space-y-6">
-          <div className="p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+          <div className="p-4 sm:p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
             <div>
               <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 TEI Rate Change & Electricity Usage Sensitivity Simulator
@@ -1234,8 +1242,8 @@ export const BillIntelligencePage: React.FC = () => {
             </div>
 
             {sensitivityResult && (
-              <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
-                <div className="flex items-center justify-between">
+              <div className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                     Simulation Comparison Result
                   </span>
@@ -1278,7 +1286,7 @@ export const BillIntelligencePage: React.FC = () => {
 
       {activeTab === "history" && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Past Statements of Account & Prediction Accuracy Log
@@ -1289,7 +1297,7 @@ export const BillIntelligencePage: React.FC = () => {
             </div>
             <button
               onClick={() => setIsAddBillOpen(true)}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors flex items-center gap-1.5 shadow-sm"
+              className="self-start sm:self-auto shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors flex items-center gap-1.5 shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Record Past Bill</span>
@@ -1304,7 +1312,7 @@ export const BillIntelligencePage: React.FC = () => {
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 border-b border-slate-200 dark:border-slate-800">
+                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 border-b border-slate-200 dark:border-slate-800 whitespace-nowrap">
                     <tr>
                       <th className="px-4 py-3 font-semibold">Billing Period</th>
                       <th className="px-4 py-3 font-semibold">Billed Energy</th>
@@ -1318,29 +1326,29 @@ export const BillIntelligencePage: React.FC = () => {
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {historyBills.map(b => (
                       <tr key={b.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-                        <td className="px-4 py-3 font-medium text-slate-800 dark:text-slate-200">
+                        <td className="px-4 py-3 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
                           {b.billing_period_start} to {b.billing_period_end}
                         </td>
-                        <td className="px-4 py-3 font-mono">{b.billed_kwh.toFixed(1)} kWh</td>
-                        <td className="px-4 py-3 font-bold tabular-nums">₱{b.actual_amount_due.toFixed(2)}</td>
-                        <td className="px-4 py-3 tabular-nums text-slate-600 dark:text-slate-400">
+                        <td className="px-4 py-3 font-mono whitespace-nowrap">{b.billed_kwh.toFixed(1)} kWh</td>
+                        <td className="px-4 py-3 font-bold tabular-nums whitespace-nowrap">₱{b.actual_amount_due.toFixed(2)}</td>
+                        <td className="px-4 py-3 tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">
                           {b.predicted_amount_due ? `₱${b.predicted_amount_due.toFixed(2)}` : "N/A"}
                         </td>
-                        <td className="px-4 py-3 font-mono">
+                        <td className="px-4 py-3 font-mono whitespace-nowrap">
                           {b.variance_pesos !== null ? (
                             <span className={b.variance_pesos > 0 ? "text-amber-600" : "text-emerald-600"}>
                               {b.variance_pesos > 0 ? "+" : ""}₱{b.variance_pesos.toFixed(2)} ({b.variance_percent}%)
                             </span>
                           ) : "N/A"}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 whitespace-nowrap">
                           {b.accuracy_percent !== null ? (
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
                               {b.accuracy_percent}% Accurate
                             </span>
                           ) : "N/A"}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
                           <button
                             onClick={() => handleDeleteBill(b.id)}
                             className="p-1 text-slate-400 hover:text-red-600 transition-colors"
@@ -1361,7 +1369,7 @@ export const BillIntelligencePage: React.FC = () => {
 
       {activeTab === "rates" && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 TEI Rate Schedule Archive & Monitoring Records
@@ -1372,7 +1380,7 @@ export const BillIntelligencePage: React.FC = () => {
             </div>
             <button
               onClick={() => setIsManualRateOpen(true)}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 shadow-sm"
+              className="self-start sm:self-auto shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Custom Rate Schedule</span>
@@ -1382,7 +1390,7 @@ export const BillIntelligencePage: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 border-b border-slate-200 dark:border-slate-800">
+                <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 border-b border-slate-200 dark:border-slate-800 whitespace-nowrap">
                   <tr>
                     <th className="px-4 py-3 font-semibold">Effective Month</th>
                     <th className="px-4 py-3 font-semibold">Customer Class</th>
@@ -1396,15 +1404,15 @@ export const BillIntelligencePage: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {rates.map(r => (
                     <tr key={r.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-                      <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200">
+                      <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                         {r.effective_month}
                       </td>
-                      <td className="px-4 py-3">{r.customer_class}</td>
-                      <td className="px-4 py-3 font-mono font-bold tabular-nums">
+                      <td className="px-4 py-3 whitespace-nowrap">{r.customer_class}</td>
+                      <td className="px-4 py-3 font-mono font-bold tabular-nums whitespace-nowrap">
                         ₱{r.generation_charge.toFixed(5)}/kWh
                       </td>
-                      <td className="px-4 py-3 text-slate-500">{r.components_count} charges</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.components_count} charges</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
                           r.verification_status === "verified"
                             ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
@@ -1413,7 +1421,7 @@ export const BillIntelligencePage: React.FC = () => {
                           {r.verification_status === "verified" ? "Officially Verified" : "Manual / Custom"}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         {r.is_active ? (
                           <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Active Schedule
@@ -1435,15 +1443,15 @@ export const BillIntelligencePage: React.FC = () => {
       )}
 
       {isSettingsOpen && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-hidden">
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
             onClick={() => setIsSettingsOpen(false)}
           />
-          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] z-10 animate-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90dvh] z-10 animate-in zoom-in-95 duration-150">
+            <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <Settings className="w-4 h-4 text-amber-600" />
+                <Settings className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>My TEI Billing Settings & Customer Profile</span>
               </h3>
               <button
@@ -1456,8 +1464,8 @@ export const BillIntelligencePage: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveSettings} className="flex flex-col overflow-hidden flex-1">
-              <div className="px-6 py-4 overflow-y-auto space-y-4 text-xs flex-1">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="px-4 sm:px-6 py-4 overflow-y-auto space-y-4 text-xs flex-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Customer Class
@@ -1536,7 +1544,7 @@ export const BillIntelligencePage: React.FC = () => {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Previous Meter Reading (kWh)
@@ -1585,38 +1593,38 @@ export const BillIntelligencePage: React.FC = () => {
                 <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 block">
                   Eligible Discounts & Subsidies
                 </span>
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="flex items-start gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={settingsForm.is_lifeline_eligible}
                     onChange={(e) => setSettingsForm({ ...settingsForm, is_lifeline_eligible: e.target.checked })}
-                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    className="mt-0.5 shrink-0 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                   />
                   <span>Lifeline Assistance Discount (applies only if registered and consumption ≤ 100 kWh)</span>
                 </label>
 
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="flex items-start gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={settingsForm.is_senior_eligible}
                     onChange={(e) => setSettingsForm({ ...settingsForm, is_senior_eligible: e.target.checked })}
-                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    className="mt-0.5 shrink-0 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                   />
                   <span>Senior Citizen Discount (5% discount on Gen/Trans/Dist for registered seniors)</span>
                 </label>
 
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="flex items-start gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={settingsForm.is_prompt_payment_eligible}
                     onChange={(e) => setSettingsForm({ ...settingsForm, is_prompt_payment_eligible: e.target.checked })}
-                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    className="mt-0.5 shrink-0 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                   />
                   <span>Prompt Payment Discount (1% on distribution charge when paying within 10 days)</span>
                 </label>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 border-t border-slate-100 dark:border-slate-800 pt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-100 dark:border-slate-800 pt-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Previous Unpaid Balance (₱)
@@ -1652,7 +1660,7 @@ export const BillIntelligencePage: React.FC = () => {
 
               </div>
 
-              <div className="px-6 py-3.5 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 shrink-0 bg-slate-50/60 dark:bg-slate-900/60">
+              <div className="px-4 sm:px-6 py-3.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap justify-end gap-2 shrink-0 bg-slate-50/60 dark:bg-slate-900/60 text-xs">
                 <button
                   type="button"
                   onClick={() => setIsSettingsOpen(false)}
@@ -1676,15 +1684,15 @@ export const BillIntelligencePage: React.FC = () => {
       )}
 
       {isAddBillOpen && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-hidden">
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
             onClick={() => setIsAddBillOpen(false)}
           />
-          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] z-10 animate-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90dvh] z-10 animate-in zoom-in-95 duration-150">
+            <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <ReceiptText className="w-4 h-4 text-amber-600" />
+                <ReceiptText className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>Record Actual Past TEI Statement</span>
               </h3>
               <button
@@ -1697,8 +1705,8 @@ export const BillIntelligencePage: React.FC = () => {
             </div>
 
             <form onSubmit={handleAddBill} className="flex flex-col overflow-hidden flex-1">
-              <div className="px-6 py-4 overflow-y-auto space-y-3 text-xs flex-1">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="px-4 sm:px-6 py-4 overflow-y-auto space-y-3 text-xs flex-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Period Start Date
@@ -1740,7 +1748,7 @@ export const BillIntelligencePage: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Actual Bill Amount (₱)
@@ -1786,7 +1794,7 @@ export const BillIntelligencePage: React.FC = () => {
 
               </div>
 
-              <div className="px-6 py-3.5 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 shrink-0 bg-slate-50/60 dark:bg-slate-900/60">
+              <div className="px-4 sm:px-6 py-3.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap justify-end gap-2 shrink-0 bg-slate-50/60 dark:bg-slate-900/60 text-xs">
                 <button
                   type="button"
                   onClick={() => setIsAddBillOpen(false)}
@@ -1808,15 +1816,15 @@ export const BillIntelligencePage: React.FC = () => {
       )}
 
       {isManualRateOpen && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-hidden">
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
             onClick={() => setIsManualRateOpen(false)}
           />
-          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] z-10 animate-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90dvh] z-10 animate-in zoom-in-95 duration-150">
+            <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <Layers className="w-4 h-4 text-amber-600" />
+                <Layers className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>Enter Custom TEI Rate Schedule</span>
               </h3>
               <button
@@ -1829,8 +1837,8 @@ export const BillIntelligencePage: React.FC = () => {
             </div>
 
             <form onSubmit={handleAddManualRate} className="flex flex-col overflow-hidden flex-1">
-              <div className="px-6 py-4 overflow-y-auto space-y-3 text-xs flex-1">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="px-4 sm:px-6 py-4 overflow-y-auto space-y-3 text-xs flex-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Effective Month (YYYY-MM)
@@ -1873,7 +1881,7 @@ export const BillIntelligencePage: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Generation VAT (₱/kWh)
@@ -1900,7 +1908,7 @@ export const BillIntelligencePage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Transmission Charge (₱/kWh)
@@ -1929,7 +1937,7 @@ export const BillIntelligencePage: React.FC = () => {
 
               </div>
 
-              <div className="px-6 py-3.5 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 shrink-0 bg-slate-50/60 dark:bg-slate-900/60">
+              <div className="px-4 sm:px-6 py-3.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap justify-end gap-2 shrink-0 bg-slate-50/60 dark:bg-slate-900/60 text-xs">
                 <button
                   type="button"
                   onClick={() => setIsManualRateOpen(false)}

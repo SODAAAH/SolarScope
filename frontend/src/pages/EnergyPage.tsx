@@ -56,11 +56,14 @@ export const EnergyPage: React.FC = () => {
   const timelineOption = timeline ? {
     ...getBaseEChartsOption(),
     legend: {
+      type: "scroll",
       data: ["Solar PV", "Household Load", "Electricity from TEI", "Battery Power"],
       textStyle: { fontSize: 11, color: "#64748B" },
-      top: 0
+      top: 0,
+      left: 0,
+      right: 0
     },
-    grid: { left: "4%", right: "4%", top: "12%", bottom: "10%", containLabel: true },
+    grid: { left: "4%", right: "4%", top: "16%", bottom: "10%", containLabel: true },
     xAxis: {
       type: "category",
       data: timeline.timestamps_12h || timeline.timestamps,
@@ -109,7 +112,7 @@ export const EnergyPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             Energy Flow & Household Demand
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
@@ -118,10 +121,10 @@ export const EnergyPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-fit">
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium w-full sm:w-fit max-w-full overflow-x-auto no-scrollbar">
         <button
           onClick={() => setTab("consumption")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "consumption"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -133,7 +136,7 @@ export const EnergyPage: React.FC = () => {
 
         <button
           onClick={() => setTab("grid")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "grid"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -145,7 +148,7 @@ export const EnergyPage: React.FC = () => {
 
         <button
           onClick={() => setTab("battery")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "battery"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -157,7 +160,7 @@ export const EnergyPage: React.FC = () => {
 
         <button
           onClick={() => setTab("timeline")}
-          className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+          className={`shrink-0 px-3 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
             currentTab === "timeline"
               ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-semibold"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -170,8 +173,8 @@ export const EnergyPage: React.FC = () => {
 
       {currentTab === "consumption" && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="grid grid-cols-1 min-[440px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Total Household Consumption"
                 content="Total electrical energy consumed across all home circuits during the observation cycle."
@@ -187,7 +190,7 @@ export const EnergyPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-1">Electricity used by home appliances</p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Baseload Power Draw"
                 content="Continuous 24/7 background power draw from always-on appliances (refrigerators, Wi-Fi routers, security systems, standby electronics). Estimated from overnight 02:00-05:00 measurements."
@@ -203,7 +206,7 @@ export const EnergyPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-1">Continuous 24/7 background power draw</p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Peak Power Demand"
                 content="The maximum instantaneous power rate drawn by household appliances at any single moment."
@@ -218,7 +221,7 @@ export const EnergyPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-1">Highest instantaneous appliance power</p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Daytime Solar Coincidence"
                 content="Fraction of total home electricity consumed during solar daylight hours (06:00 - 18:00) when free rooftop solar is available."
@@ -238,8 +241,8 @@ export const EnergyPage: React.FC = () => {
 
       {currentTab === "grid" && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="grid grid-cols-1 min-[440px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Utility Grid Import"
                 content="Electricity purchased from TEI when household demand exceeded solar generation and battery discharge."
@@ -255,7 +258,7 @@ export const EnergyPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-1">Electricity purchased from TEI</p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Grid Dependence Ratio"
                 content="Proportion of household energy supplied by the utility grid. A lower percentage reflects higher self-sufficiency and solar autonomy."
@@ -271,7 +274,7 @@ export const EnergyPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-1">Fraction of home demand met by utility</p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Peak Grid Import Surge"
                 content="Highest instantaneous power surge drawn from the TEI utility service lines."
@@ -286,7 +289,7 @@ export const EnergyPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-1">Max power surge drawn from the grid</p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Reserve Cutoff Grid Import"
                 content="Electricity imported from the grid after battery reached its configured minimum depth-of-discharge reserve cutoff (20% SOC)."
@@ -302,7 +305,7 @@ export const EnergyPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
               5-Category Grid Import Cause Classification
             </h3>
@@ -310,7 +313,7 @@ export const EnergyPage: React.FC = () => {
               Deterministic breakdown showing exactly why electricity was purchased from TEI during this observation period.
             </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2">
               {classifications.map((cat: any) => (
                 <div key={cat.category} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700/60 flex flex-col justify-between">
                   <div>
@@ -331,7 +334,7 @@ export const EnergyPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
               Hourly Grid Import Breakdown (kWh)
             </h3>
@@ -342,8 +345,8 @@ export const EnergyPage: React.FC = () => {
 
       {currentTab === "battery" && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="grid grid-cols-1 min-[440px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Remaining Battery Autonomy"
                 content="Estimated runtime the battery can sustain current household consumption before reaching the 20% safe reserve floor."
@@ -359,7 +362,7 @@ export const EnergyPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-1">Based on recent load and usable energy</p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Battery State of Charge"
                 content="Current percentage of total usable battery capacity remaining in the LiFePO4 battery bank."
@@ -375,7 +378,7 @@ export const EnergyPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-1">Min: {(battery.min_soc_percent || 0).toFixed(0)}% | Max: {(battery.max_soc_percent || 0).toFixed(0)}%</p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Round-Trip Coulombic Efficiency"
                 content="Percentage of electrical energy recovered from the battery bank compared to total electrical energy injected during charging."
@@ -391,7 +394,7 @@ export const EnergyPage: React.FC = () => {
               <p className="text-xs text-slate-500 mt-1">Energy discharged vs energy charged</p>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="BMS Current Threshold"
                 content="Maximum continuous DC charge/discharge current permitted by the Battery Management System hardware to prevent overheating and cell degradation."
@@ -407,11 +410,11 @@ export const EnergyPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
               Battery Cycling & Throughput Summary
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-slate-600 dark:text-slate-400">
+            <div className="grid grid-cols-1 min-[380px]:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 text-xs text-slate-600 dark:text-slate-400">
               <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                 <span className="text-slate-500 block">Total Charged:</span>
                 <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 tabular-nums">{(battery.charging_energy_kwh || 0).toFixed(2)} kWh</span>
@@ -434,11 +437,11 @@ export const EnergyPage: React.FC = () => {
       )}
 
       {currentTab === "timeline" && (
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
             High-Resolution 4-Channel Power Timeline
           </h3>
-          <EChartComponent option={timelineOption} height="420px" />
+          <EChartComponent option={timelineOption} height="340px" />
         </div>
       )}
     </div>
