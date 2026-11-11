@@ -401,8 +401,12 @@ export const api = {
     return fetchJson<RateScheduleHistoryItem[]>("/billing/rates");
   },
   checkBillingRatesNow: () => {
+    const stored = getStoredBillingProfile();
+    const headers: Record<string, string> = {};
+    if (stored) headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(stored));
     return fetchJson<{ status: string; message: string; checked_at: string; rate_change_alert: any; effective_month: string }>("/billing/rates/check_now", {
-      method: "POST"
+      method: "POST",
+      headers
     });
   },
   addManualRateSchedule: (payload: { effective_month: string; customer_class?: string; generation_charge: number; generation_vat?: number; distribution_charge?: number; transmission_charge?: number; system_loss_charge?: number }) => {

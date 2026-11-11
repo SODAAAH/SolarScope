@@ -141,7 +141,7 @@ def calculate_statement_of_account(
             vat_amount=0.0,
             total_with_vat=vat_total,
             explanation="Government VAT calculated per eligible charge component.",
-            formula=f"Itemized VAT (Generation fixed ₱{gen_vat_rate:.5f}/kWh + 12% on Transmission & Distribution)",
+            formula=f"Itemized VAT (Fixed per-kWh VAT [Gen ₱{gen_vat_rate:.5f}/kWh] + 12% on vatable Transmission & Distribution)",
             vat_treatment="vatable"
         )
     )

@@ -1269,8 +1269,8 @@ def get_billing_overview(request: Request, response: Response, dataset_id: Optio
     _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
-    sched = get_active_rate_schedule(conn)
     profile = _resolve_billing_profile(conn, request)
+    sched = get_active_rate_schedule(conn, customer_class=profile.customer_class)
     conn.close()
     records = _get_records("all")
     return forecast_tei_bill(records, sched, profile, last_rate_check_cache)
@@ -1280,8 +1280,8 @@ def get_billing_progress(request: Request, response: Response, dataset_id: Optio
     _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
-    sched = get_active_rate_schedule(conn)
     profile = _resolve_billing_profile(conn, request)
+    sched = get_active_rate_schedule(conn, customer_class=profile.customer_class)
     conn.close()
     records = _get_records("all")
     return calculate_billing_progress_series(records, sched, profile)
@@ -1291,8 +1291,8 @@ def get_billing_statement(request: Request, response: Response, mode: str = "exp
     _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
-    sched = get_active_rate_schedule(conn)
     profile = _resolve_billing_profile(conn, request)
+    sched = get_active_rate_schedule(conn, customer_class=profile.customer_class)
     conn.close()
     records = _get_records("all")
     forecast = forecast_tei_bill(records, sched, profile, last_rate_check_cache)
@@ -1344,11 +1344,13 @@ def get_billing_rates(response: Response):
     return rates
 
 @router.post("/billing/rates/check_now")
-def check_billing_rates_now():
+def check_billing_rates_now(request: Request, response: Response):
     global last_rate_check_cache
     _hydrate_state(force=True)
+    response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
-    res = check_official_tei_rates(conn, force_fetch=True)
+    profile = _resolve_billing_profile(conn, request)
+    res = check_official_tei_rates(conn, force_fetch=True, customer_class=profile.customer_class)
     conn.commit()
     conn.close()
     _persist_state()
@@ -1367,7 +1369,7 @@ def add_manual_billing_rate(payload: ManualRateScheduleRequest):
     import hashlib
     _hydrate_state(force=True)
     conn = get_connection()
-    active_sched = get_active_rate_schedule(conn)
+    active_sched = get_active_rate_schedule(conn, customer_class=payload.customer_class)
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     new_comps = []
     for comp in active_sched.components:
@@ -1375,6 +1377,7 @@ def add_manual_billing_rate(payload: ManualRateScheduleRequest):
         if c_copy.component_id == "gen_charge":
             c_copy.rate_per_kwh = payload.generation_charge
             c_copy.vat_rate_per_kwh = payload.generation_vat
+            c_copy.vat_treatment = "fixed_rate" if payload.generation_vat > 0 else "exempt"
         elif c_copy.component_id == "dist_charge":
             c_copy.rate_per_kwh = payload.distribution_charge
         elif c_copy.component_id == "trans_charge":
@@ -1382,8 +1385,9 @@ def add_manual_billing_rate(payload: ManualRateScheduleRequest):
         elif c_copy.component_id == "system_loss_charge":
             c_copy.rate_per_kwh = payload.system_loss_charge
         new_comps.append(c_copy)
+    slug_class = payload.customer_class.lower().replace(" ", "_")
     new_sched = TEIRateSchedule(
-        id=f"tei-rate-{payload.effective_month}-{payload.customer_class.lower()}-manual",
+        id=f"tei-rate-{payload.effective_month}-{slug_class}-manual",
         effective_month=payload.effective_month,
         customer_class=payload.customer_class,
         publication_date=datetime.datetime.now().strftime("%Y-%m-%d"),
@@ -1410,8 +1414,8 @@ def calculate_sensitivity_endpoint(request: Request, response: Response, payload
     _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
-    sched = get_active_rate_schedule(conn)
     profile = _resolve_billing_profile(conn, request)
+    sched = get_active_rate_schedule(conn, customer_class=profile.customer_class)
     conn.close()
     records = _get_records(dataset_id or "all")
     forecast = forecast_tei_bill(records, sched, profile, last_rate_check_cache)

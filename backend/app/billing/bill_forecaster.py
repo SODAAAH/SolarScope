@@ -194,6 +194,13 @@ def forecast_tei_bill(
             gen_vat_val = comp.vat_rate_per_kwh
 
     coverage_pct = round(min(100.0, (len(cycle_days_observed) / max(1, days_elapsed)) * 100.0), 1)
+    raw_status = last_check_status.get("status", "pending")
+    if raw_status == "pending":
+        if schedule.verification_status == "verified":
+            raw_status = "verified_current"
+        elif schedule.verification_status == "manual":
+            raw_status = "manual_applied"
+    checked_ts = last_check_status.get("checked_at") or schedule.created_at or now.isoformat()
 
     return BillForecastResponse(
         billing_cycle_start=start_str,
@@ -207,8 +214,8 @@ def forecast_tei_bill(
         active_rate_effective_month=schedule.effective_month,
         active_generation_charge=gen_charge_val,
         active_generation_vat=gen_vat_val,
-        last_rate_check_timestamp=last_check_status.get("checked_at", now.isoformat()),
-        rate_monitor_status=last_check_status.get("status", "pending"),
+        last_rate_check_timestamp=checked_ts,
+        rate_monitor_status=raw_status,
         rate_change_alert=last_check_status.get("rate_change_alert"),
         current_so_far_statement=current_so_far_soa,
         lower_estimate=lower_scenario,

@@ -18,7 +18,9 @@ import {
   Sun,
   BatteryCharging,
   Info,
-  Layers
+  Layers,
+  AlertCircle,
+  ExternalLink
 } from "lucide-react";
 import {
   api,
@@ -55,6 +57,7 @@ export const BillIntelligencePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [checkingRates, setCheckingRates] = useState(false);
   const [checkMessage, setCheckMessage] = useState<string | null>(null);
+  const [checkStatus, setCheckStatus] = useState<string | null>(null);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAddBillOpen, setIsAddBillOpen] = useState(false);
@@ -236,12 +239,15 @@ export const BillIntelligencePage: React.FC = () => {
   const handleCheckRatesNow = async () => {
     setCheckingRates(true);
     setCheckMessage(null);
+    setCheckStatus(null);
     try {
       const res = await api.checkBillingRatesNow();
       setCheckMessage(res.message);
+      setCheckStatus(res.status);
       await loadData();
-    } catch (err: any) {
-      setCheckMessage("Unable to connect to TEI rate server. Retained latest verified schedule.");
+    } catch {
+      setCheckStatus("error");
+      setCheckMessage("Unable to connect to TEI rate server right now. Try again shortly.");
     } finally {
       setCheckingRates(false);
     }
@@ -475,9 +481,13 @@ export const BillIntelligencePage: React.FC = () => {
             type="button"
             onClick={handleCheckRatesNow}
             disabled={checkingRates}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-xs"
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-xs ${
+              activeGenCharge > 0
+                ? "bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60"
+                : "bg-amber-600 hover:bg-amber-700 text-white border border-amber-600 font-semibold"
+            }`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${checkingRates ? 'animate-spin text-amber-500' : 'text-slate-400'}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${checkingRates ? 'animate-spin' : activeGenCharge > 0 ? 'text-slate-400' : 'text-white'}`} />
             <span>{checkingRates ? "Checking TEI..." : "Check TEI Rates"}</span>
           </button>
 
@@ -504,9 +514,17 @@ export const BillIntelligencePage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] font-mono text-slate-500">
           <span>Schedule: {forecast?.active_rate_effective_month || currentMonthStr}</span>
           {checkMessage && (
-            <span className="text-emerald-600 dark:text-emerald-400 font-sans font-medium flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3" />
-              {checkMessage}
+            <span className={`font-sans font-medium flex items-center gap-1 ${
+              checkStatus === "offline_unconfigured" || checkStatus === "error" || checkStatus === "offline_retained_verified"
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-emerald-600 dark:text-emerald-400"
+            }`}>
+              {checkStatus === "offline_unconfigured" || checkStatus === "error" || checkStatus === "offline_retained_verified" ? (
+                <AlertCircle className="w-3 h-3 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-3 h-3 shrink-0" />
+              )}
+              <span>{checkMessage}</span>
             </span>
           )}
         </div>
@@ -842,7 +860,11 @@ export const BillIntelligencePage: React.FC = () => {
                                   item.vat_treatment === "exempt" ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400" :
                                   "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
                                 }`}>
-                                  {item.vat_treatment === "fixed_rate" ? `Separate VAT ₱${activeGenVat.toFixed(4)}/kWh` : item.vat_treatment === "exempt" ? "VAT Exempt" : "Standard 12% VAT"}
+                                  {item.vat_treatment === "fixed_rate"
+                                    ? `Separate VAT ₱${(item.billed_quantity > 0 ? item.vat_amount / item.billed_quantity : activeGenVat).toFixed(4)}/kWh`
+                                    : item.vat_treatment === "exempt"
+                                    ? "VAT Exempt"
+                                    : "Standard 12% VAT"}
                                 </span>
                               </td>
                               <td className="py-2.5 text-right font-semibold tabular-nums text-slate-800 dark:text-slate-200">
@@ -893,8 +915,12 @@ export const BillIntelligencePage: React.FC = () => {
                                 ₱{item.rate_applied.toFixed(5)}/{item.rate_unit.replace("₱/", "")}
                               </td>
                               <td className="py-2.5">
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                  Standard 12% VAT
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                  item.vat_treatment === "exempt"
+                                    ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
+                                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                                }`}>
+                                  {item.vat_treatment === "exempt" ? "VAT Exempt" : "Standard 12% VAT"}
                                 </span>
                               </td>
                               <td className="py-2.5 text-right font-semibold tabular-nums text-slate-800 dark:text-slate-200">
@@ -945,8 +971,12 @@ export const BillIntelligencePage: React.FC = () => {
                                 ₱{item.rate_applied.toFixed(5)}/{item.rate_unit.replace("₱/", "")}
                               </td>
                               <td className="py-2.5">
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
-                                  VAT Exempt
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                  item.vat_treatment === "exempt"
+                                    ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
+                                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                                }`}>
+                                  {item.vat_treatment === "exempt" ? "VAT Exempt" : "Standard 12% VAT"}
                                 </span>
                               </td>
                               <td className="py-2.5 text-right font-semibold tabular-nums text-slate-800 dark:text-slate-200">
@@ -1485,8 +1515,20 @@ export const BillIntelligencePage: React.FC = () => {
                           <span className="text-slate-400 text-[10px]">Archived</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-[11px] text-slate-400 truncate max-w-xs">
-                        {r.source_url}
+                      <td className="px-4 py-3 text-[11px] text-slate-400 max-w-xs">
+                        {r.source_url && r.source_url.startsWith("http") ? (
+                          <a
+                            href={r.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 hover:underline truncate max-w-xs"
+                          >
+                            <span className="truncate">{r.source_url.split("/").pop() || r.source_url}</span>
+                            <ExternalLink className="w-3 h-3 shrink-0" />
+                          </a>
+                        ) : (
+                          <span className="truncate block">{r.source_url}</span>
+                        )}
                       </td>
                     </tr>
                   ))}
