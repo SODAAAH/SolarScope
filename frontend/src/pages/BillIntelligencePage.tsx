@@ -15,12 +15,15 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Sun,
   BatteryCharging,
   Info,
   Layers,
   AlertCircle,
-  ExternalLink
+  ExternalLink,
+  BookmarkCheck
 } from "lucide-react";
 import {
   api,
@@ -31,6 +34,7 @@ import {
   type TEIBillingProfile,
   type RateScheduleHistoryItem,
   type HistoricalBillRecord,
+  type MonthlyEstimateRecord,
   type RateSensitivityResponse
 } from "../lib/api";
 import { EChartComponent } from "../components/charts/EChartComponent";
@@ -50,6 +54,7 @@ export const BillIntelligencePage: React.FC = () => {
   const [progressData, setProgressData] = useState<BillingProgressResponse | null>(null);
   const [rates, setRates] = useState<RateScheduleHistoryItem[]>([]);
   const [historyBills, setHistoryBills] = useState<HistoricalBillRecord[]>([]);
+  const [monthlyEstimates, setMonthlyEstimates] = useState<MonthlyEstimateRecord[]>([]);
 
   const [statementMode, setStatementMode] = useState<"expected" | "actual" | "lower" | "higher">("expected");
   const [activeTab, setActiveTab] = useState<"statement" | "savings" | "sensitivity" | "history" | "rates">("statement");
@@ -126,34 +131,53 @@ export const BillIntelligencePage: React.FC = () => {
     setIsSettingsOpen(true);
   };
 
-  const getCyclePreview = (day: number) => {
+  const getDefaultCycleMonth = (day: number) => {
     const d = Math.max(1, Math.min(31, Number(day) || 25));
     const now = new Date();
-    const curYear = now.getFullYear();
-    const curMonth = now.getMonth();
-    const curDay = now.getDate();
-
-    let startYear = curYear;
-    let startMonth = curMonth;
-    let endYear = curYear;
-    let endMonth = curMonth;
-
-    if (curDay >= d) {
-      startYear = curYear;
-      startMonth = curMonth;
-      endMonth = curMonth + 1;
-      if (endMonth > 11) {
-        endMonth = 0;
-        endYear = curYear + 1;
+    let y = now.getFullYear();
+    let m = now.getMonth() + 1;
+    if (now.getDate() < d) {
+      m -= 1;
+      if (m < 1) {
+        m = 12;
+        y -= 1;
       }
+    }
+    return `${y}-${String(m).padStart(2, "0")}`;
+  };
+
+  const getCyclePreview = (day: number, billingMonth?: string | null) => {
+    const d = Math.max(1, Math.min(31, Number(day) || 25));
+    let startYear: number;
+    let startMonth: number;
+
+    if (billingMonth && /^\d{4}-\d{2}$/.test(billingMonth)) {
+      const [yStr, mStr] = billingMonth.split("-");
+      startYear = parseInt(yStr, 10);
+      startMonth = parseInt(mStr, 10) - 1;
     } else {
-      startMonth = curMonth - 1;
-      if (startMonth < 0) {
-        startMonth = 11;
-        startYear = curYear - 1;
+      const now = new Date();
+      const curYear = now.getFullYear();
+      const curMonth = now.getMonth();
+      const curDay = now.getDate();
+      if (curDay >= d) {
+        startYear = curYear;
+        startMonth = curMonth;
+      } else {
+        startMonth = curMonth - 1;
+        startYear = curYear;
+        if (startMonth < 0) {
+          startMonth = 11;
+          startYear = curYear - 1;
+        }
       }
-      endMonth = curMonth;
-      endYear = curYear;
+    }
+
+    let endYear = startYear;
+    let endMonth = startMonth + 1;
+    if (endMonth > 11) {
+      endMonth = 0;
+      endYear = startYear + 1;
     }
 
     const maxDaysStart = new Date(startYear, startMonth + 1, 0).getDate();
@@ -204,15 +228,16 @@ export const BillIntelligencePage: React.FC = () => {
     discounts: true
   });
 
-  const loadData = async () => {
+  const loadData = async (fresh = false) => {
     setLoading(true);
     try {
-      const [fData, pData, prof, rList, bList] = await Promise.all([
-        api.getBillingOverview(activeDatasetId || undefined),
-        api.getBillingProgress(activeDatasetId || undefined),
-        api.getBillingProfile(),
-        api.getBillingRates(),
-        api.getHistoricalBills()
+      const [fData, pData, prof, rList, bList, estList] = await Promise.all([
+        api.getBillingOverview(activeDatasetId || undefined, fresh),
+        api.getBillingProgress(activeDatasetId || undefined, fresh),
+        api.getBillingProfile(fresh),
+        api.getBillingRates(fresh),
+        api.getHistoricalBills(fresh),
+        api.getMonthlyEstimates(fresh)
       ]);
       setForecast(fData);
       setProgressData(pData);
@@ -220,6 +245,7 @@ export const BillIntelligencePage: React.FC = () => {
       setCycleDayInput(String(prof.billing_cycle_day || 25));
       setRates(rList);
       setHistoryBills(bList);
+      setMonthlyEstimates(estList);
     } catch (err) {
       console.error(err);
     } finally {
@@ -229,7 +255,7 @@ export const BillIntelligencePage: React.FC = () => {
 
   useEffect(() => {
     loadData();
-    const handleRefresh = () => loadData();
+    const handleRefresh = () => loadData(true);
     window.addEventListener("solarscope:sources-updated", handleRefresh);
     return () => {
       window.removeEventListener("solarscope:sources-updated", handleRefresh);
@@ -244,7 +270,12 @@ export const BillIntelligencePage: React.FC = () => {
       const res = await api.checkBillingRatesNow();
       setCheckMessage(res.message);
       setCheckStatus(res.status);
-      await loadData();
+      if (res.forecast) setForecast(res.forecast);
+      if (res.progress) setProgressData(res.progress);
+      if (res.rates) setRates(res.rates);
+      const estList = await api.getMonthlyEstimates(true);
+      setMonthlyEstimates(estList);
+      await loadData(true);
     } catch {
       setCheckStatus("error");
       setCheckMessage("Unable to connect to TEI rate server right now. Try again shortly.");
@@ -261,7 +292,8 @@ export const BillIntelligencePage: React.FC = () => {
       : Math.max(1, Math.min(31, settingsForm.billing_cycle_day || 25));
     const payloadToSave: TEIBillingProfile = {
       ...settingsForm,
-      billing_cycle_day: finalDay
+      billing_cycle_day: finalDay,
+      billing_month: settingsForm.billing_month || null
     };
 
     setSavingSettings(true);
@@ -272,11 +304,53 @@ export const BillIntelligencePage: React.FC = () => {
       setSettingsForm(savedProfile);
       setCycleDayInput(String(savedProfile.billing_cycle_day || finalDay));
       setIsSettingsOpen(false);
-      await loadData();
+      await loadData(true);
     } catch (err: any) {
       setSettingsError(err?.message || "Failed to save billing settings.");
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const handleSelectMonth = async (targetMonth: string | null) => {
+    const payloadToSave: TEIBillingProfile = {
+      ...settingsForm,
+      billing_month: targetMonth
+    };
+    try {
+      const res = await api.updateBillingProfile(payloadToSave);
+      const savedProfile = res?.profile || payloadToSave;
+      setSettingsForm(savedProfile);
+      await loadData(true);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleShiftMonth = (delta: number) => {
+    const activeMonth = settingsForm.billing_month || getDefaultCycleMonth(settingsForm.billing_cycle_day || 25);
+    const [yStr, mStr] = activeMonth.split("-");
+    const date = new Date(parseInt(yStr, 10), parseInt(mStr, 10) - 1 + delta, 1);
+    const nextStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    handleSelectMonth(nextStr);
+  };
+
+  const handleDeleteMonthlyEstimate = async (id: string) => {
+    try {
+      await api.deleteMonthlyEstimate(id);
+      const estList = await api.getMonthlyEstimates(true);
+      setMonthlyEstimates(estList);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleActivateRate = async (scheduleId: string) => {
+    try {
+      await api.activateBillingRate(scheduleId);
+      await loadData(true);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -324,7 +398,7 @@ export const BillIntelligencePage: React.FC = () => {
         system_loss_charge: Number.isFinite(Number(manualRateForm.system_loss_charge)) ? Number(manualRateForm.system_loss_charge) : 0
       });
       setIsManualRateOpen(false);
-      await loadData();
+      await loadData(true);
     } catch (err: any) {
       setRateError(err?.message || "Failed to save custom rate schedule.");
     }
@@ -441,7 +515,8 @@ export const BillIntelligencePage: React.FC = () => {
     ]
   };
 
-  const cyclePreview = getCyclePreview(settingsForm.billing_cycle_day || 25);
+  const activeBillingMonth = settingsForm.billing_month || getDefaultCycleMonth(settingsForm.billing_cycle_day || 25);
+  const cyclePreview = getCyclePreview(settingsForm.billing_cycle_day || 25, settingsForm.billing_month);
   const activeCycleStartLabel = forecast?.billing_cycle_start ? formatDateMMDDYYYY(forecast.billing_cycle_start) : cyclePreview.startFormatted;
   const activeCycleEndLabel = forecast?.billing_cycle_end ? formatDateMMDDYYYY(forecast.billing_cycle_end) : cyclePreview.endFormatted;
   const activeNextReadingLabel = forecast?.next_meter_reading_date ? formatDateMMDDYYYY(forecast.next_meter_reading_date) : cyclePreview.endFormatted;
@@ -470,6 +545,31 @@ export const BillIntelligencePage: React.FC = () => {
                 Meter Reading: <strong>Day {settingsForm.billing_cycle_day || 25}</strong> ({activeCycleStartLabel} – {activeCycleEndLabel})
               </span>
             </span>
+            <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-700 p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => handleShiftMonth(-1)}
+                aria-label="Previous Billing Month"
+                className="p-1 rounded hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <input
+                type="month"
+                aria-label="Billing Month"
+                value={activeBillingMonth}
+                onChange={(e) => handleSelectMonth(e.target.value || null)}
+                className="bg-transparent px-1.5 py-0.5 text-xs font-mono font-semibold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+              />
+              <button
+                type="button"
+                onClick={() => handleShiftMonth(1)}
+                aria-label="Next Billing Month"
+                className="p-1 rounded hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
             <span className="text-xs text-slate-500 font-mono">
               Day {forecast?.days_elapsed || 0} of {forecast?.cycle_total_days || 30} ({forecast?.days_remaining || 0} days remaining)
             </span>
@@ -1360,8 +1460,140 @@ export const BillIntelligencePage: React.FC = () => {
       )}
 
       {activeTab === "history" && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="space-y-6">
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <BookmarkCheck className="w-4 h-4 text-amber-600" />
+                  <span>Saved Monthly Bill Estimates</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Every monthly cycle estimate calculated or saved in Billing Settings is stored automatically for comparison.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openSettingsModal}
+                className="self-start sm:self-auto shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 shadow-sm"
+              >
+                <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                <span>Switch / Estimate Month</span>
+              </button>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              {monthlyEstimates.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  No monthly bill estimates saved yet. Select a month in Billing Settings and click Save Settings &amp; Recalculate to store each month&apos;s estimate.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 border-b border-slate-200 dark:border-slate-800 whitespace-nowrap">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Month</th>
+                        <th className="px-4 py-3 font-semibold">Billing Cycle</th>
+                        <th className="px-4 py-3 font-semibold">TEI Rate</th>
+                        <th className="px-4 py-3 font-semibold">Import / Projected</th>
+                        <th className="px-4 py-3 font-semibold">Estimated Bill</th>
+                        <th className="px-4 py-3 font-semibold">Solar Savings</th>
+                        <th className="px-4 py-3 font-semibold text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {monthlyEstimates.map((est) => {
+                        const isSelectedMonth = est.billing_month === activeBillingMonth;
+                        return (
+                          <tr key={est.id} className={`hover:bg-slate-50/60 dark:hover:bg-slate-800/40 ${isSelectedMonth ? "bg-amber-50/40 dark:bg-amber-950/10" : ""}`}>
+                            <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono">{est.billing_month}</span>
+                                {isSelectedMonth && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+                                    Viewing
+                                  </span>
+                                )}
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                  est.is_completed_cycle
+                                    ? "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                                    : "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
+                                }`}>
+                                  {est.is_completed_cycle ? "Completed" : "In Progress"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-slate-600 dark:text-slate-400 whitespace-nowrap font-mono">
+                              {formatDateMMDDYYYY(est.billing_cycle_start)} – {formatDateMMDDYYYY(est.billing_cycle_end)}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-600 dark:text-slate-400">
+                              {est.rate_effective_month} · ₱{est.generation_charge.toFixed(5)}
+                            </td>
+                            <td className="px-4 py-3 font-mono whitespace-nowrap">
+                              {est.actual_imported_kwh.toFixed(1)} / {est.projected_kwh.toFixed(1)} kWh
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                                ₱{est.expected_estimate_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                              <div className="text-[10px] text-slate-400 tabular-nums">
+                                ₱{est.lower_estimate_amount.toFixed(0)} – ₱{est.higher_estimate_amount.toFixed(0)}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-amber-600 dark:text-amber-400 font-semibold tabular-nums">
+                              ₱{est.solar_savings_pesos.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({est.savings_percentage.toFixed(0)}%)
+                            </td>
+                            <td className="px-4 py-3 text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1.5">
+                                {!isSelectedMonth && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectMonth(est.billing_month)}
+                                    className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 text-[11px] font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                  >
+                                    Load
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBillError(null);
+                                    setBillForm({
+                                      billing_period_start: est.billing_cycle_start,
+                                      billing_period_end: est.billing_cycle_end,
+                                      billed_kwh: Number(est.projected_kwh.toFixed(1)),
+                                      actual_amount_due: 0,
+                                      predicted_amount_due: Number(est.expected_estimate_amount.toFixed(2)),
+                                      notes: `Cycle ${est.billing_month} (${est.rate_effective_month} rate)`
+                                    });
+                                    setIsAddBillOpen(true);
+                                  }}
+                                  className="px-2 py-1 rounded border border-amber-200 dark:border-amber-800/60 text-[11px] font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors"
+                                >
+                                  Log Actual
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMonthlyEstimate(est.id)}
+                                  className="p-1 text-slate-400 hover:text-red-600 transition-colors"
+                                  title="Delete Saved Estimate"
+                                  aria-label="Delete saved monthly estimate"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
             <div>
               <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Past Statements of Account & Prediction Accuracy Log
@@ -1512,7 +1744,16 @@ export const BillIntelligencePage: React.FC = () => {
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Active Schedule
                           </span>
                         ) : (
-                          <span className="text-slate-400 text-[10px]">Archived</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-400 text-[10px]">Archived</span>
+                            <button
+                              type="button"
+                              onClick={() => handleActivateRate(r.id)}
+                              className="px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 text-[10px] font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            >
+                              Activate
+                            </button>
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-[11px] text-slate-400 max-w-xs">
@@ -1563,7 +1804,7 @@ export const BillIntelligencePage: React.FC = () => {
 
             <form onSubmit={handleSaveSettings} className="flex flex-col overflow-hidden flex-1">
               <div className="px-4 sm:px-6 py-4 overflow-y-auto space-y-4 text-xs flex-1">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Customer Class
@@ -1578,10 +1819,33 @@ export const BillIntelligencePage: React.FC = () => {
                   </select>
                 </div>
 
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                      Billing Month
+                    </label>
+                    {settingsForm.billing_month && settingsForm.billing_month !== getDefaultCycleMonth(settingsForm.billing_cycle_day || 25) && (
+                      <button
+                        type="button"
+                        onClick={() => setSettingsForm({ ...settingsForm, billing_month: null })}
+                        className="text-[10px] font-medium text-amber-600 dark:text-amber-400 hover:underline"
+                      >
+                        Current
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="month"
+                    value={settingsForm.billing_month || getDefaultCycleMonth(settingsForm.billing_cycle_day || 25)}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, billing_month: e.target.value || null })}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200 font-mono text-xs"
+                  />
+                </div>
+
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                      Monthly Meter Reading Day
+                      Meter Reading Day
                     </label>
                     <span className="text-[10px] text-slate-500 font-mono">Day {settingsForm.billing_cycle_day || 25}</span>
                   </div>
@@ -1616,14 +1880,19 @@ export const BillIntelligencePage: React.FC = () => {
               </div>
 
               <div className="p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg space-y-1">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                  <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span>
-                    Active Cycle: {getCyclePreview(settingsForm.billing_cycle_day).startFormatted} to {getCyclePreview(settingsForm.billing_cycle_day).endFormatted}
+                <div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  <span className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <span>
+                      Active Cycle: {getCyclePreview(settingsForm.billing_cycle_day, settingsForm.billing_month).startFormatted} to {getCyclePreview(settingsForm.billing_cycle_day, settingsForm.billing_month).endFormatted}
+                    </span>
+                  </span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+                    {settingsForm.billing_month || getDefaultCycleMonth(settingsForm.billing_cycle_day || 25)}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  All electricity purchases and solar savings will be integrated strictly from the <strong>{formatOrdinalDay(settingsForm.billing_cycle_day)} of the month</strong> to the <strong>{formatOrdinalDay(settingsForm.billing_cycle_day)} of the next month</strong>. Next meter reading: <strong>{getCyclePreview(settingsForm.billing_cycle_day).endFormatted}</strong>.
+                  All electricity purchases and solar savings will be integrated strictly from the <strong>{formatOrdinalDay(settingsForm.billing_cycle_day)} of the month</strong> to the <strong>{formatOrdinalDay(settingsForm.billing_cycle_day)} of the next month</strong>. Next meter reading: <strong>{getCyclePreview(settingsForm.billing_cycle_day, settingsForm.billing_month).endFormatted}</strong>. Saving automatically records this month&apos;s bill estimate.
                 </p>
               </div>
 

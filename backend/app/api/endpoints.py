@@ -61,9 +61,13 @@ from backend.app.billing import (
     BillForecastResponse,
     calculate_statement_of_account,
     get_active_rate_schedule,
+    get_rate_schedule_for_month,
+    activate_rate_schedule,
     save_rate_schedule,
     get_rate_history,
     check_official_tei_rates,
+    get_rate_check_state,
+    save_rate_check_state,
     get_billing_profile,
     save_billing_profile,
     forecast_tei_bill,
@@ -72,7 +76,10 @@ from backend.app.billing import (
     simulate_rate_sensitivity,
     get_historical_bills_summary,
     insert_historical_bill,
-    remove_historical_bill
+    remove_historical_bill,
+    upsert_monthly_estimate,
+    get_monthly_estimates,
+    delete_monthly_estimate
 )
 from backend.app.billing.billing_profile import compute_cycle_dates
 from backend.app.integrations.deye_cloud import DeyeCloudClient
@@ -1252,7 +1259,7 @@ def _resolve_billing_profile(conn: Any, request: Optional[Request] = None) -> TE
                 if isinstance(incoming_ts, str) and incoming_ts > current_ts:
                     profile = TEIBillingProfile(**parsed)
                     cycle_day = max(1, min(31, int(profile.billing_cycle_day or 25)))
-                    start_dt, end_dt = compute_cycle_dates(cycle_day)
+                    start_dt, end_dt = compute_cycle_dates(cycle_day, billing_month=profile.billing_month)
                     profile.billing_cycle_day = cycle_day
                     profile.cycle_start_date = start_dt.strftime("%Y-%m-%d")
                     profile.cycle_end_date = end_dt.strftime("%Y-%m-%d")
@@ -1264,38 +1271,74 @@ def _resolve_billing_profile(conn: Any, request: Optional[Request] = None) -> TE
             pass
     return current
 
+def _resolve_rate_schedule(conn: Any, profile: TEIBillingProfile, request: Optional[Request] = None) -> TEIRateSchedule:
+    db_active = get_active_rate_schedule(conn, customer_class=profile.customer_class)
+    if request is not None:
+        raw_sched = request.headers.get("X-TEI-Rate-Schedule")
+        if raw_sched:
+            try:
+                parsed = json.loads(urllib.parse.unquote(raw_sched))
+                if isinstance(parsed, dict):
+                    incoming = TEIRateSchedule(**parsed)
+                    if (
+                        incoming.verification_status != "unconfigured"
+                        and incoming.customer_class.lower() == profile.customer_class.lower()
+                        and any(c.component_id == "gen_charge" and c.rate_per_kwh > 0 for c in incoming.components)
+                    ):
+                        is_newer = (
+                            db_active.verification_status == "unconfigured"
+                            or (incoming.created_at or "") > (db_active.created_at or "")
+                        )
+                        if is_newer:
+                            save_rate_schedule(incoming, conn)
+                            conn.commit()
+                            _persist_state()
+            except Exception:
+                pass
+    return get_rate_schedule_for_month(conn, customer_class=profile.customer_class, billing_month=profile.billing_month)
+
 @router.get("/billing/overview")
-def get_billing_overview(request: Request, response: Response, dataset_id: Optional[str] = None):
-    _hydrate_state()
+def get_billing_overview(request: Request, response: Response, dataset_id: Optional[str] = None, fresh: bool = Query(default=False)):
+    _hydrate_state(force=fresh)
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     profile = _resolve_billing_profile(conn, request)
-    sched = get_active_rate_schedule(conn, customer_class=profile.customer_class)
-    conn.close()
+    sched = _resolve_rate_schedule(conn, profile, request)
+    check_state = get_rate_check_state(conn)
+    if check_state.get("status") == "pending" and last_rate_check_cache.get("status") != "pending":
+        check_state = last_rate_check_cache
     records = _get_records("all")
-    return forecast_tei_bill(records, sched, profile, last_rate_check_cache)
+    forecast = forecast_tei_bill(records, sched, profile, check_state)
+    changed = upsert_monthly_estimate(forecast, profile, conn)
+    if changed:
+        conn.commit()
+    conn.close()
+    if changed:
+        _persist_state()
+    return forecast
 
 @router.get("/billing/progress")
-def get_billing_progress(request: Request, response: Response, dataset_id: Optional[str] = None):
-    _hydrate_state()
+def get_billing_progress(request: Request, response: Response, dataset_id: Optional[str] = None, fresh: bool = Query(default=False)):
+    _hydrate_state(force=fresh)
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     profile = _resolve_billing_profile(conn, request)
-    sched = get_active_rate_schedule(conn, customer_class=profile.customer_class)
+    sched = _resolve_rate_schedule(conn, profile, request)
     conn.close()
     records = _get_records("all")
     return calculate_billing_progress_series(records, sched, profile)
 
 @router.get("/billing/statement")
-def get_billing_statement(request: Request, response: Response, mode: str = "expected", dataset_id: Optional[str] = None):
-    _hydrate_state()
+def get_billing_statement(request: Request, response: Response, mode: str = "expected", dataset_id: Optional[str] = None, fresh: bool = Query(default=False)):
+    _hydrate_state(force=fresh)
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     profile = _resolve_billing_profile(conn, request)
-    sched = get_active_rate_schedule(conn, customer_class=profile.customer_class)
+    sched = _resolve_rate_schedule(conn, profile, request)
+    check_state = get_rate_check_state(conn)
     conn.close()
     records = _get_records("all")
-    forecast = forecast_tei_bill(records, sched, profile, last_rate_check_cache)
+    forecast = forecast_tei_bill(records, sched, profile, check_state)
     if mode == "actual":
         return forecast.current_so_far_statement
     elif mode == "lower":
@@ -1305,8 +1348,8 @@ def get_billing_statement(request: Request, response: Response, mode: str = "exp
     return forecast.expected_estimate.statement
 
 @router.get("/billing/profile")
-def get_billing_profile_endpoint(request: Request, response: Response):
-    _hydrate_state()
+def get_billing_profile_endpoint(request: Request, response: Response, fresh: bool = Query(default=False)):
+    _hydrate_state(force=fresh)
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     prof = _resolve_billing_profile(conn, request)
@@ -1314,13 +1357,19 @@ def get_billing_profile_endpoint(request: Request, response: Response):
     return prof.model_dump()
 
 @router.put("/billing/profile")
-def update_billing_profile_endpoint(profile: TEIBillingProfile, response: Response):
+def update_billing_profile_endpoint(profile: TEIBillingProfile, request: Request, response: Response):
     _hydrate_state(force=True)
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     save_billing_profile(profile, conn)
     conn.commit()
     saved = get_billing_profile(conn)
+    sched = _resolve_rate_schedule(conn, saved, request)
+    check_state = get_rate_check_state(conn)
+    records = _get_records("all")
+    forecast = forecast_tei_bill(records, sched, saved, check_state)
+    upsert_monthly_estimate(forecast, saved, conn)
+    conn.commit()
     conn.close()
     _persist_state()
     encoded = urllib.parse.quote(json.dumps(saved.model_dump()))
@@ -1335,8 +1384,8 @@ def update_billing_profile_endpoint(profile: TEIBillingProfile, response: Respon
     return {"status": "updated", "profile": saved.model_dump()}
 
 @router.get("/billing/rates")
-def get_billing_rates(response: Response):
-    _hydrate_state()
+def get_billing_rates(response: Response, fresh: bool = Query(default=False)):
+    _hydrate_state(force=fresh)
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     rates = get_rate_history(conn)
@@ -1351,6 +1400,13 @@ def check_billing_rates_now(request: Request, response: Response):
     conn = get_connection()
     profile = _resolve_billing_profile(conn, request)
     res = check_official_tei_rates(conn, force_fetch=True, customer_class=profile.customer_class)
+    active_sched = res.get("active_schedule") or get_active_rate_schedule(conn, customer_class=profile.customer_class)
+    eff_sched = get_rate_schedule_for_month(conn, customer_class=profile.customer_class, billing_month=profile.billing_month)
+    records = _get_records("all")
+    forecast = forecast_tei_bill(records, eff_sched, profile, res)
+    progress = calculate_billing_progress_series(records, eff_sched, profile)
+    upsert_monthly_estimate(forecast, profile, conn)
+    rates = get_rate_history(conn)
     conn.commit()
     conn.close()
     _persist_state()
@@ -1360,11 +1416,15 @@ def check_billing_rates_now(request: Request, response: Response):
         "message": res["message"],
         "checked_at": res["checked_at"],
         "rate_change_alert": res["rate_change_alert"],
-        "effective_month": res["active_schedule"].effective_month if res.get("active_schedule") else ""
+        "effective_month": active_sched.effective_month if active_sched else "",
+        "active_schedule": active_sched.model_dump() if active_sched else None,
+        "rates": rates,
+        "forecast": forecast.model_dump(),
+        "progress": progress
     }
 
 @router.post("/billing/rates/manual")
-def add_manual_billing_rate(payload: ManualRateScheduleRequest):
+def add_manual_billing_rate(payload: ManualRateScheduleRequest, request: Request):
     global last_rate_check_cache
     import hashlib
     _hydrate_state(force=True)
@@ -1398,16 +1458,50 @@ def add_manual_billing_rate(payload: ManualRateScheduleRequest):
         created_at=now_iso
     )
     save_rate_schedule(new_sched, conn)
-    conn.commit()
-    conn.close()
-    _persist_state()
-    last_rate_check_cache = {
+    check_state = {
         "status": "manual_applied",
         "message": f"Manual rate schedule for {payload.effective_month} activated.",
         "checked_at": now_iso,
         "rate_change_alert": None
     }
-    return {"status": "created", "schedule_id": new_sched.id}
+    save_rate_check_state(check_state, conn)
+    profile = _resolve_billing_profile(conn, request)
+    eff_sched = get_rate_schedule_for_month(conn, customer_class=profile.customer_class, billing_month=profile.billing_month)
+    records = _get_records("all")
+    forecast = forecast_tei_bill(records, eff_sched, profile, check_state)
+    upsert_monthly_estimate(forecast, profile, conn)
+    conn.commit()
+    conn.close()
+    _persist_state()
+    last_rate_check_cache = check_state
+    return {"status": "created", "schedule_id": new_sched.id, "active_schedule": new_sched.model_dump()}
+
+@router.post("/billing/rates/{schedule_id}/activate")
+def activate_billing_rate_endpoint(schedule_id: str, request: Request):
+    global last_rate_check_cache
+    _hydrate_state(force=True)
+    conn = get_connection()
+    activated = activate_rate_schedule(schedule_id, conn)
+    if not activated:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Rate schedule not found")
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    check_state = {
+        "status": "verified_current" if activated.verification_status == "verified" else "manual_applied",
+        "message": f"Activated TEI {activated.effective_month} ({activated.customer_class}) rate schedule.",
+        "checked_at": now_iso,
+        "rate_change_alert": None
+    }
+    save_rate_check_state(check_state, conn)
+    profile = _resolve_billing_profile(conn, request)
+    records = _get_records("all")
+    forecast = forecast_tei_bill(records, activated, profile, check_state)
+    upsert_monthly_estimate(forecast, profile, conn)
+    conn.commit()
+    conn.close()
+    _persist_state()
+    last_rate_check_cache = check_state
+    return {"status": "activated", "schedule_id": activated.id, "active_schedule": activated.model_dump()}
 
 @router.post("/billing/sensitivity")
 def calculate_sensitivity_endpoint(request: Request, response: Response, payload: SensitivityRequest, dataset_id: Optional[str] = None):
@@ -1415,10 +1509,11 @@ def calculate_sensitivity_endpoint(request: Request, response: Response, payload
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     profile = _resolve_billing_profile(conn, request)
-    sched = get_active_rate_schedule(conn, customer_class=profile.customer_class)
+    sched = _resolve_rate_schedule(conn, profile, request)
+    check_state = get_rate_check_state(conn)
     conn.close()
     records = _get_records(dataset_id or "all")
-    forecast = forecast_tei_bill(records, sched, profile, last_rate_check_cache)
+    forecast = forecast_tei_bill(records, sched, profile, check_state)
     base_kwh = forecast.expected_estimate.total_projected_kwh
     return simulate_rate_sensitivity(
         base_kwh=base_kwh,
@@ -1431,9 +1526,30 @@ def calculate_sensitivity_endpoint(request: Request, response: Response, payload
         custom_kwh=payload.custom_kwh
     )
 
+@router.get("/billing/estimates")
+def get_monthly_estimates_endpoint(response: Response, fresh: bool = Query(default=False)):
+    _hydrate_state(force=fresh)
+    response.headers["Cache-Control"] = "no-store"
+    conn = get_connection()
+    estimates = get_monthly_estimates(conn)
+    conn.close()
+    return estimates
+
+@router.delete("/billing/estimates/{estimate_id}")
+def delete_monthly_estimate_endpoint(estimate_id: str):
+    _hydrate_state(force=True)
+    conn = get_connection()
+    success = delete_monthly_estimate(estimate_id, conn)
+    conn.commit()
+    conn.close()
+    if not success:
+        raise HTTPException(status_code=404, detail="Monthly estimate not found")
+    _persist_state()
+    return {"status": "deleted", "id": estimate_id}
+
 @router.get("/billing/history")
-def get_historical_bills_endpoint(response: Response):
-    _hydrate_state()
+def get_historical_bills_endpoint(response: Response, fresh: bool = Query(default=False)):
+    _hydrate_state(force=fresh)
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     bills = get_historical_bills_summary(conn)
@@ -1584,7 +1700,7 @@ def get_deye_health_endpoint(response: Response):
     return deye_mcp_client.get_station_health()
 
 @router.get("/weather/intelligence")
-def get_weather_endpoint(response: Response):
+def get_weather_endpoint(response: Response, refresh: bool = Query(default=False)):
     _hydrate_state()
     response.headers["Cache-Control"] = "no-store"
     settings_dict = get_settings()
@@ -1617,7 +1733,8 @@ def get_weather_endpoint(response: Response):
         battery_capacity_kwh=batt,
         reserve_soc=res_soc,
         current_soc=current_soc,
-        daily_consumption_kwh=daily_cons
+        daily_consumption_kwh=daily_cons,
+        force_refresh=refresh
     )
 
 @router.post("/ingestion/preview")

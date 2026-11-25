@@ -159,6 +159,7 @@ def init_db(hydrate: bool = True):
         project_id TEXT UNIQUE NOT NULL,
         customer_class TEXT DEFAULT 'Residential',
         billing_cycle_day INTEGER DEFAULT 25,
+        billing_month TEXT,
         cycle_start_date TEXT,
         cycle_end_date TEXT,
         prev_meter_reading REAL,
@@ -187,6 +188,41 @@ def init_db(hydrate: bool = True):
         predicted_amount_due REAL,
         notes TEXT,
         created_at TEXT NOT NULL
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tei_monthly_estimates (
+        id TEXT PRIMARY KEY,
+        project_id TEXT DEFAULT 'default',
+        billing_month TEXT NOT NULL,
+        billing_cycle_start TEXT NOT NULL,
+        billing_cycle_end TEXT NOT NULL,
+        customer_class TEXT NOT NULL,
+        rate_effective_month TEXT NOT NULL,
+        generation_charge REAL NOT NULL,
+        actual_imported_kwh REAL NOT NULL,
+        projected_kwh REAL NOT NULL,
+        lower_estimate_amount REAL NOT NULL,
+        expected_estimate_amount REAL NOT NULL,
+        higher_estimate_amount REAL NOT NULL,
+        solar_savings_pesos REAL NOT NULL,
+        savings_percentage REAL NOT NULL,
+        effective_average_rate REAL NOT NULL,
+        is_completed_cycle INTEGER DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        UNIQUE(project_id, billing_month)
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tei_rate_check_state (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        message TEXT NOT NULL,
+        checked_at TEXT,
+        rate_change_alert_json TEXT,
+        updated_at TEXT NOT NULL
     );
     """)
 
@@ -295,6 +331,11 @@ def init_db(hydrate: bool = True):
     for col_name, col_def in add_sys_cols.items():
         if col_name not in sys_cols:
             cursor.execute(f"ALTER TABLE system_settings ADD COLUMN {col_name} {col_def}")
+
+    cursor.execute("PRAGMA table_info(tei_billing_profiles)")
+    bp_cols = [row["name"] for row in cursor.fetchall()]
+    if "billing_month" not in bp_cols:
+        cursor.execute("ALTER TABLE tei_billing_profiles ADD COLUMN billing_month TEXT")
 
     cursor.execute("SELECT id FROM projects WHERE id = 'default'")
     if not cursor.fetchone():

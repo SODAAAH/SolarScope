@@ -2,7 +2,7 @@ import { Tooltip } from '../components/common/Tooltip';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import type { LiveFlowResponse, DailySummaryItem } from '../lib/api';
+import type { LiveFlowResponse, DailySummaryItem, WeatherIntelligenceResponse } from '../lib/api';
 import { EChartComponent } from '../components/charts/EChartComponent';
 import { getBaseEChartsOption } from '../lib/theme';
 import {
@@ -17,6 +17,7 @@ import { formatDateMMDDYYYY } from '../lib/formatters';
 import { LiveFlowGraph } from '../components/telemetry/LiveFlowGraph';
 import { LiveSummaryCard } from '../components/telemetry/LiveSummaryCard';
 import { SolarUtilizationCard } from '../components/telemetry/SolarUtilizationCard';
+import { LiveWeatherForecastCard } from '../components/telemetry/LiveWeatherForecastCard';
 import type { ViewMode } from '../lib/terminology';
 
 export const OverviewPage: React.FC = () => {
@@ -36,6 +37,8 @@ export const OverviewPage: React.FC = () => {
   });
   const [timeline, setTimeline] = useState<any>(null);
   const [liveFlow, setLiveFlow] = useState<LiveFlowResponse | null>(null);
+  const [weather, setWeather] = useState<WeatherIntelligenceResponse | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState<boolean>(false);
   const [dailySummaries, setDailySummaries] = useState<DailySummaryItem[]>(() => {
     try {
       const saved = sessionStorage.getItem('solarscope_cached_daily');
@@ -139,9 +142,22 @@ export const OverviewPage: React.FC = () => {
       .catch(() => {});
   }, [activeDatasetId]);
 
+  const fetchWeather = useCallback((forceRefresh = false) => {
+    setWeatherLoading(true);
+    api.getWeatherIntelligence(forceRefresh)
+      .then((res) => {
+        if (res) setWeather(res);
+      })
+      .catch(() => {})
+      .finally(() => {
+        setWeatherLoading(false);
+      });
+  }, []);
+
   useEffect(() => {
     fetchOverviewData();
-  }, [fetchOverviewData]);
+    fetchWeather(false);
+  }, [fetchOverviewData, fetchWeather]);
 
   useEffect(() => {
     const onSourcesUpdated = () => {
@@ -155,11 +171,16 @@ export const OverviewPage: React.FC = () => {
       } catch {}
       fetchOverviewData();
     };
+    const onSettingsUpdated = () => {
+      fetchWeather(true);
+    };
     window.addEventListener('solarscope:sources-updated', onSourcesUpdated);
+    window.addEventListener('solarscope:settings-updated', onSettingsUpdated);
     return () => {
       window.removeEventListener('solarscope:sources-updated', onSourcesUpdated);
+      window.removeEventListener('solarscope:settings-updated', onSettingsUpdated);
     };
-  }, [fetchOverviewData]);
+  }, [fetchOverviewData, fetchWeather]);
 
   useEffect(() => {
     if (!activeDatasetId || !powerProfileDate) {
@@ -565,7 +586,7 @@ export const OverviewPage: React.FC = () => {
             dailyProductionKwh={dailyProdKwh}
             dailyConsumptionKwh={dailyConsKwh}
             selfConsumptionRate={selfConsPct}
-            weatherTempC={liveFlow?.summary.weather_temp_c ?? null}
+            weatherTempC={liveFlow?.summary.weather_temp_c ?? weather?.current_conditions?.temperature_c ?? null}
           />
         </div>
 
@@ -581,6 +602,12 @@ export const OverviewPage: React.FC = () => {
           />
         </div>
       </div>
+
+      <LiveWeatherForecastCard
+        weather={weather}
+        loading={weatherLoading}
+        onRefresh={() => fetchWeather(true)}
+      />
 
       {!activeDatasetId ? (
         <div className="p-6 sm:p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-center shadow-xs">

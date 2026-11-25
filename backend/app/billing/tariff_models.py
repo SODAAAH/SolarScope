@@ -28,6 +28,7 @@ class TEIRateSchedule(BaseModel):
 class TEIBillingProfile(BaseModel):
     customer_class: str = "Residential"
     billing_cycle_day: int = 25
+    billing_month: Optional[str] = None
     cycle_start_date: Optional[str] = None
     cycle_end_date: Optional[str] = None
     prev_meter_reading: Optional[float] = None

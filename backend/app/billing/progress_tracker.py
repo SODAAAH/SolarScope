@@ -14,7 +14,7 @@ def calculate_billing_progress_series(
     cycle_day = max(1, min(31, int(profile.billing_cycle_day or 25)))
     tz_manila = datetime.timezone(datetime.timedelta(hours=8))
     now = datetime.datetime.now(tz_manila)
-    start_date, end_date = compute_cycle_dates(cycle_day, now.date())
+    start_date, end_date = compute_cycle_dates(cycle_day, now.date(), billing_month=profile.billing_month)
 
     today_date = now.date()
 
@@ -50,7 +50,7 @@ def calculate_billing_progress_series(
         is_past_or_today = (curr_dt <= today_date)
 
         if is_past_or_today:
-            day_kwh = daily_imports.get(d_str, avg_daily_rate if d_str in daily_imports else 0.0)
+            day_kwh = daily_imports.get(d_str, 0.0)
             cum_kwh_actual += day_kwh
             cum_kwh_expected = cum_kwh_actual
             cost_actual = round(cum_kwh_actual * eff_rate, 2)

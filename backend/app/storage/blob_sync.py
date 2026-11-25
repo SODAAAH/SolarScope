@@ -205,7 +205,7 @@ def ensure_hydrated(force: bool = False) -> bool:
     with _lock:
         now_mono = time.monotonic()
         db_path = _get_local_db_path()
-        if not force and _hydrated_version is not None and db_path.exists() and (now_mono - _last_check_monotonic) < 0.5:
+        if not force and _hydrated_version is not None and db_path.exists() and (now_mono - _last_check_monotonic) < 0.05:
             return False
 
         _last_check_monotonic = now_mono

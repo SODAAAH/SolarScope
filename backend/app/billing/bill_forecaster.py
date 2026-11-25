@@ -23,12 +23,22 @@ def forecast_tei_bill(
     cycle_day = max(1, min(31, int(profile.billing_cycle_day or 25)))
     tz_manila = datetime.timezone(datetime.timedelta(hours=8))
     now = datetime.datetime.now(tz_manila)
-    start_date, end_date = compute_cycle_dates(cycle_day, now.date())
+    start_date, end_date = compute_cycle_dates(cycle_day, now.date(), billing_month=profile.billing_month)
 
     cycle_total_days = max(1, (end_date - start_date).days)
     today_date = now.date()
-    days_elapsed = min(cycle_total_days, max(1, (today_date - start_date).days))
-    days_remaining = max(0, (end_date - today_date).days)
+    if today_date < start_date:
+        days_elapsed = 0
+        days_remaining = cycle_total_days
+        so_far_end_date = start_date
+    elif today_date >= end_date:
+        days_elapsed = cycle_total_days
+        days_remaining = 0
+        so_far_end_date = end_date
+    else:
+        days_elapsed = min(cycle_total_days, max(1, (today_date - start_date).days))
+        days_remaining = max(0, (end_date - today_date).days)
+        so_far_end_date = today_date
 
     daily_imports: Dict[str, float] = {}
     daily_exports: Dict[str, float] = {}
@@ -106,7 +116,7 @@ def forecast_tei_bill(
         schedule=schedule,
         profile=profile,
         billing_start=start_str,
-        billing_end=today_date.strftime("%Y-%m-%d"),
+        billing_end=so_far_end_date.strftime("%Y-%m-%d"),
         exported_kwh=actual_exported_kwh,
         is_estimate=True
     )

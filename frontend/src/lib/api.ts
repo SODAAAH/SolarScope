@@ -1,5 +1,6 @@
 const API_BASE = "/api";
 const BILLING_PROFILE_STORAGE_KEY = "solarscope_billing_profile_v2";
+const RATE_SCHEDULE_STORAGE_KEY = "solarscope_tei_rate_schedule_v1";
 const LEGACY_DEYE_KEYS = [
   "solarscope_deye_token",
   "solarscope_deye_station_id",
@@ -32,6 +33,38 @@ export function setStoredBillingProfile(profile: TEIBillingProfile): void {
   try {
     localStorage.setItem(BILLING_PROFILE_STORAGE_KEY, JSON.stringify(profile));
   } catch {}
+}
+
+export function getStoredRateSchedule(): any | null {
+  try {
+    const raw = localStorage.getItem(RATE_SCHEDULE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredRateSchedule(schedule: any): void {
+  try {
+    if (schedule && typeof schedule === "object") {
+      localStorage.setItem(RATE_SCHEDULE_STORAGE_KEY, JSON.stringify(schedule));
+    }
+  } catch {}
+}
+
+function buildBillingHeaders(extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = { ...(extra || {}) };
+  const storedProfile = getStoredBillingProfile();
+  if (storedProfile) {
+    headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(storedProfile));
+  }
+  const storedRate = getStoredRateSchedule();
+  if (storedRate) {
+    headers["X-TEI-Rate-Schedule"] = encodeURIComponent(JSON.stringify(storedRate));
+  }
+  return headers;
 }
 
 export function persistDeyeSession(): void {
@@ -352,33 +385,28 @@ export const api = {
     });
   },
   getDownloadUrl: (reportId: string) => `${API_BASE}/reports/${reportId}/download`,
-  getBillingOverview: (datasetId?: string) => {
-    const q = datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : "";
-    const stored = getStoredBillingProfile();
-    const headers: Record<string, string> = {};
-    if (stored) headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(stored));
-    return fetchJson<BillForecastResponse>(`/billing/overview${q}`, { headers });
+  getBillingOverview: (datasetId?: string, fresh?: boolean) => {
+    const params = new URLSearchParams();
+    if (datasetId) params.set("dataset_id", datasetId);
+    if (fresh) params.set("fresh", "true");
+    const q = params.toString() ? `?${params.toString()}` : "";
+    return fetchJson<BillForecastResponse>(`/billing/overview${q}`, { headers: buildBillingHeaders() });
   },
-  getBillingProgress: (datasetId?: string) => {
-    const q = datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : "";
-    const stored = getStoredBillingProfile();
-    const headers: Record<string, string> = {};
-    if (stored) headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(stored));
-    return fetchJson<BillingProgressResponse>(`/billing/progress${q}`, { headers });
+  getBillingProgress: (datasetId?: string, fresh?: boolean) => {
+    const params = new URLSearchParams();
+    if (datasetId) params.set("dataset_id", datasetId);
+    if (fresh) params.set("fresh", "true");
+    const q = params.toString() ? `?${params.toString()}` : "";
+    return fetchJson<BillingProgressResponse>(`/billing/progress${q}`, { headers: buildBillingHeaders() });
   },
   getBillingStatement: (mode: "actual" | "expected" | "lower" | "higher" = "expected", datasetId?: string) => {
     let url = `/billing/statement?mode=${mode}`;
     if (datasetId) url += `&dataset_id=${encodeURIComponent(datasetId)}`;
-    const stored = getStoredBillingProfile();
-    const headers: Record<string, string> = {};
-    if (stored) headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(stored));
-    return fetchJson<StatementOfAccount>(url, { headers });
+    return fetchJson<StatementOfAccount>(url, { headers: buildBillingHeaders() });
   },
-  getBillingProfile: async () => {
-    const stored = getStoredBillingProfile();
-    const headers: Record<string, string> = {};
-    if (stored) headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(stored));
-    const prof = await fetchJson<TEIBillingProfile>("/billing/profile", { headers });
+  getBillingProfile: async (fresh?: boolean) => {
+    const q = fresh ? "?fresh=true" : "";
+    const prof = await fetchJson<TEIBillingProfile>(`/billing/profile${q}`, { headers: buildBillingHeaders() });
     if (prof) {
       setStoredBillingProfile(prof);
     }
@@ -387,7 +415,7 @@ export const api = {
   updateBillingProfile: async (profile: TEIBillingProfile) => {
     const res = await fetchJson<{ status: string; profile: TEIBillingProfile }>("/billing/profile", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: buildBillingHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(profile)
     });
     if (res && res.profile) {
@@ -397,39 +425,72 @@ export const api = {
     }
     return res;
   },
-  getBillingRates: () => {
-    return fetchJson<RateScheduleHistoryItem[]>("/billing/rates");
+  getBillingRates: (fresh?: boolean) => {
+    const q = fresh ? "?fresh=true" : "";
+    return fetchJson<RateScheduleHistoryItem[]>(`/billing/rates${q}`);
   },
-  checkBillingRatesNow: () => {
-    const stored = getStoredBillingProfile();
-    const headers: Record<string, string> = {};
-    if (stored) headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(stored));
-    return fetchJson<{ status: string; message: string; checked_at: string; rate_change_alert: any; effective_month: string }>("/billing/rates/check_now", {
+  checkBillingRatesNow: async () => {
+    const res = await fetchJson<{
+      status: string;
+      message: string;
+      checked_at: string;
+      rate_change_alert: any;
+      effective_month: string;
+      active_schedule?: any;
+      rates?: RateScheduleHistoryItem[];
+      forecast?: BillForecastResponse;
+      progress?: BillingProgressResponse;
+    }>("/billing/rates/check_now", {
       method: "POST",
-      headers
+      headers: buildBillingHeaders()
     });
+    if (res?.active_schedule) {
+      setStoredRateSchedule(res.active_schedule);
+    }
+    return res;
   },
-  addManualRateSchedule: (payload: { effective_month: string; customer_class?: string; generation_charge: number; generation_vat?: number; distribution_charge?: number; transmission_charge?: number; system_loss_charge?: number }) => {
-    return fetchJson<{ status: string; schedule_id: string }>("/billing/rates/manual", {
+  addManualRateSchedule: async (payload: { effective_month: string; customer_class?: string; generation_charge: number; generation_vat?: number; distribution_charge?: number; transmission_charge?: number; system_loss_charge?: number }) => {
+    const res = await fetchJson<{ status: string; schedule_id: string; active_schedule?: any }>("/billing/rates/manual", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: buildBillingHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload)
     });
+    if (res?.active_schedule) {
+      setStoredRateSchedule(res.active_schedule);
+    }
+    return res;
+  },
+  activateBillingRate: async (scheduleId: string) => {
+    const res = await fetchJson<{ status: string; schedule_id: string; active_schedule?: any }>(`/billing/rates/${encodeURIComponent(scheduleId)}/activate`, {
+      method: "POST",
+      headers: buildBillingHeaders()
+    });
+    if (res?.active_schedule) {
+      setStoredRateSchedule(res.active_schedule);
+    }
+    return res;
   },
   calculateRateSensitivity: (payload: { delta_gen_rate: number; delta_usage_pct: number; custom_kwh?: number }, datasetId?: string) => {
     let url = "/billing/sensitivity";
     if (datasetId) url += `?dataset_id=${encodeURIComponent(datasetId)}`;
-    const stored = getStoredBillingProfile();
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (stored) headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(stored));
     return fetchJson<RateSensitivityResponse>(url, {
       method: "POST",
-      headers,
+      headers: buildBillingHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload)
     });
   },
-  getHistoricalBills: () => {
-    return fetchJson<HistoricalBillRecord[]>("/billing/history");
+  getMonthlyEstimates: (fresh?: boolean) => {
+    const q = fresh ? "?fresh=true" : "";
+    return fetchJson<MonthlyEstimateRecord[]>(`/billing/estimates${q}`);
+  },
+  deleteMonthlyEstimate: (estimateId: string) => {
+    return fetchJson<{ status: string; id: string }>(`/billing/estimates/${encodeURIComponent(estimateId)}`, {
+      method: "DELETE"
+    });
+  },
+  getHistoricalBills: (fresh?: boolean) => {
+    const q = fresh ? "?fresh=true" : "";
+    return fetchJson<HistoricalBillRecord[]>(`/billing/history${q}`);
   },
   addHistoricalBill: (bill: { billing_period_start: string; billing_period_end: string; billed_kwh: number; actual_amount_due: number; predicted_amount_due?: number; notes?: string }) => {
     return fetchJson<HistoricalBillRecord>("/billing/history", {
@@ -525,8 +586,9 @@ export const api = {
     clearLegacyDeyeStorage();
     return fetchJson<StationHealthResponse>("/deye/health");
   },
-  getWeatherIntelligence: () => {
-    return fetchJson<WeatherIntelligenceResponse>("/weather/intelligence");
+  getWeatherIntelligence: (refresh?: boolean) => {
+    const q = refresh ? "?refresh=true" : "";
+    return fetchJson<WeatherIntelligenceResponse>(`/weather/intelligence${q}`);
   },
   previewIngestionFile: (file: File) => {
     const formData = new FormData();
@@ -603,6 +665,7 @@ export const api = {
 export interface TEIBillingProfile {
   customer_class: string;
   billing_cycle_day: number;
+  billing_month?: string | null;
   cycle_start_date?: string;
   cycle_end_date?: string;
   prev_meter_reading?: number | null;
@@ -761,6 +824,26 @@ export interface HistoricalBillRecord {
   created_at: string;
 }
 
+export interface MonthlyEstimateRecord {
+  id: string;
+  billing_month: string;
+  billing_cycle_start: string;
+  billing_cycle_end: string;
+  customer_class: string;
+  rate_effective_month: string;
+  generation_charge: number;
+  actual_imported_kwh: number;
+  projected_kwh: number;
+  lower_estimate_amount: number;
+  expected_estimate_amount: number;
+  higher_estimate_amount: number;
+  solar_savings_pesos: number;
+  savings_percentage: number;
+  effective_average_rate: number;
+  is_completed_cycle: boolean;
+  updated_at: string;
+}
+
 export interface RateSensitivityResponse {
   baseline_kwh: number;
   simulated_kwh: number;
@@ -815,6 +898,22 @@ export interface DeyeStatusResponse {
   }>;
 }
 
+export interface WeatherHourlyForecastItem {
+  time: string;
+  date?: string;
+  hour: number;
+  is_today?: boolean;
+  is_now?: boolean;
+  solar_radiation_wm2: number;
+  cloud_cover_percent: number;
+  temperature_c: number;
+  precipitation_mm?: number;
+  weather_code?: number | null;
+  condition_label?: string;
+  icon_key?: string;
+  estimated_pv_power_kw: number;
+}
+
 export interface WeatherIntelligenceResponse {
   configured?: boolean;
   status?: string;
@@ -823,10 +922,18 @@ export interface WeatherIntelligenceResponse {
   latitude: number;
   longitude: number;
   timezone: string;
+  fetched_at?: string | null;
   current_conditions: {
     cloud_cover_percent: number;
     solar_radiation_wm2: number;
     temperature_c: number;
+    precipitation_mm?: number;
+    wind_speed_kmh?: number;
+    weather_code?: number | null;
+    condition_label?: string;
+    icon_key?: string;
+    is_day?: boolean;
+    observed_at?: string;
   } | null;
   tomorrow_forecast: {
     date: string;
@@ -839,14 +946,8 @@ export interface WeatherIntelligenceResponse {
     projected_night_autonomy_hours: number;
     projected_night_autonomy_formatted: string;
   } | null;
-  hourly_forecast: Array<{
-    time: string;
-    hour: number;
-    solar_radiation_wm2: number;
-    cloud_cover_percent: number;
-    temperature_c: number;
-    estimated_pv_power_kw: number;
-  }>;
+  hourly_forecast: WeatherHourlyForecastItem[];
+  live_hourly_forecast?: WeatherHourlyForecastItem[];
 }
 
 export interface FilePreviewResponse {

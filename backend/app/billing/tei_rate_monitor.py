@@ -38,6 +38,21 @@ _MONTH_MAP = {
 def compute_document_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
+def _row_to_schedule(row) -> TEIRateSchedule:
+    comps_data = json.loads(row["schedule_data_json"])
+    comps = [TEIRateComponent(**c) for c in comps_data]
+    return TEIRateSchedule(
+        id=row["id"],
+        effective_month=row["effective_month"],
+        customer_class=row["customer_class"],
+        publication_date=row["publication_date"] or "",
+        source_url=row["source_url"] or OFFICIAL_TEI_URL,
+        document_hash=row["document_hash"] or "",
+        verification_status=row["verification_status"] or "unconfigured",
+        components=comps,
+        created_at=row["created_at"]
+    )
+
 def get_active_rate_schedule(conn, customer_class: Optional[str] = None) -> TEIRateSchedule:
     row = None
     if customer_class:
@@ -50,24 +65,86 @@ def get_active_rate_schedule(conn, customer_class: Optional[str] = None) -> TEIR
             "SELECT * FROM tei_rate_schedules WHERE is_active = 1 ORDER BY effective_month DESC, created_at DESC LIMIT 1"
         ).fetchone()
     if row:
-        comps_data = json.loads(row["schedule_data_json"])
-        comps = [TEIRateComponent(**c) for c in comps_data]
-        return TEIRateSchedule(
-            id=row["id"],
-            effective_month=row["effective_month"],
-            customer_class=row["customer_class"],
-            publication_date=row["publication_date"] or "",
-            source_url=row["source_url"] or OFFICIAL_TEI_URL,
-            document_hash=row["document_hash"] or "",
-            verification_status=row["verification_status"] or "unconfigured",
-            components=comps,
-            created_at=row["created_at"]
-        )
+        return _row_to_schedule(row)
     default_sched = get_default_tei_schedule()
     if customer_class:
         default_sched.customer_class = customer_class
     save_rate_schedule(default_sched, conn)
     return default_sched
+
+def get_rate_schedule_for_month(
+    conn,
+    customer_class: Optional[str] = None,
+    billing_month: Optional[str] = None
+) -> TEIRateSchedule:
+    if billing_month and re.match(r"^\d{4}-\d{2}$", billing_month.strip()):
+        bm = billing_month.strip()
+        if customer_class:
+            row = conn.execute(
+                "SELECT * FROM tei_rate_schedules WHERE effective_month = ? AND lower(customer_class) = lower(?) ORDER BY is_active DESC, created_at DESC LIMIT 1",
+                (bm, customer_class.strip())
+            ).fetchone()
+            if row:
+                return _row_to_schedule(row)
+        row = conn.execute(
+            "SELECT * FROM tei_rate_schedules WHERE effective_month = ? ORDER BY is_active DESC, created_at DESC LIMIT 1",
+            (bm,)
+        ).fetchone()
+        if row:
+            return _row_to_schedule(row)
+    return get_active_rate_schedule(conn, customer_class=customer_class)
+
+def activate_rate_schedule(schedule_id: str, conn) -> Optional[TEIRateSchedule]:
+    row = conn.execute("SELECT * FROM tei_rate_schedules WHERE id = ?", (schedule_id,)).fetchone()
+    if not row:
+        return None
+    sched = _row_to_schedule(row)
+    conn.execute(
+        "UPDATE tei_rate_schedules SET is_active = 0 WHERE lower(customer_class) = lower(?)",
+        (sched.customer_class,)
+    )
+    conn.execute("UPDATE tei_rate_schedules SET is_active = 1 WHERE id = ?", (schedule_id,))
+    return sched
+
+def get_rate_check_state(conn) -> Dict[str, Any]:
+    row = conn.execute("SELECT * FROM tei_rate_check_state WHERE id = 'default'").fetchone()
+    if not row:
+        return {
+            "status": "pending",
+            "message": "Rate schedule not yet verified against TEI.",
+            "checked_at": None,
+            "rate_change_alert": None
+        }
+    alert_raw = row["rate_change_alert_json"]
+    alert = None
+    if alert_raw:
+        try:
+            alert = json.loads(alert_raw)
+        except Exception:
+            alert = None
+    return {
+        "status": row["status"],
+        "message": row["message"],
+        "checked_at": row["checked_at"],
+        "rate_change_alert": alert
+    }
+
+def save_rate_check_state(state: Dict[str, Any], conn) -> None:
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    alert = state.get("rate_change_alert")
+    alert_json = json.dumps(alert) if alert is not None else None
+    conn.execute(
+        """INSERT OR REPLACE INTO tei_rate_check_state
+           (id, status, message, checked_at, rate_change_alert_json, updated_at)
+           VALUES ('default', ?, ?, ?, ?, ?)""",
+        (
+            str(state.get("status") or "pending"),
+            str(state.get("message") or ""),
+            state.get("checked_at"),
+            alert_json,
+            now_iso
+        )
+    )
 
 def save_rate_schedule(schedule: TEIRateSchedule, conn) -> None:
     conn.execute("UPDATE tei_rate_schedules SET is_active = 0 WHERE lower(customer_class) = lower(?)", (schedule.customer_class,))
@@ -440,52 +517,64 @@ def check_official_tei_rates(
                     "publication_date": pub_date,
                     "summary": summary_msg
                 }
-                return {
+                res_payload = {
                     "status": "updated",
                     "message": summary_msg,
                     "active_schedule": new_sched,
                     "rate_change_alert": alert,
                     "checked_at": now_iso
                 }
+                save_rate_check_state(res_payload, conn)
+                return res_payload
 
-            return {
+            res_payload = {
                 "status": "verified_current",
                 "message": f"TEI official rate schedule ({effective_month}) checked. Current rates are up to date.",
                 "active_schedule": active_sched,
                 "rate_change_alert": None,
                 "checked_at": now_iso
             }
+            save_rate_check_state(res_payload, conn)
+            return res_payload
 
         if prev_gen_rate <= 0.0 or active_sched.verification_status == "unconfigured":
-            return {
+            res_payload = {
                 "status": "offline_unconfigured",
                 "message": "Unable to extract rate schedule from tarlacelectric.com. Try again shortly or add a custom rate schedule below.",
                 "active_schedule": active_sched,
                 "rate_change_alert": None,
                 "checked_at": now_iso
             }
+            save_rate_check_state(res_payload, conn)
+            return res_payload
 
-        return {
+        res_payload = {
             "status": "offline_retained_verified",
             "message": "Unable to parse latest TEI schedule right now. Retained your active schedule.",
             "active_schedule": active_sched,
             "rate_change_alert": None,
             "checked_at": now_iso
         }
+        save_rate_check_state(res_payload, conn)
+        return res_payload
 
     except Exception:
         if prev_gen_rate <= 0.0 or active_sched.verification_status == "unconfigured":
-            return {
+            res_payload = {
                 "status": "offline_unconfigured",
                 "message": "Unable to connect to tarlacelectric.com right now. Try again shortly or enter a custom rate schedule.",
                 "active_schedule": active_sched,
                 "rate_change_alert": None,
                 "checked_at": now_iso
             }
-        return {
+            save_rate_check_state(res_payload, conn)
+            return res_payload
+        res_payload = {
             "status": "offline_retained_verified",
             "message": "Unable to check for new TEI rates. Your estimate is using the last verified rate schedule.",
             "active_schedule": active_sched,
             "rate_change_alert": None,
             "checked_at": now_iso
         }
+        save_rate_check_state(res_payload, conn)
+        return res_payload
