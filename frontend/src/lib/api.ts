@@ -72,6 +72,7 @@ export function persistDeyeSession(): void {
 }
 
 function dispatchAppEvent(name: string): void {
+  clearApiCache();
   try {
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(name));
@@ -79,21 +80,70 @@ function dispatchAppEvent(name: string): void {
   } catch {}
 }
 
+const GET_CACHE_TTL_MS = 30000;
+const apiGetCache = new Map<string, { expiresAt: number; data: any }>();
+const inflightGetRequests = new Map<string, Promise<any>>();
+
+export function clearApiCache(): void {
+  apiGetCache.clear();
+}
+
+function isCacheableGet(endpoint: string, options?: RequestInit): boolean {
+  const method = (options?.method || "GET").toUpperCase();
+  if (method !== "GET") return false;
+  if (endpoint.includes("/deye/live_flow") || endpoint.includes("/health")) return false;
+  if (endpoint.includes("fresh=true") || endpoint.includes("refresh=true")) return false;
+  return true;
+}
+
 export async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const url = `${API_BASE}${endpoint}`;
-  try {
-    const res = await fetch(url, { cache: "no-store", ...options });
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`API Error [${res.status}]: ${errorText}`);
-    }
-    return res.json();
-  } catch (err: any) {
-    if (err.name === "TypeError" && (err.message.includes("fetch") || err.message.includes("network") || err.message.includes("Failed"))) {
-      throw new Error("Cannot reach SolarScope API server. Please ensure the backend service is running.");
-    }
-    throw err;
+  const method = (options?.method || "GET").toUpperCase();
+  if (method !== "GET") {
+    clearApiCache();
   }
+
+  const cacheable = isCacheableGet(endpoint, options);
+  const now = Date.now();
+  if (cacheable) {
+    const cached = apiGetCache.get(endpoint);
+    if (cached && cached.expiresAt > now) {
+      return cached.data as T;
+    }
+    const inflight = inflightGetRequests.get(endpoint);
+    if (inflight) {
+      return inflight as Promise<T>;
+    }
+  }
+
+  const url = `${API_BASE}${endpoint}`;
+  const reqPromise = (async () => {
+    try {
+      const res = await fetch(url, { cache: "no-store", ...options });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`API Error [${res.status}]: ${errorText}`);
+      }
+      const data = await res.json();
+      if (cacheable) {
+        apiGetCache.set(endpoint, { expiresAt: Date.now() + GET_CACHE_TTL_MS, data });
+      }
+      return data as T;
+    } catch (err: any) {
+      if (err.name === "TypeError" && (err.message.includes("fetch") || err.message.includes("network") || err.message.includes("Failed"))) {
+        throw new Error("Cannot reach SolarScope API server. Please ensure the backend service is running.");
+      }
+      throw err;
+    } finally {
+      if (cacheable) {
+        inflightGetRequests.delete(endpoint);
+      }
+    }
+  })();
+
+  if (cacheable) {
+    inflightGetRequests.set(endpoint, reqPromise);
+  }
+  return reqPromise;
 }
 
 export interface SystemSettings {

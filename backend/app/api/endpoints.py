@@ -100,13 +100,19 @@ _historical_records_cache: Optional[List[CanonicalRecord]] = None
 _summary_cache: Dict[str, Any] = {}
 _daily_summaries_cache: Dict[str, Any] = {}
 _timeline_cache: Dict[str, Any] = {}
+_metrics_cache: Dict[str, Any] = {}
+_settings_cache: Optional[Dict[str, Any]] = None
+_past_estimates_sync_key: Optional[str] = None
 
 def invalidate_all_caches():
-    global _historical_records_cache
+    global _historical_records_cache, _settings_cache, _past_estimates_sync_key
     _historical_records_cache = None
+    _settings_cache = None
+    _past_estimates_sync_key = None
     _summary_cache.clear()
     _daily_summaries_cache.clear()
     _timeline_cache.clear()
+    _metrics_cache.clear()
 
 def _hydrate_state(force: bool = False) -> bool:
     updated = ensure_hydrated(force=force)
@@ -221,13 +227,37 @@ def get_health():
     }
 
 def get_settings() -> Dict[str, Any]:
-    _hydrate_state()
-    conn = get_connection()
-    row = conn.execute("SELECT * FROM system_settings WHERE project_id = 'default'").fetchone()
-    conn.close()
-    if row:
-        return dict(row)
-    return SystemSettingsModel().model_dump()
+    global _settings_cache
+    if _hydrate_state() or _settings_cache is None:
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM system_settings WHERE project_id = 'default'").fetchone()
+        conn.close()
+        _settings_cache = dict(row) if row else SystemSettingsModel().model_dump()
+    return _settings_cache
+
+def _resolve_effective_import_tariff(settings_dict: Dict[str, Any]) -> float:
+    configured = float(settings_dict.get("import_tariff") or 0.0)
+    if configured > 0.0:
+        return configured
+    try:
+        conn = get_connection()
+        profile = get_billing_profile(conn)
+        sched = get_active_rate_schedule(conn, customer_class=profile.customer_class)
+        conn.close()
+        if any(c.component_id == "gen_charge" and c.rate_per_kwh > 0 for c in sched.components):
+            soa = calculate_statement_of_account(
+                billed_kwh=200.0,
+                schedule=sched,
+                profile=profile,
+                billing_start=profile.cycle_start_date or "2026-01-01",
+                billing_end=profile.cycle_end_date or "2026-02-01",
+                is_estimate=True
+            )
+            if soa.effective_average_rate_per_kwh > 0:
+                return float(soa.effective_average_rate_per_kwh)
+    except Exception:
+        pass
+    return 0.0
 
 @router.get("/settings")
 def get_settings_endpoint(response: Response):
@@ -823,7 +853,7 @@ def get_executive_summary(dataset_id: str):
         records,
         reserve_soc=settings_dict.get("reserve_soc", 20.0),
         inverter_power_kw=settings_dict.get("inverter_power_kw", 0.0),
-        import_tariff=settings_dict.get("import_tariff", 0.0)
+        import_tariff=_resolve_effective_import_tariff(settings_dict)
     )
     balance = reconcile_energy_balance(records)
     quality = calculate_data_quality_report(records)
@@ -953,68 +983,126 @@ def get_timeline_data(dataset_id: str, date: Optional[str] = Query(None)):
 
 @router.get("/datasets/{dataset_id}/solar")
 def get_solar_analysis(dataset_id: str):
+    _hydrate_state()
+    if dataset_id in _summary_cache:
+        return _summary_cache[dataset_id]["solar"]
+    key = f"solar:{dataset_id}"
+    if key in _metrics_cache:
+        return _metrics_cache[key]
     records = _get_records(dataset_id)
     settings_dict = get_settings()
-    return calculate_solar_metrics(
+    res = calculate_solar_metrics(
         records,
         pv_capacity_kwp=settings_dict.get("pv_capacity_kwp", 0.0),
         inverter_rating_kw=settings_dict.get("inverter_power_kw", 0.0)
     )
+    _metrics_cache[key] = res
+    return res
 
 @router.get("/datasets/{dataset_id}/consumption")
 def get_consumption_analysis(dataset_id: str):
+    _hydrate_state()
+    if dataset_id in _summary_cache:
+        return _summary_cache[dataset_id]["consumption"]
+    key = f"consumption:{dataset_id}"
+    if key in _metrics_cache:
+        return _metrics_cache[key]
     records = _get_records(dataset_id)
-    return calculate_consumption_metrics(records)
+    res = calculate_consumption_metrics(records)
+    _metrics_cache[key] = res
+    return res
 
 @router.get("/datasets/{dataset_id}/battery")
 def get_battery_analysis(dataset_id: str):
+    _hydrate_state()
+    if dataset_id in _summary_cache:
+        return _summary_cache[dataset_id]["battery"]
+    key = f"battery:{dataset_id}"
+    if key in _metrics_cache:
+        return _metrics_cache[key]
     records = _get_records(dataset_id)
     settings_dict = get_settings()
-    return calculate_battery_metrics(
+    res = calculate_battery_metrics(
         records,
         nominal_capacity_kwh=settings_dict.get("battery_capacity_kwh", 0.0),
         reserve_soc=settings_dict.get("reserve_soc", 20.0),
         bms_max_current_a=settings_dict.get("bms_max_charge_a", 0.0),
         battery_voltage=settings_dict.get("battery_voltage", 0.0)
     )
+    _metrics_cache[key] = res
+    return res
 
 @router.get("/datasets/{dataset_id}/grid")
 def get_grid_analysis(dataset_id: str):
+    _hydrate_state()
+    if dataset_id in _summary_cache:
+        return _summary_cache[dataset_id]["grid"]
+    key = f"grid:{dataset_id}"
+    if key in _metrics_cache:
+        return _metrics_cache[key]
     records = _get_records(dataset_id)
     settings_dict = get_settings()
-    return calculate_grid_metrics(
+    res = calculate_grid_metrics(
         records,
         reserve_soc=settings_dict.get("reserve_soc", 20.0),
         inverter_power_kw=settings_dict.get("inverter_power_kw", 0.0),
-        import_tariff=settings_dict.get("import_tariff", 0.0)
+        import_tariff=_resolve_effective_import_tariff(settings_dict)
     )
+    _metrics_cache[key] = res
+    return res
 
 @router.get("/datasets/{dataset_id}/balance")
 def get_balance_analysis(dataset_id: str):
+    _hydrate_state()
+    if dataset_id in _summary_cache:
+        return _summary_cache[dataset_id]["balance"]
+    key = f"balance:{dataset_id}"
+    if key in _metrics_cache:
+        return _metrics_cache[key]
     records = _get_records(dataset_id)
     settings_dict = get_settings()
-    return reconcile_energy_balance(records, inverter_efficiency=settings_dict["battery_efficiency"])
+    res = reconcile_energy_balance(records, inverter_efficiency=settings_dict["battery_efficiency"])
+    _metrics_cache[key] = res
+    return res
 
 @router.get("/datasets/{dataset_id}/events")
 def get_operating_states(dataset_id: str):
+    _hydrate_state()
+    key = f"events:{dataset_id}"
+    if key in _metrics_cache:
+        return _metrics_cache[key]
     records = _get_records(dataset_id)
     settings_dict = get_settings()
-    return build_operating_state_timeline(records, reserve_soc=settings_dict["reserve_soc"])
+    res = build_operating_state_timeline(records, reserve_soc=settings_dict["reserve_soc"])
+    _metrics_cache[key] = res
+    return res
 
 @router.get("/datasets/{dataset_id}/statistics")
 def get_statistical_analysis(dataset_id: str):
+    _hydrate_state()
+    key = f"statistics:{dataset_id}"
+    if key in _metrics_cache:
+        return _metrics_cache[key]
     records = _get_records(dataset_id)
     profiles = get_complete_statistical_profile(records)
     correlations = calculate_correlation_matrices(records)
-    return {
+    res = {
         "profiles": profiles,
         "correlations": correlations
     }
+    _metrics_cache[key] = res
+    return res
 
 @router.get("/datasets/{dataset_id}/anomalies")
 def get_anomalies(dataset_id: str):
+    _hydrate_state()
+    key = f"anomalies:{dataset_id}"
+    if key in _metrics_cache:
+        return _metrics_cache[key]
     records = _get_records(dataset_id)
-    return detect_system_anomalies(records)
+    res = detect_system_anomalies(records)
+    _metrics_cache[key] = res
+    return res
 
 @router.post("/datasets/{dataset_id}/scenarios")
 def run_scenario(dataset_id: str, payload: ScenarioRequest):
@@ -1154,7 +1242,7 @@ def generate_report(dataset_id: str, payload: ReportGenRequest):
         records,
         reserve_soc=settings_dict.get("reserve_soc", 20.0),
         inverter_power_kw=settings_dict.get("inverter_power_kw", 0.0),
-        import_tariff=settings_dict.get("import_tariff", 0.0)
+        import_tariff=_resolve_effective_import_tariff(settings_dict)
     )
     balance = reconcile_energy_balance(records)
     quality = calculate_data_quality_report(records)
@@ -1326,9 +1414,14 @@ def get_billing_overview(request: Request, response: Response, dataset_id: Optio
         check_state = last_rate_check_cache
     records = _get_records("all")
     forecast = forecast_tei_bill(records, sched, profile, check_state)
-    changed = sync_past_monthly_estimates(records, profile, conn, check_state)
-    if upsert_monthly_estimate(forecast, profile, conn):
-        changed = True
+    global _past_estimates_sync_key
+    sync_key = f"{len(records)}:{records[-1].timestamp if records else ''}:{profile.billing_cycle_day}:{profile.billing_month or ''}:{sched.id}"
+    changed = False
+    if _past_estimates_sync_key != sync_key:
+        changed = sync_past_monthly_estimates(records, profile, conn, check_state)
+        if upsert_monthly_estimate(forecast, profile, conn):
+            changed = True
+        _past_estimates_sync_key = sync_key
     if changed:
         conn.commit()
     conn.close()
@@ -1549,15 +1642,21 @@ def calculate_sensitivity_endpoint(request: Request, response: Response, payload
 
 @router.get("/billing/estimates")
 def get_monthly_estimates_endpoint(request: Request, response: Response, fresh: bool = Query(default=False)):
+    global _past_estimates_sync_key
     _hydrate_state(force=fresh)
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
     profile = _resolve_billing_profile(conn, request)
     check_state = get_rate_check_state(conn)
     records = _get_records("all")
-    changed = sync_past_monthly_estimates(records, profile, conn, check_state)
-    if changed:
-        conn.commit()
+    sched = _resolve_rate_schedule(conn, profile, request)
+    sync_key = f"{len(records)}:{records[-1].timestamp if records else ''}:{profile.billing_cycle_day}:{profile.billing_month or ''}:{sched.id}"
+    changed = False
+    if fresh or _past_estimates_sync_key != sync_key:
+        changed = sync_past_monthly_estimates(records, profile, conn, check_state)
+        _past_estimates_sync_key = sync_key
+        if changed:
+            conn.commit()
     estimates = get_monthly_estimates(conn)
     conn.close()
     if changed:
@@ -1782,14 +1881,7 @@ async def preview_uploaded_files(file: UploadFile = File(...)):
 
 @router.get("/datasets/{dataset_id}/grid_classification")
 def get_grid_classification_endpoint(dataset_id: str):
-    records = _get_records(dataset_id)
-    settings_dict = get_settings()
-    return calculate_grid_metrics(
-        records,
-        reserve_soc=settings_dict.get("reserve_soc", 20.0),
-        inverter_power_kw=settings_dict.get("inverter_power_kw", 0.0),
-        import_tariff=settings_dict.get("import_tariff", 0.0)
-    )
+    return get_grid_analysis(dataset_id)
 
 class UpgradeSimulationRequest(BaseModel):
     add_battery_kwh: float = 0.0

@@ -35,13 +35,12 @@ export const EnergyPage: React.FC = () => {
       Promise.all([
         api.getSummary(activeDatasetId),
         api.getTimeline(activeDatasetId),
-        api.getGridClassification(activeDatasetId),
         api.getSettings()
       ])
-        .then(([sData, tData, gData, cfg]) => {
+        .then(([sData, tData, cfg]) => {
           setSummary(sData);
           setTimeline(tData);
-          setGridClassification(gData);
+          setGridClassification(sData?.grid || null);
           setSettings(cfg);
         })
         .catch((err) => console.error(err));
@@ -331,33 +330,56 @@ export const EnergyPage: React.FC = () => {
           </div>
 
           <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              5-Category Grid Import Cause Classification
-            </h3>
-            <p className="text-xs text-slate-500">
-              Deterministic breakdown showing why electricity was purchased from the grid during this observation period.
-            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  Grid Import Cause Classification
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Physical breakdown showing why electricity was purchased from the grid across the selected period.
+                </p>
+              </div>
+              <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                {classifications.length} Causes · {(grid.imported_energy_kwh || 0).toFixed(2)} kWh Total
+              </span>
+            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2">
-              {classifications.map((cat: any) => (
-                <div key={cat.category} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700/60 flex flex-col justify-between">
-                  <div>
-                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">{cat.category}</span>
-                    <div className="text-xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
-                      {(cat.energy_kwh ?? 0).toFixed(2)} kWh
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+              {classifications.map((cat: any) => {
+                const pct = Math.max(0, Math.min(100, Number(cat.percentage ?? 0)));
+                return (
+                  <div key={cat.category} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700/60 flex flex-col justify-between gap-3">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">{cat.category}</span>
+                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 tabular-nums shrink-0">
+                          {pct.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="text-xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                        {(cat.energy_kwh ?? 0).toFixed(2)} <span className="text-xs font-normal text-slate-500">kWh</span>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-amber-500"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      {cat.description && (
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
+                          {cat.description}
+                        </p>
+                      )}
                     </div>
-                    <span className="text-xs font-medium text-amber-600 dark:text-amber-400 tabular-nums">
-                      {cat.percentage}% of import
-                    </span>
+                    <div className="pt-2.5 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs">
+                      <span className="text-slate-500">Est. Cost</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
+                        {currency} {(cat.estimated_cost_php ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
                   </div>
-                  <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 text-xs">
-                    <span className="text-slate-500 block">Est. Cost:</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      {currency} {(cat.estimated_cost_php ?? 0).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

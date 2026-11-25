@@ -67,23 +67,25 @@ export const AppShell: React.FC = () => {
       api.listSources()
         .then((data) => {
           setSources(data);
-          if (data.length === 0) {
-            if (activeDatasetId !== 'all') {
-              setActiveDatasetId('all');
+          setActiveDatasetId((prev) => {
+            if (data.length === 0) {
+              try {
+                localStorage.removeItem('solarscope_dataset_id');
+              } catch {}
+              return 'all';
             }
-            try {
-              localStorage.removeItem('solarscope_dataset_id');
-            } catch {}
-          } else if (activeDatasetId !== 'all' && !data.some((s) => s.id === activeDatasetId)) {
-            setActiveDatasetId('all');
-          }
+            if (prev !== 'all' && !data.some((s) => s.id === prev)) {
+              return 'all';
+            }
+            return prev;
+          });
         })
         .catch(() => {});
     };
     loadSources();
     window.addEventListener('solarscope:sources-updated', loadSources);
     return () => window.removeEventListener('solarscope:sources-updated', loadSources);
-  }, [location.pathname, activeDatasetId]);
+  }, []);
 
   useEffect(() => {
     const loadMeta = () => {
@@ -97,7 +99,7 @@ export const AppShell: React.FC = () => {
       window.removeEventListener('solarscope:settings-updated', loadMeta);
       window.removeEventListener('solarscope:deye-updated', loadMeta);
     };
-  }, [location.pathname]);
+  }, []);
 
   useEffect(() => {
     if (isDark) {
