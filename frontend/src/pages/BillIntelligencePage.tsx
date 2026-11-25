@@ -1469,7 +1469,7 @@ export const BillIntelligencePage: React.FC = () => {
                   <span>Saved Monthly Bill Estimates</span>
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Every monthly cycle estimate calculated or saved in Billing Settings is stored automatically for comparison.
+                  Completed past monthly billing cycles are saved automatically using each month&apos;s observed grid imports and TEI tariff.
                 </p>
               </div>
               <button
@@ -1485,7 +1485,7 @@ export const BillIntelligencePage: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
               {monthlyEstimates.length === 0 ? (
                 <div className="p-6 text-center text-xs text-slate-500">
-                  No monthly bill estimates saved yet. Select a month in Billing Settings and click Save Settings &amp; Recalculate to store each month&apos;s estimate.
+                  No completed past monthly bill estimates recorded yet. Once a billing cycle finishes (or when you select a past month in Billing Settings), its final estimate appears here.
                 </div>
               ) : (
                 <div className="overflow-x-auto">

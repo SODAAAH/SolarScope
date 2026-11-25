@@ -481,7 +481,7 @@ export const api = {
   },
   getMonthlyEstimates: (fresh?: boolean) => {
     const q = fresh ? "?fresh=true" : "";
-    return fetchJson<MonthlyEstimateRecord[]>(`/billing/estimates${q}`);
+    return fetchJson<MonthlyEstimateRecord[]>(`/billing/estimates${q}`, { headers: buildBillingHeaders() });
   },
   deleteMonthlyEstimate: (estimateId: string) => {
     return fetchJson<{ status: string; id: string }>(`/billing/estimates/${encodeURIComponent(estimateId)}`, {

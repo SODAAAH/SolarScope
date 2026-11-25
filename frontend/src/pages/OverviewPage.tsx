@@ -289,32 +289,40 @@ export const OverviewPage: React.FC = () => {
       {
         name: 'Solar (PV)',
         type: 'line',
-        smooth: true,
+        smooth: false,
+        connectNulls: true,
         showSymbol: false,
+        itemStyle: { color: '#F59E0B' },
         lineStyle: { width: 2, color: '#F59E0B' },
         data: timeline.pv_power_kw
       },
       {
         name: 'Grid',
         type: 'line',
-        smooth: true,
+        smooth: false,
+        connectNulls: true,
         showSymbol: false,
+        itemStyle: { color: '#0284C7' },
         lineStyle: { width: 1.5, color: '#0284C7' },
         data: timeline.grid_power_kw
       },
       {
         name: 'Battery',
         type: 'line',
-        smooth: true,
+        smooth: false,
+        connectNulls: true,
         showSymbol: false,
+        itemStyle: { color: '#06B6D4' },
         lineStyle: { width: 1.5, color: '#06B6D4' },
         data: timeline.battery_power_kw
       },
       {
         name: 'Consumption',
         type: 'line',
-        smooth: true,
+        smooth: false,
+        connectNulls: true,
         showSymbol: false,
+        itemStyle: { color: '#10B981' },
         lineStyle: { width: 2, color: '#10B981' },
         data: timeline.load_power_kw
       },
@@ -322,8 +330,10 @@ export const OverviewPage: React.FC = () => {
         name: 'SOC',
         type: 'line',
         yAxisIndex: 1,
-        smooth: true,
+        smooth: false,
+        connectNulls: true,
         showSymbol: false,
+        itemStyle: { color: '#0EA5E9' },
         lineStyle: { width: 1.5, color: '#0EA5E9', type: 'dashed' },
         data: timeline.soc_percent
       }

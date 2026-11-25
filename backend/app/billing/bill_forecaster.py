@@ -66,7 +66,7 @@ def forecast_tei_bill(
         exp_energy = daily_exports[day_str]
         daily_solar_direct[day_str] = max(0.0, pv_energy - exp_energy)
 
-    cycle_days_observed = [d for d in daily_imports.keys() if start_date.strftime("%Y-%m-%d") <= d <= end_date.strftime("%Y-%m-%d")]
+    cycle_days_observed = [d for d in daily_imports.keys() if start_date.strftime("%Y-%m-%d") <= d < end_date.strftime("%Y-%m-%d")]
     cycle_days_observed.sort()
 
     actual_imported_kwh = sum(daily_imports[d] for d in cycle_days_observed)

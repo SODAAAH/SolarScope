@@ -78,6 +78,7 @@ from backend.app.billing import (
     insert_historical_bill,
     remove_historical_bill,
     upsert_monthly_estimate,
+    sync_past_monthly_estimates,
     get_monthly_estimates,
     delete_monthly_estimate
 )
@@ -883,11 +884,27 @@ def get_timeline_data(dataset_id: str, date: Optional[str] = Query(None)):
             target_date = records[-1].timestamp[:10]
 
     target_date_clean = target_date.strip().split(" ")[0].split("T")[0]
-    day_recs_map = {}
+    slot_candidates: Dict[int, tuple] = {}
     for r in records:
-        if r.timestamp.startswith(target_date_clean):
-            t_key = r.timestamp.split(" ")[1][:5] if " " in r.timestamp else r.timestamp[:5]
-            day_recs_map[t_key] = r
+        if not r.timestamp.startswith(target_date_clean):
+            continue
+        sep = "T" if "T" in r.timestamp else " "
+        time_part = r.timestamp.split(sep, 1)[1] if sep in r.timestamp else r.timestamp
+        hms = time_part[:8].split(":")
+        if len(hms) < 2:
+            continue
+        try:
+            hh = int(hms[0])
+            mm = int(hms[1])
+            ss = int(hms[2][:2]) if len(hms) >= 3 else 0
+        except ValueError:
+            continue
+        secs = hh * 3600 + mm * 60 + ss
+        slot_idx = min(288, max(0, (secs + 150) // 300))
+        dist = abs(secs - slot_idx * 300)
+        prev = slot_candidates.get(slot_idx)
+        if prev is None or dist < prev[0]:
+            slot_candidates[slot_idx] = (dist, r)
 
     slots_24h = [f"{h:02d}:{m:02d}" for h in range(24) for m in range(0, 60, 5)] + ["24:00"]
     timestamps_full = [f"{target_date_clean} {s}:00" if s != "24:00" else f"{target_date_clean} 23:59:59" for s in slots_24h]
@@ -900,10 +917,10 @@ def get_timeline_data(dataset_id: str, date: Optional[str] = Query(None)):
     soc_pct = []
     residual_kw = []
 
-    for s in slots_24h:
-        lookup_key = s if s != "24:00" else "23:55"
-        if lookup_key in day_recs_map:
-            rec = day_recs_map[lookup_key]
+    for idx in range(len(slots_24h)):
+        entry = slot_candidates.get(idx)
+        if entry is not None:
+            rec = entry[1]
             pv_kw.append(round(rec.pv_power_kw, 3))
             load_kw.append(round(rec.load_power_kw, 3))
             grid_kw.append(round(rec.grid_power_kw, 3))
@@ -1309,7 +1326,9 @@ def get_billing_overview(request: Request, response: Response, dataset_id: Optio
         check_state = last_rate_check_cache
     records = _get_records("all")
     forecast = forecast_tei_bill(records, sched, profile, check_state)
-    changed = upsert_monthly_estimate(forecast, profile, conn)
+    changed = sync_past_monthly_estimates(records, profile, conn, check_state)
+    if upsert_monthly_estimate(forecast, profile, conn):
+        changed = True
     if changed:
         conn.commit()
     conn.close()
@@ -1368,6 +1387,7 @@ def update_billing_profile_endpoint(profile: TEIBillingProfile, request: Request
     check_state = get_rate_check_state(conn)
     records = _get_records("all")
     forecast = forecast_tei_bill(records, sched, saved, check_state)
+    sync_past_monthly_estimates(records, saved, conn, check_state)
     upsert_monthly_estimate(forecast, saved, conn)
     conn.commit()
     conn.close()
@@ -1405,6 +1425,7 @@ def check_billing_rates_now(request: Request, response: Response):
     records = _get_records("all")
     forecast = forecast_tei_bill(records, eff_sched, profile, res)
     progress = calculate_billing_progress_series(records, eff_sched, profile)
+    sync_past_monthly_estimates(records, profile, conn, res)
     upsert_monthly_estimate(forecast, profile, conn)
     rates = get_rate_history(conn)
     conn.commit()
@@ -1527,12 +1548,20 @@ def calculate_sensitivity_endpoint(request: Request, response: Response, payload
     )
 
 @router.get("/billing/estimates")
-def get_monthly_estimates_endpoint(response: Response, fresh: bool = Query(default=False)):
+def get_monthly_estimates_endpoint(request: Request, response: Response, fresh: bool = Query(default=False)):
     _hydrate_state(force=fresh)
     response.headers["Cache-Control"] = "no-store"
     conn = get_connection()
+    profile = _resolve_billing_profile(conn, request)
+    check_state = get_rate_check_state(conn)
+    records = _get_records("all")
+    changed = sync_past_monthly_estimates(records, profile, conn, check_state)
+    if changed:
+        conn.commit()
     estimates = get_monthly_estimates(conn)
     conn.close()
+    if changed:
+        _persist_state()
     return estimates
 
 @router.delete("/billing/estimates/{estimate_id}")

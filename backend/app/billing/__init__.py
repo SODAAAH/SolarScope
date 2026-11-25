@@ -30,6 +30,7 @@ from backend.app.billing.historical_bills import (
 )
 from backend.app.billing.monthly_estimates import (
     upsert_monthly_estimate,
+    sync_past_monthly_estimates,
     get_monthly_estimates,
     delete_monthly_estimate,
     resolve_estimate_month

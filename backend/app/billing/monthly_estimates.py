@@ -1,7 +1,11 @@
 import datetime
 import re
 from typing import List, Dict, Any
+from backend.app.ingestion.models import CanonicalRecord
 from backend.app.billing.tariff_models import BillForecastResponse, TEIBillingProfile
+from backend.app.billing.billing_profile import compute_cycle_dates
+from backend.app.billing.bill_forecaster import forecast_tei_bill
+from backend.app.billing.tei_rate_monitor import get_rate_schedule_for_month
 
 def resolve_estimate_month(forecast: BillForecastResponse, profile: TEIBillingProfile) -> str:
     if profile.billing_month and re.match(r"^\d{4}-\d{2}$", profile.billing_month.strip()):
@@ -9,8 +13,14 @@ def resolve_estimate_month(forecast: BillForecastResponse, profile: TEIBillingPr
     return (forecast.billing_cycle_start or "")[:7]
 
 def upsert_monthly_estimate(forecast: BillForecastResponse, profile: TEIBillingProfile, conn) -> bool:
+    if int(forecast.days_remaining) > 0:
+        return False
+
     billing_month = resolve_estimate_month(forecast, profile)
     if not billing_month or not re.match(r"^\d{4}-\d{2}$", billing_month):
+        return False
+
+    if float(forecast.actual_imported_kwh) <= 0.0 and float(forecast.expected_estimate.total_projected_kwh) <= 0.0 and float(forecast.solar_savings.get("household_total_demand_kwh", 0.0)) <= 0.0:
         return False
 
     est_id = f"est-default-{billing_month}"
@@ -23,7 +33,7 @@ def upsert_monthly_estimate(forecast: BillForecastResponse, profile: TEIBillingP
     savings_pesos = round(float(forecast.solar_savings.get("savings_pesos", 0.0)), 2)
     savings_pct = round(float(forecast.solar_savings.get("savings_percentage", 0.0)), 1)
     eff_rate = round(float(forecast.expected_estimate.statement.effective_average_rate_per_kwh), 4)
-    is_completed = 1 if int(forecast.days_remaining) == 0 else 0
+    is_completed = 1
 
     existing = conn.execute(
         "SELECT * FROM tei_monthly_estimates WHERE project_id = 'default' AND billing_month = ?",
@@ -80,9 +90,76 @@ def upsert_monthly_estimate(forecast: BillForecastResponse, profile: TEIBillingP
     )
     return True
 
+def sync_past_monthly_estimates(
+    records: List[CanonicalRecord],
+    profile: TEIBillingProfile,
+    conn,
+    check_state: Dict[str, Any]
+) -> bool:
+    tz_manila = datetime.timezone(datetime.timedelta(hours=8))
+    today_date = datetime.datetime.now(tz_manila).date()
+    today_str = today_date.strftime("%Y-%m-%d")
+
+    del_res = conn.execute(
+        "DELETE FROM tei_monthly_estimates WHERE project_id = 'default' AND (is_completed_cycle = 0 OR billing_cycle_end > ?)",
+        (today_str,)
+    )
+    changed = del_res.rowcount > 0
+
+    if not records:
+        return changed
+
+    observed_days = sorted({r.timestamp[:10] for r in records if r.timestamp and len(r.timestamp) >= 10})
+    if not observed_days:
+        return changed
+
+    min_dt = datetime.date.fromisoformat(observed_days[0])
+    cycle_day = max(1, min(31, int(profile.billing_cycle_day or 25)))
+    cur_start, _ = compute_cycle_dates(cycle_day, min_dt)
+    iter_year, iter_month = cur_start.year, cur_start.month
+
+    while True:
+        bm = f"{iter_year:04d}-{iter_month:02d}"
+        c_start, c_end = compute_cycle_dates(cycle_day, billing_month=bm)
+        if c_end > today_date:
+            break
+
+        c_start_str = c_start.strftime("%Y-%m-%d")
+        c_end_str = c_end.strftime("%Y-%m-%d")
+        cycle_total_days = max(1, (c_end - c_start).days)
+        days_in_cycle = sum(1 for d in observed_days if c_start_str <= d < c_end_str)
+
+        if days_in_cycle >= max(7, cycle_total_days // 2):
+            is_explicit_month = (profile.billing_month == bm)
+            past_prof = profile.model_copy(update={
+                "billing_month": bm,
+                "cycle_start_date": c_start_str,
+                "cycle_end_date": c_end_str,
+                "prev_meter_reading": profile.prev_meter_reading if is_explicit_month else None,
+                "latest_meter_reading": profile.latest_meter_reading if is_explicit_month else None,
+                "previous_unpaid_balance": profile.previous_unpaid_balance if is_explicit_month else 0.0,
+                "payments_received": profile.payments_received if is_explicit_month else 0.0,
+            })
+            sched = get_rate_schedule_for_month(conn, customer_class=profile.customer_class, billing_month=bm)
+            past_forecast = forecast_tei_bill(records, sched, past_prof, check_state)
+            if upsert_monthly_estimate(past_forecast, past_prof, conn):
+                changed = True
+
+        iter_month += 1
+        if iter_month > 12:
+            iter_month = 1
+            iter_year += 1
+
+    return changed
+
 def get_monthly_estimates(conn) -> List[Dict[str, Any]]:
+    tz_manila = datetime.timezone(datetime.timedelta(hours=8))
+    today_str = datetime.datetime.now(tz_manila).date().strftime("%Y-%m-%d")
     rows = conn.execute(
-        "SELECT * FROM tei_monthly_estimates WHERE project_id = 'default' ORDER BY billing_month DESC"
+        """SELECT * FROM tei_monthly_estimates
+           WHERE project_id = 'default' AND is_completed_cycle = 1 AND billing_cycle_end <= ?
+           ORDER BY billing_month DESC""",
+        (today_str,)
     ).fetchall()
     return [
         {
