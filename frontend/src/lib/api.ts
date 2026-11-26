@@ -965,7 +965,7 @@ export interface StatementOfAccount {
   effective_average_rate_per_kwh: number;
   is_estimate: boolean;
   disclaimer: string;
-  calculation_basis?: string;
+  calculation_basis?: string | Record<string, any>;
 }
 
 export interface BillForecastScenario {
@@ -993,7 +993,19 @@ export interface BillForecastResponse {
   active_generation_vat: number;
   last_rate_check_timestamp: string;
   rate_monitor_status: string;
-  calculation_basis?: string;
+  calculation_basis?: string | {
+    is_estimate?: boolean;
+    import_energy_basis?: string;
+    telemetry_imported_kwh?: number;
+    projected_exported_kwh?: number;
+    rate_schedule_verification?: string;
+    rate_effective_month?: string;
+    customer_class?: string;
+    connection_type?: string;
+    forecast_sample_days?: number;
+    cycle_days_observed?: number;
+    solar_savings_attribution?: string;
+  };
   rate_change_alert?: {
     has_changed: boolean;
     previous_rate: number;

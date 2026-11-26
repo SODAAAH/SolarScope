@@ -33,6 +33,7 @@ import {
   type ProjectSummary
 } from '../../lib/api';
 import { AuthGate } from '../auth/AuthGate';
+import { ErrorBoundary } from '../common/ErrorBoundary';
 import type { ViewMode } from '../../lib/terminology';
 import { formatDateMMDDYYYY } from '../../lib/formatters';
 
@@ -496,7 +497,9 @@ export const AppShell: React.FC = () => {
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-5 md:p-6">
           <div key={location.pathname} className="animate-page-enter">
-            <Outlet context={{ activeDatasetId, setActiveDatasetId, viewMode, setViewMode }} />
+            <ErrorBoundary>
+              <Outlet context={{ activeDatasetId, setActiveDatasetId, viewMode, setViewMode }} />
+            </ErrorBoundary>
           </div>
         </main>
       </div>

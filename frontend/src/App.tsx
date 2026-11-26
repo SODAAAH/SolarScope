@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
+import { ErrorBoundary } from "./components/common/ErrorBoundary";
 
 const OverviewPage = lazy(() => import("./pages/OverviewPage").then((m) => ({ default: m.OverviewPage })));
 const SolarPage = lazy(() => import("./pages/SolarPage").then((m) => ({ default: m.SolarPage })));
@@ -21,8 +22,9 @@ const PageLoader: React.FC = () => (
 
 export const App: React.FC = () => {
   return (
-    <BrowserRouter>
-      <Suspense fallback={<PageLoader />}>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/" element={<AppShell />}>
             <Route index element={<OverviewPage />} />
@@ -54,6 +56,7 @@ export const App: React.FC = () => {
         </Routes>
       </Suspense>
     </BrowserRouter>
+    </ErrorBoundary>
   );
 };
 

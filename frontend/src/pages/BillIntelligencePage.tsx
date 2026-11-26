@@ -606,11 +606,13 @@ export const BillIntelligencePage: React.FC = () => {
         <div className="flex items-center gap-2">
           <Info className="w-4 h-4 text-slate-400 shrink-0" />
           <span>
-            {forecast?.calculation_basis
+            {typeof forecast?.calculation_basis === "string"
               ? forecast.calculation_basis
-              : activeGenCharge > 0
-                ? "Projections calculated using active tariffs and billing cycle telemetry."
-                : "No active tariff rate loaded yet. Click Check TEI Rates or add a custom rate schedule in the archive tab."}
+              : forecast?.calculation_basis && typeof forecast.calculation_basis === "object"
+                ? `Estimate using ${forecast.calculation_basis.import_energy_basis || "cycle telemetry"} (${forecast.calculation_basis.cycle_days_observed ?? 0} cycle day(s), ${forecast.calculation_basis.rate_schedule_verification || "verified"} ${forecast.calculation_basis.rate_effective_month || currentMonthStr} TEI rate).`
+                : activeGenCharge > 0
+                  ? "Projections calculated using active tariffs and billing cycle telemetry."
+                  : "No active tariff rate loaded yet. Click Check TEI Rates or add a custom rate schedule in the archive tab."}
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] font-mono text-slate-500">
