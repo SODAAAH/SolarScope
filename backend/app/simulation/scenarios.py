@@ -1,6 +1,6 @@
-import datetime
 from typing import List, Dict, Any
 from backend.app.ingestion.models import CanonicalRecord
+from backend.app.metrics.time_utils import parse_timestamp
 
 def simulate_system_scenarios(
     records: List[CanonicalRecord],
@@ -17,7 +17,8 @@ def simulate_system_scenarios(
     bms_max_current_a: float = 0.0,
     battery_voltage: float = 0.0,
     mppt_range_v: str = "--",
-    pv_max_voltage_v: str = "--"
+    pv_max_voltage_v: str = "--",
+    baseline_reserve_soc: float = 20.0
 ) -> Dict[str, Any]:
     if not records:
         return {}
@@ -26,11 +27,11 @@ def simulate_system_scenarios(
     total_baseline_pv_kwh = 0.0
     total_baseline_load_kwh = 0.0
 
-    try:
-        t0_all = datetime.datetime.strptime(records[0].timestamp, "%Y-%m-%d %H:%M:%S")
-        t1_all = datetime.datetime.strptime(records[-1].timestamp, "%Y-%m-%d %H:%M:%S")
-        span_days = max(1.0, (t1_all - t0_all).total_seconds() / 86400.0)
-    except Exception:
+    parsed_dts = [parse_timestamp(r.timestamp) for r in records]
+    valid_dts = [dt for dt in parsed_dts if dt is not None]
+    if len(valid_dts) >= 2:
+        span_days = max(1.0, (valid_dts[-1] - valid_dts[0]).total_seconds() / 86400.0)
+    else:
         span_days = 1.0
 
     clipped_energy_kwh = 0.0
@@ -41,12 +42,12 @@ def simulate_system_scenarios(
     max_battery_charge_kw = round((effective_bms_current_a * battery_voltage) / 1000.0, 2) if (effective_bms_current_a > 0 and battery_voltage > 0) else 0.0
 
     for i in range(len(records) - 1):
-        try:
-            t0 = datetime.datetime.strptime(records[i].timestamp, "%Y-%m-%d %H:%M:%S")
-            t1 = datetime.datetime.strptime(records[i + 1].timestamp, "%Y-%m-%d %H:%M:%S")
-            dt_h = (t1 - t0).total_seconds() / 3600.0
-        except Exception:
-            dt_h = 5.0 / 60.0
+        t0, t1 = parsed_dts[i], parsed_dts[i + 1]
+        if t0 is None or t1 is None:
+            continue
+        dt_h = (t1 - t0).total_seconds() / 3600.0
+        if dt_h <= 0.0 or dt_h > 2.0:
+            continue
 
         p_grid = 0.5 * (max(0.0, records[i].grid_power_kw) + max(0.0, records[i + 1].grid_power_kw))
         p_pv = 0.5 * (records[i].pv_power_kw + records[i + 1].pv_power_kw)
@@ -73,7 +74,7 @@ def simulate_system_scenarios(
     max_daily_battery_absorption = add_battery_kwh * 0.90
     battery_absorption_kwh = min(max_daily_battery_absorption, net_extra_pv_kwh + (daily_grid_kwh * 0.35))
 
-    reserve_delta_pct = max(0.0, 20.0 - new_reserve_soc)
+    reserve_delta_pct = max(0.0, baseline_reserve_soc - new_reserve_soc)
     reserve_energy_released_kwh = (reserve_delta_pct / 100.0) * baseline_battery_kwh if baseline_battery_kwh > 0 else 0.0
 
     achievable_grid_reduction = min(
@@ -153,6 +154,17 @@ def simulate_system_scenarios(
 
     return {
         "status": "HARDWARE_CONSTRAINED_SIMULATION",
+        "is_hypothetical": True,
+        "assumptions": {
+            "battery_capex_php_per_kwh": 22000.0,
+            "pv_capex_php_per_kwp": 28000.0,
+            "discount_rate": discount_rate,
+            "annual_degradation": degradation,
+            "tariff_inflation": inflation,
+            "battery_usable_absorption_factor": 0.90,
+            "load_shift_efficiency": 0.85,
+            "note": "Observed baseline is computed from recorded telemetry; upgrade savings and payback are hypothetical modeled projections."
+        },
         "inputs": {
             "baseline_battery_kwh": baseline_battery_kwh,
             "added_battery_kwh": add_battery_kwh,

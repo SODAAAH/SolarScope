@@ -12,6 +12,7 @@ from backend.app.billing.tei_rate_monitor import (
     get_active_rate_schedule,
     get_rate_schedule_for_month,
     activate_rate_schedule,
+    set_project_active_schedule,
     save_rate_schedule,
     get_rate_history,
     check_official_tei_rates,

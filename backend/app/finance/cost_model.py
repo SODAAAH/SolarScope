@@ -1,8 +1,8 @@
-from datetime import datetime
 from typing import List, Dict, Any
 from backend.app.ingestion.models import CanonicalRecord
 from backend.app.finance.tariff_engine import TariffConfig, calculate_grid_cost
 from backend.app.energy_balance.reconciliation import reconcile_energy_balance
+from backend.app.metrics.time_utils import parse_timestamp
 
 def calculate_financial_performance(
     records: List[CanonicalRecord],
@@ -20,22 +20,21 @@ def calculate_financial_performance(
     total_demand_kwh = balance.get("household_demand_kwh", 0.0)
     total_imported_kwh = grid_cost.get("total_imported_kwh", 0.0)
 
-    try:
-        t0 = datetime.strptime(records[0].timestamp, "%Y-%m-%d %H:%M:%S")
-        t1 = datetime.strptime(records[-1].timestamp, "%Y-%m-%d %H:%M:%S")
-        span_days = max(1.0, (t1 - t0).total_seconds() / 86400.0)
-    except Exception:
+    valid_dts = [dt for dt in (parse_timestamp(r.timestamp) for r in records) if dt is not None]
+    if len(valid_dts) >= 2:
+        span_days = max(1.0, (valid_dts[-1] - valid_dts[0]).total_seconds() / 86400.0)
+    else:
         span_days = 1.0
 
     daily_imported_kwh = round(total_imported_kwh / span_days, 2)
     daily_demand_kwh = round(total_demand_kwh / span_days, 2)
 
     effective_tariff = grid_cost.get("effective_rate_per_kwh", config.flat_rate)
-    
+
     daily_import_cost = grid_cost["total_import_cost"] / span_days
     daily_export_credit = grid_cost["total_export_credit"] / span_days
     daily_fixed_charge = grid_cost["fixed_daily_charge"]
-    
+
     daily_grid_cost = round(daily_import_cost + daily_fixed_charge - daily_export_credit, 2)
     hypothetical_full_grid_cost = round((daily_demand_kwh * effective_tariff) + daily_fixed_charge, 2)
     daily_avoided_cost = max(0.0, round(hypothetical_full_grid_cost - daily_grid_cost, 2))
@@ -76,5 +75,6 @@ def calculate_financial_performance(
         "baseline_demand_kwh": daily_demand_kwh,
         "span_days": round(span_days, 1),
         "total_imported_kwh": round(total_imported_kwh, 2),
-        "total_demand_kwh": round(total_demand_kwh, 2)
+        "total_demand_kwh": round(total_demand_kwh, 2),
+        "is_estimate": True
     }

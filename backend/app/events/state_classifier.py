@@ -1,7 +1,6 @@
-import datetime
 from typing import List, Dict, Any
 from backend.app.ingestion.models import CanonicalRecord
-from backend.app.metrics.time_utils import format_time_12h
+from backend.app.metrics.time_utils import format_time_12h, parse_timestamp
 
 def classify_operating_state(
     record: CanonicalRecord,
@@ -49,7 +48,7 @@ def build_operating_state_timeline(
         return []
 
     episodes: List[Dict[str, Any]] = []
-    
+
     current_state = classify_operating_state(records[0], reserve_soc)
     start_time = records[0].timestamp
     readings_count = 1
@@ -60,13 +59,13 @@ def build_operating_state_timeline(
 
     for i in range(1, len(records)):
         state = classify_operating_state(records[i], reserve_soc)
-        
-        try:
-            t0 = datetime.datetime.strptime(records[i - 1].timestamp, "%Y-%m-%d %H:%M:%S")
-            t1 = datetime.datetime.strptime(records[i].timestamp, "%Y-%m-%d %H:%M:%S")
-            dt_h = (t1 - t0).total_seconds() / 3600.0
-        except Exception:
-            dt_h = 5.0 / 60.0
+
+        t0 = parse_timestamp(records[i - 1].timestamp)
+        t1 = parse_timestamp(records[i].timestamp)
+        if t0 is not None and t1 is not None:
+            dt_h = max(0.0, min(2.0, (t1 - t0).total_seconds() / 3600.0))
+        else:
+            dt_h = 0.0
 
         p_pv = 0.5 * (records[i - 1].pv_power_kw + records[i].pv_power_kw)
         p_load = 0.5 * (records[i - 1].load_power_kw + records[i].load_power_kw)
@@ -80,14 +79,12 @@ def build_operating_state_timeline(
 
         if state != current_state:
             end_time = records[i - 1].timestamp
-            try:
-                st = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
-                et = datetime.datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
-                duration_m = round((et - st).total_seconds() / 60.0, 1)
-            except Exception:
+            st = parse_timestamp(start_time)
+            et = parse_timestamp(end_time)
+            if st is not None and et is not None:
+                duration_m = round(max(0.0, (et - st).total_seconds() / 60.0), 1)
+            else:
                 duration_m = round(readings_count * 5.0, 1)
-
-            reason = _get_state_reason(current_state)
 
             episodes.append({
                 "state": current_state,
@@ -101,7 +98,7 @@ def build_operating_state_timeline(
                 "load_energy_kwh": round(total_load_energy, 4),
                 "grid_energy_kwh": round(total_grid_energy, 4),
                 "battery_discharge_kwh": round(total_disch_energy, 4),
-                "reason": reason
+                "reason": _get_state_reason(current_state)
             })
 
             current_state = state
@@ -115,11 +112,11 @@ def build_operating_state_timeline(
             readings_count += 1
 
     end_time = records[-1].timestamp
-    try:
-        st = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
-        et = datetime.datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
-        duration_m = round((et - st).total_seconds() / 60.0, 1)
-    except Exception:
+    st = parse_timestamp(start_time)
+    et = parse_timestamp(end_time)
+    if st is not None and et is not None:
+        duration_m = round(max(0.0, (et - st).total_seconds() / 60.0), 1)
+    else:
         duration_m = round(readings_count * 5.0, 1)
 
     episodes.append({

@@ -44,3 +44,6 @@ class CanonicalRecord(BaseModel):
     grid_tied_inverter_power_kw: float = 0.0
     residual_power_kw: float = 0.0
     quality_flags: List[str] = Field(default_factory=list)
+    missing_channels: List[str] = Field(default_factory=list)
+    invalid_channels: List[str] = Field(default_factory=list)
+    timestamp_valid: bool = True

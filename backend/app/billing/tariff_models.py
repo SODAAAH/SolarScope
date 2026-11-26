@@ -111,3 +111,4 @@ class BillForecastResponse(BaseModel):
     forecasting_method: str
     data_coverage_percent: float
     solar_savings: Dict[str, Any]
+    calculation_basis: Optional[Dict[str, Any]] = None

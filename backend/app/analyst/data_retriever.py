@@ -5,6 +5,8 @@ from backend.app.metrics.battery_metrics import calculate_battery_metrics
 from backend.app.metrics.grid_metrics import calculate_grid_metrics
 from backend.app.metrics.consumption_metrics import calculate_consumption_metrics
 from backend.app.energy_balance.reconciliation import reconcile_energy_balance
+from backend.app.metrics.integrator import integrate_power_series
+from backend.app.metrics.time_utils import parse_timestamp
 from backend.app.storage.db import get_connection
 
 def extract_system_snapshot(records: List[CanonicalRecord], project_id: str = "default") -> Dict[str, Any]:
@@ -24,6 +26,7 @@ def extract_system_snapshot(records: List[CanonicalRecord], project_id: str = "d
     bms_a = float(sys_row["bms_max_charge_a"] or 0.0) if "bms_max_charge_a" in keys else 0.0
     batt_v = float(sys_row["battery_voltage"] or 0.0) if "battery_voltage" in keys else 0.0
     inv_max_a = float(sys_row["inverter_max_battery_current_a"] or 0.0) if "inverter_max_battery_current_a" in keys else 0.0
+    timezone_str = (sys_row["timezone"] or "Asia/Manila").strip() if "timezone" in keys and sys_row["timezone"] else "Asia/Manila"
     location_name = (sys_row["location_name"] or "").strip() if "location_name" in keys else ""
     panel_model = (sys_row["panel_model"] or "").strip() if "panel_model" in keys else ""
     inverter_model = (sys_row["inverter_model"] or "").strip() if "inverter_model" in keys else ""
@@ -39,21 +42,19 @@ def extract_system_snapshot(records: List[CanonicalRecord], project_id: str = "d
     )
     grid = calculate_grid_metrics(records, reserve_soc=reserve_soc, inverter_power_kw=inv_kw, import_tariff=tariff)
     consumption = calculate_consumption_metrics(records)
-    balance = reconcile_energy_balance(records)
+    balance = reconcile_energy_balance(records, nominal_battery_kwh=batt_kwh)
 
-    night_records = []
+    night_ts: List[str] = []
+    night_load: List[float] = []
     for r in records:
-        try:
-            h = int(r.timestamp[11:13])
-            if h >= 20 or h < 6:
-                night_records.append(r)
-        except Exception:
+        dt = parse_timestamp(r.timestamp, timezone_str)
+        if dt is None:
             continue
+        if dt.hour >= 20 or dt.hour < 6:
+            night_ts.append(r.timestamp)
+            night_load.append(r.load_power_kw)
 
-    night_load_kwh = 0.0
-    for i in range(len(night_records) - 1):
-        avg_load = 0.5 * (night_records[i].load_power_kw + night_records[i + 1].load_power_kw)
-        night_load_kwh += avg_load * (5.0 / 60.0)
+    night_load_kwh = integrate_power_series(night_ts, night_load, max_gap_seconds=3600)[0] if len(night_ts) >= 2 else 0.0
 
     return {
         "hardware": {

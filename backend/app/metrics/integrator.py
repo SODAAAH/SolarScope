@@ -1,13 +1,9 @@
 import datetime
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
+from backend.app.metrics.time_utils import parse_timestamp
 
-def parse_iso(ts: str) -> datetime.datetime:
-    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
-        try:
-            return datetime.datetime.strptime(ts, fmt)
-        except ValueError:
-            continue
-    return datetime.datetime.fromtimestamp(0)
+def parse_iso(ts: str, target_tz: str = "Asia/Manila") -> Optional[datetime.datetime]:
+    return parse_timestamp(ts, target_tz=target_tz)
 
 def integrate_power_series(
     timestamps: List[str],
@@ -24,14 +20,20 @@ def integrate_power_series(
     total_duration_hours = 0.0
 
     for i in range(len(dts) - 1):
-        dt_hours = (dts[i + 1] - dts[i]).total_seconds() / 3600.0
-        
-        if dt_hours <= 0:
-            cumulative.append(total_energy_kwh)
+        t0 = dts[i]
+        t1 = dts[i + 1]
+        if t0 is None or t1 is None:
+            cumulative.append(round(total_energy_kwh, 5))
             continue
-            
+
+        dt_hours = (t1 - t0).total_seconds() / 3600.0
+
+        if dt_hours <= 0:
+            cumulative.append(round(total_energy_kwh, 5))
+            continue
+
         if dt_hours > max_gap_hours:
-            cumulative.append(total_energy_kwh)
+            cumulative.append(round(total_energy_kwh, 5))
             continue
 
         total_duration_hours += dt_hours

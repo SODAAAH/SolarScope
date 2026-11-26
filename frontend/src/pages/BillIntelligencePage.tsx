@@ -606,9 +606,11 @@ export const BillIntelligencePage: React.FC = () => {
         <div className="flex items-center gap-2">
           <Info className="w-4 h-4 text-slate-400 shrink-0" />
           <span>
-            {activeGenCharge > 0
-              ? "Projections calculated using active tariffs and billing cycle meter readings."
-              : "No active tariff rate loaded yet. Click Check TEI Rates or add a custom rate schedule in the archive tab."}
+            {forecast?.calculation_basis
+              ? forecast.calculation_basis
+              : activeGenCharge > 0
+                ? "Projections calculated using active tariffs and billing cycle telemetry."
+                : "No active tariff rate loaded yet. Click Check TEI Rates or add a custom rate schedule in the archive tab."}
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] font-mono text-slate-500">

@@ -430,17 +430,25 @@ export const EnergyPage: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
               <Tooltip
                 title="Round-Trip Coulombic Efficiency"
-                content="Percentage of electrical energy recovered from the battery bank compared to total electrical energy injected during charging."
-                formula="RTE = Total Discharged (kWh) / Total Charged (kWh) × 100%"
-                provenance="Calculated"
+                content={battery.rte_note || "SOC-compensated percentage of electrical energy recovered from the battery bank compared to electrical energy injected during charging."}
+                formula="RTE = (Discharged + Delta Stored Energy) / Charged × 100%"
+                provenance={battery.rte_status === "measured_closed_cycle" ? "Measured" : battery.rte_status === "soc_adjusted_estimate" ? "Estimated" : "Calculated"}
                 underline
               >
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-help">Round-Trip Efficiency</span>
               </Tooltip>
               <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
-                {(battery.round_trip_efficiency_percent ?? 0).toFixed(1)}%
+                {battery.round_trip_efficiency_percent != null
+                  ? `${battery.round_trip_efficiency_percent.toFixed(1)}%`
+                  : "Insufficient cycle data"}
               </div>
-              <p className="text-xs text-slate-500 mt-1">Energy discharged vs energy charged</p>
+              <p className="text-xs text-slate-500 mt-1">
+                {battery.rte_status === "soc_adjusted_estimate"
+                  ? "SOC-compensated estimate"
+                  : battery.rte_status === "measured_closed_cycle"
+                    ? "Closed-cycle measured RTE"
+                    : "Requires charge & discharge cycle"}
+              </p>
             </div>
 
             <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">

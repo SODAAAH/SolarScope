@@ -1,13 +1,7 @@
-import datetime
 from typing import List, Dict, Any
 from backend.app.ingestion.models import CanonicalRecord
-from backend.app.metrics.integrator import integrate_power_series
+from backend.app.metrics.integrator import integrate_power_series, parse_iso
 from backend.app.metrics.time_utils import format_time_12h, hour_index_to_12h
-
-def _parse_ts_fast(ts_str: str) -> datetime.datetime:
-    if len(ts_str) >= 19 and ts_str[10] in (" ", "T"):
-        return datetime.datetime.fromisoformat(ts_str[:19])
-    return datetime.datetime.fromisoformat(ts_str)
 
 def calculate_grid_metrics(
     records: List[CanonicalRecord],
@@ -61,12 +55,7 @@ def calculate_grid_metrics(
     cat_trickle_count = 0
 
     hourly_grid: Dict[int, float] = {h: 0.0 for h in range(24)}
-    parsed_times: List[Any] = []
-    for r in records:
-        try:
-            parsed_times.append(_parse_ts_fast(r.timestamp))
-        except Exception:
-            parsed_times.append(None)
+    parsed_times = [parse_iso(r.timestamp) for r in records]
 
     for i in range(len(records) - 1):
         t0 = parsed_times[i]
@@ -74,7 +63,7 @@ def calculate_grid_metrics(
         if t0 is None or t1 is None:
             continue
         dt_h = (t1 - t0).total_seconds() / 3600.0
-        if dt_h <= 0.0:
+        if dt_h <= 0.0 or dt_h > 2.0:
             continue
 
         r0 = records[i]
@@ -173,7 +162,7 @@ def calculate_grid_metrics(
             "Grid Trickle & Sync",
             cat_trickle_kwh,
             cat_trickle_count,
-            "Low background draw (≤80W) maintaining zero-export CT balance and grid synchronization."
+            "Low background draw (<=80W) maintaining zero-export CT balance and grid synchronization."
         )
     ]
 

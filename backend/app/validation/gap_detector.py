@@ -1,36 +1,38 @@
 import datetime
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Optional
 from collections import Counter
+from backend.app.metrics.time_utils import parse_timestamp
 
-def parse_dt(ts: str) -> datetime.datetime | None:
-    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
-        try:
-            return datetime.datetime.strptime(ts, fmt)
-        except ValueError:
-            continue
-    return None
+def parse_dt(ts: str, target_tz: str = "Asia/Manila") -> Optional[datetime.datetime]:
+    return parse_timestamp(ts, target_tz=target_tz)
 
 def analyze_sampling_intervals(
     timestamps: List[str],
-    gap_threshold_minutes: float = 30.0
+    gap_threshold_minutes: float = 30.0,
+    target_tz: str = "Asia/Manila"
 ) -> Dict[str, Any]:
     if len(timestamps) < 2:
+        invalid_cnt = sum(1 for ts in timestamps if parse_dt(ts, target_tz=target_tz) is None)
         return {
             "total_intervals": 0,
             "median_interval_minutes": 5.0,
             "interval_distribution": {},
             "gaps": [],
             "total_gap_duration_minutes": 0.0,
-            "coverage_ratio": 1.0,
+            "coverage_ratio": 1.0 if invalid_cnt == 0 else 0.0,
             "duplicate_timestamps": 0,
+            "invalid_timestamps": invalid_cnt,
             "is_monotonic": True
         }
 
     dt_list: List[datetime.datetime] = []
+    invalid_timestamps = 0
     for ts in timestamps:
-        parsed = parse_dt(ts)
-        if parsed:
+        parsed = parse_dt(ts, target_tz=target_tz)
+        if parsed is not None:
             dt_list.append(parsed)
+        else:
+            invalid_timestamps += 1
 
     if len(dt_list) < 2:
         return {
@@ -39,8 +41,9 @@ def analyze_sampling_intervals(
             "interval_distribution": {},
             "gaps": [],
             "total_gap_duration_minutes": 0.0,
-            "coverage_ratio": 1.0,
+            "coverage_ratio": 0.0 if invalid_timestamps > 0 else 1.0,
             "duplicate_timestamps": 0,
+            "invalid_timestamps": invalid_timestamps,
             "is_monotonic": True
         }
 
@@ -88,5 +91,6 @@ def analyze_sampling_intervals(
         "total_gap_duration_minutes": round(total_gap_duration, 2),
         "coverage_ratio": round(coverage, 4),
         "duplicate_timestamps": duplicate_count,
+        "invalid_timestamps": invalid_timestamps,
         "is_monotonic": is_monotonic
     }

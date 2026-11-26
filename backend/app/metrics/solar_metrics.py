@@ -1,7 +1,6 @@
-import datetime
 from typing import List, Dict, Any
 from backend.app.ingestion.models import CanonicalRecord
-from backend.app.metrics.integrator import integrate_power_series
+from backend.app.metrics.integrator import integrate_power_series, parse_iso
 from backend.app.metrics.time_utils import format_time_12h, hour_index_to_12h
 
 def calculate_solar_metrics(
@@ -34,7 +33,7 @@ def calculate_solar_metrics(
             shutdown_time = r.timestamp
 
     specific_yield = round(total_kwh / pv_capacity_kwp, 3) if pv_capacity_kwp > 0 else 0.0
-    
+
     theoretical_max = pv_capacity_kwp * (duration_h if duration_h > 0 else 24.0)
     capacity_factor = round((total_kwh / theoretical_max) * 100.0, 2) if theoretical_max > 0 else 0.0
 
@@ -48,15 +47,16 @@ def calculate_solar_metrics(
     clipping_suspected = inverter_rating_kw > 0 and near_peak_count >= 8
 
     hourly_energy: Dict[int, float] = {h: 0.0 for h in range(24)}
+    parsed_dts = [parse_iso(r.timestamp) for r in records]
     for i in range(len(records) - 1):
-        try:
-            t0 = datetime.datetime.strptime(records[i].timestamp, "%Y-%m-%d %H:%M:%S")
-            t1 = datetime.datetime.strptime(records[i + 1].timestamp, "%Y-%m-%d %H:%M:%S")
-            dt_h = (t1 - t0).total_seconds() / 3600.0
-            avg_p = 0.5 * (records[i].pv_power_kw + records[i + 1].pv_power_kw)
-            hourly_energy[t0.hour] += avg_p * dt_h
-        except Exception:
+        t0, t1 = parsed_dts[i], parsed_dts[i + 1]
+        if t0 is None or t1 is None:
             continue
+        dt_h = (t1 - t0).total_seconds() / 3600.0
+        if dt_h <= 0.0 or dt_h > 2.0:
+            continue
+        avg_p = 0.5 * (records[i].pv_power_kw + records[i + 1].pv_power_kw)
+        hourly_energy[t0.hour] += avg_p * dt_h
 
     hourly_breakdown = [{"hour": h, "hour_label_12h": hour_index_to_12h(h), "energy_kwh": round(hourly_energy[h], 4)} for h in range(24)]
 

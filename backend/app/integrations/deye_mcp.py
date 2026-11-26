@@ -6,11 +6,16 @@ import urllib.error
 import hashlib
 import time
 import datetime
+import threading
 from typing import Dict, Any, List, Optional
+from backend.app.config import is_hosted_mode
 from backend.app.storage.db import get_connection
 from backend.app.storage.blob_sync import ensure_hydrated
+from backend.app.security.crypto import decrypt_secret
+from backend.app.integrations.deye_cloud import resolve_deye_base_url
+from backend.app.metrics.time_utils import resolve_zoneinfo, parse_timestamp
 
-MANILA_TZ = datetime.timezone(datetime.timedelta(hours=8))
+_LIVE_FLOW_CACHE_TTL_SEC = 60.0
 
 ALLOWED_READ_TOOLS = {
     "get_station_latest",
@@ -44,7 +49,7 @@ class DeyeMCPClient:
             self._last_real_flows.clear()
 
     def _cred_signature(self, creds: Dict[str, str]) -> str:
-        raw = f"{creds.get('station_id', '')}:{creds.get('app_id', '')}:{creds.get('app_secret', '')}:{creds.get('username', '')}:{creds.get('password', '')}"
+        raw = f"{self.project_id}:{creds.get('data_center', 'eu')}:{creds.get('station_id', '')}:{creds.get('app_id', '')}:{creds.get('username', '')}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
 
     def _save_db_last_flow(self, cache_key: str, flow_res: Dict[str, Any]) -> None:
@@ -54,9 +59,13 @@ class DeyeMCPClient:
             now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
             conn = get_connection()
             conn.execute(
-                """INSERT OR REPLACE INTO deye_live_cache (cache_key, payload_json, updated_at)
-                   VALUES (?, ?, ?)""",
-                (cache_key, json.dumps(clean), now_iso)
+                """INSERT INTO deye_live_cache (cache_key, project_id, payload_json, updated_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(cache_key) DO UPDATE SET
+                       project_id = excluded.project_id,
+                       payload_json = excluded.payload_json,
+                       updated_at = excluded.updated_at""",
+                (cache_key, self.project_id, json.dumps(clean), now_iso)
             )
             conn.commit()
             conn.close()
@@ -67,8 +76,8 @@ class DeyeMCPClient:
         try:
             conn = get_connection()
             row = conn.execute(
-                "SELECT payload_json FROM deye_live_cache WHERE cache_key = ?",
-                (cache_key,)
+                "SELECT payload_json FROM deye_live_cache WHERE cache_key = ? AND project_id = ?",
+                (cache_key, self.project_id)
             ).fetchone()
             conn.close()
             if row and row["payload_json"]:
@@ -86,16 +95,24 @@ class DeyeMCPClient:
         sys_row = conn.execute("SELECT * FROM system_settings WHERE project_id = ?", (self.project_id,)).fetchone()
         conn.close()
 
-        station_id = ((cfg["station_id"] or "").strip() if cfg else "") or os.environ.get("DEYE_STATION_ID", "").strip()
-        app_id = ((cfg["app_id"] or "").strip() if cfg else "") or os.environ.get("DEYE_APP_ID", "").strip()
-        app_secret = ((cfg["app_secret"] or "").strip() if cfg else "") or os.environ.get("DEYE_APP_SECRET", "").strip()
-        username = ((cfg["username"] or "").strip() if cfg else "") or os.environ.get("DEYE_USERNAME", "").strip()
-        password = ((cfg["password_encrypted"] or "").strip() if cfg else "") or os.environ.get("DEYE_PASSWORD", "").strip()
+        allow_env_fallback = (not is_hosted_mode()) and (self.project_id == "default")
+        cfg_keys = cfg.keys() if cfg else []
+        data_center = ((cfg["data_center"] or "eu").strip().lower() if cfg and "data_center" in cfg_keys else "eu")
+        self.base_url = resolve_deye_base_url(data_center)
+
+        station_id = ((cfg["station_id"] or "").strip() if cfg else "") or (os.environ.get("DEYE_STATION_ID", "").strip() if allow_env_fallback else "")
+        app_id = ((cfg["app_id"] or "").strip() if cfg else "") or (os.environ.get("DEYE_APP_ID", "").strip() if allow_env_fallback else "")
+        raw_secret = decrypt_secret(cfg["app_secret"]) if cfg else ""
+        app_secret = raw_secret or (os.environ.get("DEYE_APP_SECRET", "").strip() if allow_env_fallback else "")
+        username = ((cfg["username"] or "").strip() if cfg else "") or (os.environ.get("DEYE_USERNAME", "").strip() if allow_env_fallback else "")
+        raw_pwd = decrypt_secret(cfg["password_encrypted"]) if cfg else ""
+        password = raw_pwd or (os.environ.get("DEYE_PASSWORD", "").strip() if allow_env_fallback else "")
 
         inverter_sn = (sys_row["inverter_serial"] or "").strip() if sys_row else ""
         logger_sn = (sys_row["logger_serial"] or "").strip() if sys_row else ""
 
         return {
+            "data_center": data_center,
             "station_id": station_id,
             "app_id": app_id,
             "app_secret": app_secret,
@@ -192,8 +209,8 @@ class DeyeMCPClient:
                     self._last_auth_error = err_data.get("msg") or f"HTTP {he.code}: {he.reason}"
                 except Exception:
                     self._last_auth_error = f"HTTP {he.code}: {he.reason}"
-                if he.code in (500, 502, 503, 504) and attempt == 0:
-                    time.sleep(0.3)
+                if he.code in (429, 500, 502, 503, 504) and attempt == 0:
+                    time.sleep(0.5)
                     continue
                 break
             except Exception as e:
@@ -211,6 +228,8 @@ class DeyeMCPClient:
             }
 
         creds = self._get_credentials()
+        meta = self._get_system_meta()
+        tz = resolve_zoneinfo(meta["timezone"])
         station_id = arguments.get("station_id") or creds["station_id"]
 
         if tool_name == "get_station_latest":
@@ -219,31 +238,31 @@ class DeyeMCPClient:
             res.pop("token_expired", None)
             return res
         elif tool_name == "station_history":
-            start_at = arguments.get("start_at", datetime.datetime.now(MANILA_TZ).strftime("%Y-%m-%d"))
+            start_at = arguments.get("start_at", datetime.datetime.now(tz).strftime("%Y-%m-%d"))
             end_at = arguments.get("end_at", start_at)
             granularity = arguments.get("granularity", 2)
             return self.get_station_history(station_id, start_at, end_at, granularity)
         elif tool_name == "station_history_power":
-            start_ts = arguments.get("start_timestamp", int((datetime.datetime.now(MANILA_TZ) - datetime.timedelta(days=1)).timestamp()))
-            end_ts = arguments.get("end_timestamp", int(datetime.datetime.now(MANILA_TZ).timestamp()))
+            start_ts = arguments.get("start_timestamp", int((datetime.datetime.now(tz) - datetime.timedelta(days=1)).timestamp()))
+            end_ts = arguments.get("end_timestamp", int(datetime.datetime.now(tz).timestamp()))
             return self.get_station_history_power(station_id, start_ts, end_ts)
         elif tool_name == "get_device_latest":
             device_sn = arguments.get("device_sn") or creds["inverter_sn"]
             return self.get_device_latest(device_sn)
         elif tool_name == "device_history":
             device_sn = arguments.get("device_sn") or creds["inverter_sn"]
-            start_at = arguments.get("start_at", datetime.datetime.now(MANILA_TZ).strftime("%Y-%m-%d"))
+            start_at = arguments.get("start_at", datetime.datetime.now(tz).strftime("%Y-%m-%d"))
             end_at = arguments.get("end_at", start_at)
             granularity = arguments.get("granularity", 2)
             return self.get_device_history(device_sn, start_at, end_at, granularity)
         elif tool_name == "device_alert_list":
             device_sn = arguments.get("device_sn") or creds["inverter_sn"]
-            start_ts = arguments.get("start_timestamp", int((datetime.datetime.now(MANILA_TZ) - datetime.timedelta(days=7)).timestamp()))
-            end_ts = arguments.get("end_timestamp", int(datetime.datetime.now(MANILA_TZ).timestamp()))
+            start_ts = arguments.get("start_timestamp", int((datetime.datetime.now(tz) - datetime.timedelta(days=7)).timestamp()))
+            end_ts = arguments.get("end_timestamp", int(datetime.datetime.now(tz).timestamp()))
             return self.get_device_alerts(device_sn, start_ts, end_ts)
         elif tool_name == "station_alert_list":
-            start_ts = arguments.get("start_timestamp", int((datetime.datetime.now(MANILA_TZ) - datetime.timedelta(days=7)).timestamp()))
-            end_ts = arguments.get("end_timestamp", int(datetime.datetime.now(MANILA_TZ).timestamp()))
+            start_ts = arguments.get("start_timestamp", int((datetime.datetime.now(tz) - datetime.timedelta(days=7)).timestamp()))
+            end_ts = arguments.get("end_timestamp", int(datetime.datetime.now(tz).timestamp()))
             return self.get_station_alerts(station_id, start_ts, end_ts)
 
         return {"success": False, "error": "Unhandled tool execution"}
@@ -344,8 +363,8 @@ class DeyeMCPClient:
                     if refreshed:
                         token = refreshed
                         continue
-                if attempt == 0 and he.code in (500, 502, 503, 504):
-                    time.sleep(0.3)
+                if attempt == 0 and he.code in (429, 500, 502, 503, 504):
+                    time.sleep(0.5)
                     continue
                 err_msg = (err_data.get("msg") if err_data else None) or f"HTTP {he.code}: {he.reason}"
                 return {
@@ -414,6 +433,8 @@ class DeyeMCPClient:
         if not str(station_id).isdigit():
             return {"success": False, "error": "Station ID is required."}
         st_id = int(station_id)
+        meta = self._get_system_meta()
+        tz = resolve_zoneinfo(meta["timezone"])
         url = f"{self.base_url}/v1.0/station/history/power"
         payload = json.dumps({
             "stationId": st_id,
@@ -435,15 +456,15 @@ class DeyeMCPClient:
                     sec = r.get("timeStamp")
                     if not sec:
                         continue
-                    dt = datetime.datetime.fromtimestamp(sec, tz=MANILA_TZ)
+                    dt = datetime.datetime.fromtimestamp(sec, tz=tz)
                     readings.append({
                         "timestamp_iso": dt.isoformat(),
                         "time_str": dt.strftime("%Y-%m-%d %H:%M:%S"),
-                        "solar_power_kw": round((r.get("generationPower") or 0.0) / 1000.0, 3),
-                        "household_load_kw": round((r.get("consumptionPower") or 0.0) / 1000.0, 3),
-                        "tei_purchase_kw": round((r.get("purchasePower") or r.get("wirePower") or 0.0) / 1000.0, 3),
-                        "battery_power_kw": round((r.get("batteryPower") or 0.0) / 1000.0, 3),
-                        "battery_charge_level_percent": float(r.get("batterySOC") or 0.0)
+                        "solar_power_kw": round(float(r["generationPower"]) / 1000.0, 3) if r.get("generationPower") is not None else None,
+                        "household_load_kw": round(float(r["consumptionPower"]) / 1000.0, 3) if r.get("consumptionPower") is not None else None,
+                        "tei_purchase_kw": round(float(r.get("purchasePower") if r.get("purchasePower") is not None else r.get("wirePower", 0.0)) / 1000.0, 3) if (r.get("purchasePower") is not None or r.get("wirePower") is not None) else None,
+                        "battery_power_kw": round(float(r["batteryPower"]) / 1000.0, 3) if r.get("batteryPower") is not None else None,
+                        "battery_charge_level_percent": float(r["batterySOC"]) if r.get("batterySOC") is not None else None
                     })
                 return {
                     "success": True,
@@ -571,29 +592,16 @@ class DeyeMCPClient:
         except Exception as e:
             return {"success": False, "error": str(e), "alerts": []}
 
-    def _parse_last_update_time(self, raw_ts: Any) -> str:
-        fallback = datetime.datetime.now(MANILA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    def _parse_last_update_time(self, raw_ts: Any, tz_name: str = "Asia/Manila") -> Tuple[str, Optional[int]]:
+        tz = resolve_zoneinfo(tz_name)
+        now_local = datetime.datetime.now(tz).replace(tzinfo=None)
         if raw_ts is None or raw_ts == "":
-            return fallback
-        try:
-            val = float(raw_ts)
-            if val > 1e12:
-                val = val / 1000.0
-            if val > 1e8:
-                return datetime.datetime.fromtimestamp(val, tz=MANILA_TZ).strftime("%Y-%m-%d %H:%M:%S")
-        except Exception:
-            pass
-        if isinstance(raw_ts, str):
-            try:
-                dt = datetime.datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=MANILA_TZ)
-                else:
-                    dt = dt.astimezone(MANILA_TZ)
-                return dt.strftime("%Y-%m-%d %H:%M:%S")
-            except Exception:
-                pass
-        return fallback
+            return "", None
+        dt = parse_timestamp(raw_ts, target_tz=tz_name)
+        if dt is None:
+            return "", None
+        age_min = max(0, int((now_local - dt).total_seconds() // 60))
+        return dt.strftime("%Y-%m-%d %H:%M:%S"), age_min
 
     def _get_live_weather_temp_c(self) -> Optional[float]:
         meta = self._get_system_meta()
@@ -602,7 +610,8 @@ class DeyeMCPClient:
         if lat == 0.0 and lon == 0.0:
             return None
         try:
-            today_str = datetime.datetime.now(MANILA_TZ).strftime("%Y-%m-%d")
+            tz = resolve_zoneinfo(meta["timezone"])
+            today_str = datetime.datetime.now(tz).strftime("%Y-%m-%d")
             conn = get_connection()
             cached = conn.execute(
                 """SELECT hourly_data_json FROM weather_cache
@@ -614,7 +623,7 @@ class DeyeMCPClient:
             if cached and cached["hourly_data_json"]:
                 w_data = json.loads(cached["hourly_data_json"])
                 temps = w_data.get("hourly", {}).get("temperature_2m", [])
-                hour_idx = datetime.datetime.now(MANILA_TZ).hour
+                hour_idx = datetime.datetime.now(tz).hour
                 if hour_idx < len(temps) and temps[hour_idx] is not None:
                     return round(float(temps[hour_idx]), 1)
         except Exception:
@@ -622,9 +631,16 @@ class DeyeMCPClient:
         return None
 
     def _get_dataset_summary_metrics(self) -> Dict[str, Any]:
-        from backend.app.api.endpoints import get_historical_daily
+        from backend.app.api.endpoints import _get_historical_records
+        from backend.app.aggregation.historical import calculate_daily_summaries
+        meta = self._get_system_meta()
         try:
-            sums = get_historical_daily("historical")
+            recs = _get_historical_records(self.project_id)
+            sums = calculate_daily_summaries(
+                recs,
+                nominal_battery_kwh=0.0,
+                reserve_soc=meta["reserve_soc"]
+            )
         except Exception:
             sums = []
         weather_temp_c = self._get_live_weather_temp_c()
@@ -655,12 +671,12 @@ class DeyeMCPClient:
         tot_load = sum(d.get("load_kwh", 0.0) for d in sums)
         tot_import = sum(d.get("grid_import_kwh", 0.0) for d in sums)
         tot_discharge = sum(d.get("battery_discharge_kwh", 0.0) for d in sums)
-        tot_charge = sum(d.get("battery_charge_kwh", 0.0) for d in sums)
-        tot_pv_self = round(max(0.0, tot_load - tot_import - tot_discharge), 2)
+        tot_solar_charge = sum(d.get("battery_solar_charged_kwh", d.get("battery_charge_kwh", 0.0)) for d in sums)
+        tot_pv_self = round(sum(d.get("direct_solar_used_kwh", max(0.0, d.get("load_kwh", 0.0) - d.get("grid_import_kwh", 0.0) - d.get("battery_discharge_kwh", 0.0))) for d in sums), 2)
         today_pv = sums[-1].get("pv_kwh", 0.0)
 
         cons_denom = max(0.01, tot_import + tot_discharge + tot_pv_self) if tot_load > 0 else 1.0
-        prod_denom = max(0.01, tot_charge + tot_pv_self) if tot_pv > 0 else 1.0
+        prod_denom = max(0.01, tot_solar_charge + tot_pv_self) if tot_pv > 0 else 1.0
 
         return {
             "summary": {
@@ -678,7 +694,7 @@ class DeyeMCPClient:
                 ],
                 "production_total_kwh": round(tot_pv, 2),
                 "production_breakdown": [
-                    {"label": "Charge", "kwh": round(tot_charge, 2), "pct": round(tot_charge / prod_denom * 100.0, 1) if tot_pv > 0 else 0.0, "color": "#F59E0B"},
+                    {"label": "Charge", "kwh": round(tot_solar_charge, 2), "pct": round(tot_solar_charge / prod_denom * 100.0, 1) if tot_pv > 0 else 0.0, "color": "#F59E0B"},
                     {"label": "Consumption", "kwh": round(tot_pv_self, 2), "pct": round(tot_pv_self / prod_denom * 100.0, 1) if tot_pv > 0 else 0.0, "color": "#EAB308"}
                 ]
             }
@@ -687,6 +703,7 @@ class DeyeMCPClient:
     def get_station_health(self, access_token_override: Optional[str] = None, station_id_override: Optional[str] = None, mode_override: Optional[str] = None) -> Dict[str, Any]:
         creds = self._get_credentials()
         meta = self._get_system_meta()
+        tz = resolve_zoneinfo(meta["timezone"])
         station_id = (station_id_override or "").strip() or creds["station_id"]
         is_demo = (mode_override == "demo") or (not access_token_override and (creds["app_id"] == "demo" or creds["username"] == "demo"))
         has_server_creds = self._has_server_credentials(creds)
@@ -713,7 +730,7 @@ class DeyeMCPClient:
         else:
             latest_res = self.get_station_latest(station_id, access_token_override=access_token_override)
             token_for_alerts = latest_res.get("token_used") or access_token_override
-            now_sec = int(datetime.datetime.now(MANILA_TZ).timestamp())
+            now_sec = int(datetime.datetime.now(tz).timestamp())
             day_ago_sec = now_sec - 86400
             if creds["inverter_sn"]:
                 alert_res = self.get_device_alerts(creds["inverter_sn"], day_ago_sec, now_sec, access_token_override=token_for_alerts)
@@ -724,14 +741,14 @@ class DeyeMCPClient:
 
             if latest_res.get("success"):
                 m = latest_res.get("measurements", {})
-                pv_kw = m.get("pv_power_kw") or 0.0
-                load_kw = m.get("household_load_kw") or 0.0
-                batt_kw = m.get("battery_power_kw") or 0.0
-                grid_kw = m.get("grid_power_kw") or 0.0
+                pv_kw = m.get("pv_power_kw") if m.get("pv_power_kw") is not None else 0.0
+                load_kw = m.get("household_load_kw") if m.get("household_load_kw") is not None else 0.0
+                batt_kw = m.get("battery_power_kw") if m.get("battery_power_kw") is not None else 0.0
+                grid_kw = m.get("grid_power_kw") if m.get("grid_power_kw") is not None else 0.0
                 soc = m.get("battery_charge_level_percent") if m.get("battery_charge_level_percent") is not None else 0.0
                 conn_status = latest_res.get("connection_status", "NORMAL")
                 alerts = alert_res.get("alerts", [])
-                is_healthy = conn_status == "NORMAL" and soc >= reserve_threshold and len(alerts) == 0
+                is_healthy = conn_status == "NORMAL" and soc >= reserve_threshold and len(alerts) == 0 and len(latest_res.get("missing_fields", [])) == 0
             else:
                 pv_kw = 0.0
                 load_kw = 0.0
@@ -814,7 +831,10 @@ class DeyeMCPClient:
         grid_w: float,
         soc: float,
         ups_w: float,
-        dataset_metrics: Dict[str, Any]
+        dataset_metrics: Dict[str, Any],
+        missing_fields: Optional[List[str]] = None,
+        freshness_minutes: Optional[int] = None,
+        is_stale: bool = False
     ) -> Dict[str, Any]:
         batt_state = "IDLE"
         if batt_w > 10.0:
@@ -844,6 +864,9 @@ class DeyeMCPClient:
             "connection_status": conn_status,
             "is_on_grid": conn_status == "NORMAL",
             "last_update_time": last_update_str,
+            "freshness_minutes": freshness_minutes,
+            "is_stale": is_stale,
+            "missing_fields": missing_fields or [],
             "nodes": {
                 "solar": {
                     "power_w": pv_w,
@@ -891,10 +914,12 @@ class DeyeMCPClient:
         self,
         access_token_override: Optional[str] = None,
         station_id_override: Optional[str] = None,
-        mode_override: Optional[str] = None
+        mode_override: Optional[str] = None,
+        force_refresh: bool = False
     ) -> Dict[str, Any]:
         creds = self._get_credentials()
         meta = self._get_system_meta()
+        tz = resolve_zoneinfo(meta["timezone"])
         token_override = (access_token_override or "").strip() or None
         station_id = (station_id_override or "").strip() or creds["station_id"]
         mode_clean = (mode_override or "").strip().lower()
@@ -955,15 +980,15 @@ class DeyeMCPClient:
 
         if not is_demo:
             cred_sig = self._cred_signature(creds)
-            cache_key = f"live:{station_id}:{cred_sig}"
+            cache_key = f"live:{self.project_id}:{station_id}:{cred_sig}"
         else:
-            cache_key = f"demo:{station_id}"
+            cache_key = f"demo:{self.project_id}:{station_id}"
         now_ts = datetime.datetime.now().timestamp()
 
-        if not is_demo:
+        if not is_demo and not force_refresh:
             cached_flow = self._cached_live_flows.get(cache_key)
             cached_time = self._cached_live_flow_times.get(cache_key, 0.0)
-            if cached_flow is not None and (now_ts - cached_time) < 10.0:
+            if cached_flow is not None and (now_ts - cached_time) < _LIVE_FLOW_CACHE_TTL_SEC:
                 refreshed_copy = dict(cached_flow)
                 refreshed_copy["station_name"] = meta["station_name"] or "Station Not Configured"
                 refreshed_copy["inverter_model"] = meta["inverter_model"]
@@ -973,8 +998,8 @@ class DeyeMCPClient:
                 return refreshed_copy
 
         if is_demo:
-            now_manila = datetime.datetime.now(MANILA_TZ)
-            h = now_manila.hour + now_manila.minute / 60.0
+            now_local = datetime.datetime.now(tz)
+            h = now_local.hour + now_local.minute / 60.0
             is_day = 6.0 <= h <= 17.5
             pv_w = round(max(0.0, 3850.0 * (1.0 - ((h - 12.0) / 6.0) ** 2)), 1) if is_day else 0.0
             load_w = round(920.0 if 7.0 <= h <= 22.0 else 580.0, 1)
@@ -993,14 +1018,16 @@ class DeyeMCPClient:
                 inverter_model=meta["inverter_model"],
                 inverter_sn=creds["inverter_sn"],
                 conn_status="NORMAL",
-                last_update_str=now_manila.strftime("%Y-%m-%d %H:%M:%S"),
+                last_update_str=now_local.strftime("%Y-%m-%d %H:%M:%S"),
                 pv_w=pv_w,
                 load_w=load_w,
                 batt_w=batt_w,
                 grid_w=grid_w,
                 soc=soc,
                 ups_w=ups_w,
-                dataset_metrics=dataset_metrics
+                dataset_metrics=dataset_metrics,
+                freshness_minutes=0,
+                is_stale=False
             )
 
         latest_res = self.get_station_latest(station_id, access_token_override=token_override)
@@ -1030,27 +1057,32 @@ class DeyeMCPClient:
             soc = float(raw["batterySOC"]) if raw.get("batterySOC") is not None else 0.0
             ups_w = float(raw["upsPower"]) if raw.get("upsPower") is not None else (round(load_w * 0.98, 1) if load_w > 0 else 0.0)
             conn_status = latest_res.get("connection_status", "NORMAL")
-            last_update_str = self._parse_last_update_time(raw.get("lastUpdateTime"))
+            last_update_str, age_min = self._parse_last_update_time(raw.get("lastUpdateTime"), tz_name=meta["timezone"])
+            is_stale = bool(age_min is not None and age_min > 30)
+            missing_fields = latest_res.get("missing_fields", [])
 
             flow_res = self._build_flow_payload(
                 success=True,
-                is_live=True,
+                is_live=(conn_status == "NORMAL" and not is_stale),
                 data_source="live",
-                error=None,
+                error=("Telemetry update is stale; check inverter/logger connectivity." if is_stale else None),
                 token_expired=False,
                 station_id=station_id,
                 station_name=meta["station_name"],
                 inverter_model=meta["inverter_model"],
                 inverter_sn=creds["inverter_sn"],
                 conn_status=conn_status,
-                last_update_str=last_update_str,
+                last_update_str=last_update_str or datetime.datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S"),
                 pv_w=pv_w,
                 load_w=load_w,
                 batt_w=batt_w,
                 grid_w=grid_w,
                 soc=soc,
                 ups_w=ups_w,
-                dataset_metrics=dataset_metrics
+                dataset_metrics=dataset_metrics,
+                missing_fields=missing_fields,
+                freshness_minutes=age_min,
+                is_stale=is_stale
             )
             self._cached_live_flows[cache_key] = flow_res
             self._cached_live_flow_times[cache_key] = datetime.datetime.now().timestamp()
@@ -1063,6 +1095,7 @@ class DeyeMCPClient:
             cached_copy = dict(last_real)
             cached_copy["is_live"] = False
             cached_copy["data_source"] = "cached"
+            cached_copy["is_stale"] = True
             cached_copy["error"] = latest_res.get("error") or "Deye Cloud telemetry temporarily unreachable"
             cached_copy["token_expired"] = bool(latest_res.get("token_expired"))
             cached_copy["station_name"] = meta["station_name"] or "Station Not Configured"
@@ -1093,7 +1126,19 @@ class DeyeMCPClient:
             dataset_metrics=dataset_metrics
         )
 
-deye_mcp_client = DeyeMCPClient()
+_mcp_clients: Dict[str, DeyeMCPClient] = {}
+_mcp_lock = threading.Lock()
+
+def get_deye_mcp_client(project_id: str = "default") -> DeyeMCPClient:
+    pid = (project_id or "default").strip()
+    with _mcp_lock:
+        client = _mcp_clients.get(pid)
+        if client is None:
+            client = DeyeMCPClient(project_id=pid)
+            _mcp_clients[pid] = client
+        return client
+
+deye_mcp_client = get_deye_mcp_client("default")
 
 def get_station_health(project_id: str = "default") -> Dict[str, Any]:
-    return deye_mcp_client.get_station_health()
+    return get_deye_mcp_client(project_id).get_station_health()

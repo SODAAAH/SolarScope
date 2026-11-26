@@ -13,7 +13,7 @@ interface LiveFlowGraphProps {
 }
 
 const LIVE_FLOW_CACHE_KEY = 'solarscope_cached_live_flow_v3';
-const REFRESH_INTERVAL_SEC = 15;
+const REFRESH_INTERVAL_SEC = 60;
 
 const NEUTRAL_NODES: LiveFlowResponse['nodes'] = {
   solar: { power_w: 0.0, power_kw: 0.0, is_active: false },
@@ -240,7 +240,19 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
           {data?.last_update_time && (
             <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded shrink-0">
               {format12HourTime(data.last_update_time, true)}
+              {typeof data.freshness_minutes === 'number' && data.freshness_minutes > 2 ? ` (${data.freshness_minutes}m ago)` : ''}
             </span>
+          )}
+          {data?.missing_fields && data.missing_fields.length > 0 && (
+            <Tooltip
+              title="Incomplete Register Telemetry"
+              content={`Missing Deye registers: ${data.missing_fields.join(', ')}.`}
+              position="bottom"
+            >
+              <span className="px-2 py-0.5 text-[10px] font-medium rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 cursor-help">
+                Partial telemetry
+              </span>
+            </Tooltip>
           )}
         </div>
 
@@ -261,7 +273,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
           {sourceState === 'demo' && (
             <Tooltip
               title="Simulated Demo Stream"
-              content="Running in Demo Mode. Configure your Deye Cloud credentials in Data Library & Cloud for real station telemetry."
+              content="Simulated telemetry only (not live inverter data). Configure your Deye Cloud credentials in Data Library & Cloud."
               position="bottom"
             >
               <Link
@@ -269,7 +281,7 @@ export const LiveFlowGraph: React.FC<LiveFlowGraphProps> = ({
                 className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                Demo
+                Demo (Simulated)
               </Link>
             </Tooltip>
           )}

@@ -6,13 +6,19 @@ from backend.app.billing.tariff_models import BillForecastResponse, TEIBillingPr
 from backend.app.billing.billing_profile import compute_cycle_dates
 from backend.app.billing.bill_forecaster import forecast_tei_bill
 from backend.app.billing.tei_rate_monitor import get_rate_schedule_for_month
+from backend.app.metrics.time_utils import resolve_zoneinfo
 
 def resolve_estimate_month(forecast: BillForecastResponse, profile: TEIBillingProfile) -> str:
     if profile.billing_month and re.match(r"^\d{4}-\d{2}$", profile.billing_month.strip()):
         return profile.billing_month.strip()
     return (forecast.billing_cycle_start or "")[:7]
 
-def upsert_monthly_estimate(forecast: BillForecastResponse, profile: TEIBillingProfile, conn) -> bool:
+def upsert_monthly_estimate(
+    forecast: BillForecastResponse,
+    profile: TEIBillingProfile,
+    conn,
+    project_id: str = "default"
+) -> bool:
     if int(forecast.days_remaining) > 0:
         return False
 
@@ -23,7 +29,7 @@ def upsert_monthly_estimate(forecast: BillForecastResponse, profile: TEIBillingP
     if float(forecast.actual_imported_kwh) <= 0.0 and float(forecast.expected_estimate.total_projected_kwh) <= 0.0 and float(forecast.solar_savings.get("household_total_demand_kwh", 0.0)) <= 0.0:
         return False
 
-    est_id = f"est-default-{billing_month}"
+    est_id = f"est-{project_id}-{billing_month}"
     lower_amt = round(float(forecast.lower_estimate.estimated_total_amount), 2)
     expected_amt = round(float(forecast.expected_estimate.estimated_total_amount), 2)
     higher_amt = round(float(forecast.higher_estimate.estimated_total_amount), 2)
@@ -36,8 +42,8 @@ def upsert_monthly_estimate(forecast: BillForecastResponse, profile: TEIBillingP
     is_completed = 1
 
     existing = conn.execute(
-        "SELECT * FROM tei_monthly_estimates WHERE project_id = 'default' AND billing_month = ?",
-        (billing_month,)
+        "SELECT * FROM tei_monthly_estimates WHERE project_id = ? AND billing_month = ?",
+        (project_id, billing_month)
     ).fetchone()
 
     if existing:
@@ -60,16 +66,33 @@ def upsert_monthly_estimate(forecast: BillForecastResponse, profile: TEIBillingP
 
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     conn.execute(
-        """INSERT OR REPLACE INTO tei_monthly_estimates (
+        """INSERT INTO tei_monthly_estimates (
                id, project_id, billing_month, billing_cycle_start, billing_cycle_end,
                customer_class, rate_effective_month, generation_charge,
                actual_imported_kwh, projected_kwh, lower_estimate_amount,
                expected_estimate_amount, higher_estimate_amount,
                solar_savings_pesos, savings_percentage, effective_average_rate,
                is_completed_cycle, updated_at
-           ) VALUES (?, 'default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(project_id, billing_month) DO UPDATE SET
+               billing_cycle_start = excluded.billing_cycle_start,
+               billing_cycle_end = excluded.billing_cycle_end,
+               customer_class = excluded.customer_class,
+               rate_effective_month = excluded.rate_effective_month,
+               generation_charge = excluded.generation_charge,
+               actual_imported_kwh = excluded.actual_imported_kwh,
+               projected_kwh = excluded.projected_kwh,
+               lower_estimate_amount = excluded.lower_estimate_amount,
+               expected_estimate_amount = excluded.expected_estimate_amount,
+               higher_estimate_amount = excluded.higher_estimate_amount,
+               solar_savings_pesos = excluded.solar_savings_pesos,
+               savings_percentage = excluded.savings_percentage,
+               effective_average_rate = excluded.effective_average_rate,
+               is_completed_cycle = excluded.is_completed_cycle,
+               updated_at = excluded.updated_at""",
         (
             est_id,
+            project_id,
             billing_month,
             forecast.billing_cycle_start,
             forecast.billing_cycle_end,
@@ -94,33 +117,35 @@ def sync_past_monthly_estimates(
     records: List[CanonicalRecord],
     profile: TEIBillingProfile,
     conn,
-    check_state: Dict[str, Any]
+    check_state: Dict[str, Any],
+    project_id: str = "default",
+    timezone: str = "Asia/Manila"
 ) -> bool:
-    tz_manila = datetime.timezone(datetime.timedelta(hours=8))
-    today_date = datetime.datetime.now(tz_manila).date()
+    tz = resolve_zoneinfo(timezone)
+    today_date = datetime.datetime.now(tz).date()
     today_str = today_date.strftime("%Y-%m-%d")
 
     del_res = conn.execute(
-        "DELETE FROM tei_monthly_estimates WHERE project_id = 'default' AND (is_completed_cycle = 0 OR billing_cycle_end > ?)",
-        (today_str,)
+        "DELETE FROM tei_monthly_estimates WHERE project_id = ? AND (is_completed_cycle = 0 OR billing_cycle_end > ?)",
+        (project_id, today_str)
     )
     changed = del_res.rowcount > 0
 
     if not records:
         return changed
 
-    observed_days = sorted({r.timestamp[:10] for r in records if r.timestamp and len(r.timestamp) >= 10})
+    observed_days = sorted({r.timestamp[:10] for r in records if r.timestamp_valid and r.timestamp and len(r.timestamp) >= 10})
     if not observed_days:
         return changed
 
     min_dt = datetime.date.fromisoformat(observed_days[0])
     cycle_day = max(1, min(31, int(profile.billing_cycle_day or 25)))
-    cur_start, _ = compute_cycle_dates(cycle_day, min_dt)
+    cur_start, _ = compute_cycle_dates(cycle_day, min_dt, timezone=timezone)
     iter_year, iter_month = cur_start.year, cur_start.month
 
     while True:
         bm = f"{iter_year:04d}-{iter_month:02d}"
-        c_start, c_end = compute_cycle_dates(cycle_day, billing_month=bm)
+        c_start, c_end = compute_cycle_dates(cycle_day, billing_month=bm, timezone=timezone)
         if c_end > today_date:
             break
 
@@ -140,9 +165,9 @@ def sync_past_monthly_estimates(
                 "previous_unpaid_balance": profile.previous_unpaid_balance if is_explicit_month else 0.0,
                 "payments_received": profile.payments_received if is_explicit_month else 0.0,
             })
-            sched = get_rate_schedule_for_month(conn, customer_class=profile.customer_class, billing_month=bm)
-            past_forecast = forecast_tei_bill(records, sched, past_prof, check_state)
-            if upsert_monthly_estimate(past_forecast, past_prof, conn):
+            sched = get_rate_schedule_for_month(conn, customer_class=profile.customer_class, billing_month=bm, project_id=project_id)
+            past_forecast = forecast_tei_bill(records, sched, past_prof, check_state, timezone=timezone)
+            if upsert_monthly_estimate(past_forecast, past_prof, conn, project_id=project_id):
                 changed = True
 
         iter_month += 1
@@ -152,14 +177,14 @@ def sync_past_monthly_estimates(
 
     return changed
 
-def get_monthly_estimates(conn) -> List[Dict[str, Any]]:
-    tz_manila = datetime.timezone(datetime.timedelta(hours=8))
-    today_str = datetime.datetime.now(tz_manila).date().strftime("%Y-%m-%d")
+def get_monthly_estimates(conn, project_id: str = "default", timezone: str = "Asia/Manila") -> List[Dict[str, Any]]:
+    tz = resolve_zoneinfo(timezone)
+    today_str = datetime.datetime.now(tz).date().strftime("%Y-%m-%d")
     rows = conn.execute(
         """SELECT * FROM tei_monthly_estimates
-           WHERE project_id = 'default' AND is_completed_cycle = 1 AND billing_cycle_end <= ?
+           WHERE project_id = ? AND is_completed_cycle = 1 AND billing_cycle_end <= ?
            ORDER BY billing_month DESC""",
-        (today_str,)
+        (project_id, today_str)
     ).fetchall()
     return [
         {
@@ -179,11 +204,15 @@ def get_monthly_estimates(conn) -> List[Dict[str, Any]]:
             "savings_percentage": float(r["savings_percentage"]),
             "effective_average_rate": float(r["effective_average_rate"]),
             "is_completed_cycle": bool(r["is_completed_cycle"]),
+            "is_estimate": True,
             "updated_at": r["updated_at"]
         }
         for r in rows
     ]
 
-def delete_monthly_estimate(estimate_id: str, conn) -> bool:
-    res = conn.execute("DELETE FROM tei_monthly_estimates WHERE id = ? OR billing_month = ?", (estimate_id, estimate_id))
+def delete_monthly_estimate(estimate_id: str, conn, project_id: str = "default") -> bool:
+    res = conn.execute(
+        "DELETE FROM tei_monthly_estimates WHERE project_id = ? AND (id = ? OR billing_month = ?)",
+        (project_id, estimate_id, estimate_id)
+    )
     return res.rowcount > 0

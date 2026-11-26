@@ -1,8 +1,16 @@
 import { Tooltip } from '../components/common/Tooltip';
 import React, { useState, useEffect, useCallback } from 'react';
-import { useOutletContext, useNavigate } from 'react-router-dom';
+import { useOutletContext, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import type { LiveFlowResponse, DailySummaryItem, WeatherIntelligenceResponse } from '../lib/api';
+import type {
+  LiveFlowResponse,
+  DailySummaryItem,
+  WeatherIntelligenceResponse,
+  SystemSettings,
+  DeyeStatusResponse,
+  BillForecastResponse,
+  TEIBillingProfile
+} from '../lib/api';
 import { EChartComponent } from '../components/charts/EChartComponent';
 import { getBaseEChartsOption } from '../lib/theme';
 import {
@@ -11,9 +19,16 @@ import {
   Download,
   ChevronLeft,
   ChevronRight,
-  Loader2
+  Loader2,
+  CheckCircle2,
+  Circle,
+  ReceiptText,
+  Cloud,
+  ShieldCheck,
+  ArrowRight,
+  X
 } from 'lucide-react';
-import { formatDateMMDDYYYY } from '../lib/formatters';
+import { formatDateMMDDYYYY, format12HourDateTime } from '../lib/formatters';
 import { LiveFlowGraph } from '../components/telemetry/LiveFlowGraph';
 import { LiveSummaryCard } from '../components/telemetry/LiveSummaryCard';
 import { SolarUtilizationCard } from '../components/telemetry/SolarUtilizationCard';
@@ -39,6 +54,17 @@ export const OverviewPage: React.FC = () => {
   const [liveFlow, setLiveFlow] = useState<LiveFlowResponse | null>(null);
   const [weather, setWeather] = useState<WeatherIntelligenceResponse | null>(null);
   const [weatherLoading, setWeatherLoading] = useState<boolean>(false);
+  const [sysSettings, setSysSettings] = useState<SystemSettings | null>(null);
+  const [deyeStatus, setDeyeStatus] = useState<DeyeStatusResponse | null>(null);
+  const [billForecast, setBillForecast] = useState<BillForecastResponse | null>(null);
+  const [billProfile, setBillProfile] = useState<TEIBillingProfile | null>(null);
+  const [setupDismissed, setSetupDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('solarscope_setup_dismissed') === '1';
+    } catch {
+      return false;
+    }
+  });
   const [dailySummaries, setDailySummaries] = useState<DailySummaryItem[]>(() => {
     try {
       const saved = sessionStorage.getItem('solarscope_cached_daily');
@@ -154,10 +180,20 @@ export const OverviewPage: React.FC = () => {
       });
   }, []);
 
+  const fetchMetaCards = useCallback(() => {
+    api.getSettings().then(setSysSettings).catch(() => {});
+    api.getDeyeStatus().then(setDeyeStatus).catch(() => {});
+    api.getBillingProfile().then(setBillProfile).catch(() => {});
+    api.getBillingOverview(activeDatasetId || undefined)
+      .then(setBillForecast)
+      .catch(() => setBillForecast(null));
+  }, [activeDatasetId]);
+
   useEffect(() => {
     fetchOverviewData();
     fetchWeather(false);
-  }, [fetchOverviewData, fetchWeather]);
+    fetchMetaCards();
+  }, [fetchOverviewData, fetchWeather, fetchMetaCards]);
 
   useEffect(() => {
     const onSourcesUpdated = () => {
@@ -170,17 +206,28 @@ export const OverviewPage: React.FC = () => {
         }
       } catch {}
       fetchOverviewData();
+      fetchMetaCards();
     };
     const onSettingsUpdated = () => {
       fetchWeather(true);
+      fetchMetaCards();
+    };
+    const onProjectChanged = () => {
+      setSummary(null);
+      clearDailyCache();
+      fetchOverviewData();
+      fetchWeather(true);
+      fetchMetaCards();
     };
     window.addEventListener('solarscope:sources-updated', onSourcesUpdated);
     window.addEventListener('solarscope:settings-updated', onSettingsUpdated);
+    window.addEventListener('solarscope:project-changed', onProjectChanged);
     return () => {
       window.removeEventListener('solarscope:sources-updated', onSourcesUpdated);
       window.removeEventListener('solarscope:settings-updated', onSettingsUpdated);
+      window.removeEventListener('solarscope:project-changed', onProjectChanged);
     };
-  }, [fetchOverviewData, fetchWeather]);
+  }, [fetchOverviewData, fetchWeather, fetchMetaCards]);
 
   useEffect(() => {
     if (!activeDatasetId || !powerProfileDate) {
@@ -562,8 +609,92 @@ export const OverviewPage: React.FC = () => {
     ? Math.min(100, Math.max(0, ((todaySummary.pv_kwh - (todaySummary.grid_export_kwh || 0)) / todaySummary.pv_kwh) * 100))
     : balanceSelfConsPct;
 
+  const setupChecklistSteps = [
+    {
+      id: 'pv',
+      label: 'Set PV array capacity & site coordinates',
+      done: Boolean(sysSettings && sysSettings.pv_capacity_kwp > 0),
+      to: '/settings'
+    },
+    {
+      id: 'battery',
+      label: 'Configure inverter & battery limits',
+      done: Boolean(sysSettings && sysSettings.inverter_power_kw > 0 && sysSettings.battery_capacity_kwh > 0),
+      to: '/settings'
+    },
+    {
+      id: 'data',
+      label: 'Import telemetry files or connect Deye Cloud',
+      done: Boolean(deyeStatus?.is_configured || dailySummaries.length > 0),
+      to: '/library'
+    },
+    {
+      id: 'billing',
+      label: 'Verify TEI billing cycle & rate schedule',
+      done: Boolean(billProfile && (billForecast?.active_generation_charge ?? 0) > 0),
+      to: '/billing'
+    }
+  ];
+  const completedSetupCount = setupChecklistSteps.filter((s) => s.done).length;
+  const showSetupChecklist = !setupDismissed && sysSettings !== null && completedSetupCount < setupChecklistSteps.length;
+
+  const qualityInfo = summary?.quality;
+  const reliabilityBadge = qualityInfo?.reliability_badge || (summary ? 'CALCULATED' : 'UNAVAILABLE');
+  const qualityScore = typeof qualityInfo?.quality_score_percent === 'number' ? qualityInfo.quality_score_percent : null;
+
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-8">
+      {showSetupChecklist && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-xs space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                Installation Setup Checklist ({completedSetupCount}/{setupChecklistSteps.length} complete)
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Complete these steps so calculations, weather forecasts, and electricity estimates reflect your actual system.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSetupDismissed(true);
+                try {
+                  localStorage.setItem('solarscope_setup_dismissed', '1');
+                } catch {}
+              }}
+              aria-label="Dismiss setup checklist"
+              className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {setupChecklistSteps.map((step) => (
+              <Link
+                key={step.id}
+                to={step.to}
+                className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-xs transition-colors ${
+                  step.done
+                    ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300'
+                    : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  {step.done ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <Circle className="w-4 h-4 text-slate-400 shrink-0" />
+                  )}
+                  <span className="truncate font-medium">{step.label}</span>
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 shrink-0 opacity-60" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {error && !summary && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs text-amber-800 dark:text-amber-300" role="alert">
           <div className="flex items-center gap-2">
@@ -611,6 +742,103 @@ export const OverviewPage: React.FC = () => {
             onNextMonth={handleNextMonth}
           />
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <Link
+          to="/billing"
+          className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-colors flex flex-col justify-between gap-1.5"
+        >
+          <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <ReceiptText className="w-3.5 h-3.5 text-amber-600" />
+              Estimated Next TEI Bill
+            </span>
+            <span className="text-[10px] font-normal px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800">Estimate</span>
+          </div>
+          <div className="text-xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
+            {billForecast ? `₱${billForecast.expected_estimate.estimated_total_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
+          </div>
+          <div className="text-[11px] text-slate-500 truncate">
+            {billForecast
+              ? `${billForecast.actual_imported_kwh.toFixed(1)} kWh imported (${billForecast.days_remaining}d left)`
+              : 'Configure TEI schedule in Billing'}
+          </div>
+        </Link>
+
+        <Link
+          to="/billing"
+          className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-colors flex flex-col justify-between gap-1.5"
+        >
+          <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <span>Cycle Solar Savings</span>
+            {billForecast && (
+              <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                {billForecast.solar_savings.savings_percentage.toFixed(0)}% lower
+              </span>
+            )}
+          </div>
+          <div className="text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
+            {billForecast ? `₱${billForecast.solar_savings.savings_pesos.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
+          </div>
+          <div className="text-[11px] text-slate-500 truncate">
+            {billForecast
+              ? `Bill without solar: ₱${billForecast.solar_savings.bill_without_solar.toFixed(0)}`
+              : 'Requires cycle telemetry & tariff'}
+          </div>
+        </Link>
+
+        <Link
+          to="/library?tab=cloud"
+          className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-colors flex flex-col justify-between gap-1.5"
+        >
+          <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <Cloud className="w-3.5 h-3.5 text-sky-600" />
+              Deye Cloud Sync
+            </span>
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+              deyeStatus?.is_demo
+                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400'
+                : deyeStatus?.is_configured
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+            }`}>
+              {deyeStatus?.is_demo ? 'Demo' : deyeStatus?.is_configured ? 'Connected' : 'Offline'}
+            </span>
+          </div>
+          <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
+            {deyeStatus?.last_sync_time ? format12HourDateTime(deyeStatus.last_sync_time) : (deyeStatus?.is_configured ? 'Ready for sync' : 'Not connected')}
+          </div>
+          <div className="text-[11px] text-slate-500 truncate">
+            {deyeStatus?.sync_message || 'Manage credentials & backfill'}
+          </div>
+        </Link>
+
+        <Link
+          to="/diagnostics"
+          className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-colors flex flex-col justify-between gap-1.5"
+        >
+          <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              Data Quality
+            </span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+              {reliabilityBadge}
+            </span>
+          </div>
+          <div className="text-xl font-bold tabular-nums text-slate-900 dark:text-slate-100">
+            {qualityScore !== null ? `${qualityScore.toFixed(0)} / 100` : '--'}
+          </div>
+          <div className="text-[11px] text-slate-500 truncate">
+            {summary?.balance?.attribution_status === 'estimated_origin'
+              ? 'Estimated battery energy origin'
+              : summary?.balance?.attribution_status === 'measured_origin'
+                ? 'Interval-attributed balance'
+                : 'Inspect telemetry gaps & checks'}
+          </div>
+        </Link>
       </div>
 
       <LiveWeatherForecastCard

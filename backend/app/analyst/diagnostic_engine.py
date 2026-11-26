@@ -1,10 +1,8 @@
 import datetime
-from backend.app.metrics.time_utils import format_date_mmddyyyy
+from backend.app.metrics.time_utils import format_date_mmddyyyy, resolve_zoneinfo
 from typing import Dict, Any, List, Optional
 from backend.app.storage.db import get_connection
-from backend.app.integrations.deye_mcp import deye_mcp_client
-
-MANILA_TZ = datetime.timezone(datetime.timedelta(hours=8))
+from backend.app.integrations.deye_mcp import get_deye_mcp_client
 
 class DiagnosticEngine:
     def __init__(self, project_id: str = "default"):
@@ -112,30 +110,33 @@ class DiagnosticEngine:
             "history_power": []
         }
 
-        token = deye_mcp_client.get_auth_token()
+        mcp_client = get_deye_mcp_client(self.project_id)
+        token = mcp_client.get_auth_token()
         if not token:
             return evidence
 
         evidence["mcp_connected"] = True
-        creds = deye_mcp_client._get_credentials()
+        creds = mcp_client._get_credentials()
+        meta = mcp_client._get_system_meta()
+        tz = resolve_zoneinfo(meta.get("timezone", "Asia/Manila"))
         station_id = creds["station_id"]
         inverter_sn = creds["inverter_sn"]
 
         if station_id:
-            evidence["station_latest"] = deye_mcp_client.get_station_latest(station_id)
+            evidence["station_latest"] = mcp_client.get_station_latest(station_id)
 
-        now_sec = int(datetime.datetime.now(MANILA_TZ).timestamp())
+        now_sec = int(datetime.datetime.now(tz).timestamp())
         week_ago_sec = now_sec - (7 * 86400)
         if inverter_sn:
-            alerts_res = deye_mcp_client.get_device_alerts(inverter_sn, week_ago_sec, now_sec)
+            alerts_res = mcp_client.get_device_alerts(inverter_sn, week_ago_sec, now_sec)
             evidence["device_alerts"] = alerts_res.get("alerts", [])
 
         if station_id and target_date and target_date != "WEEK" and target_date != "MONTH":
             try:
                 d = datetime.date.fromisoformat(target_date)
-                start_ts = int(datetime.datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=MANILA_TZ).timestamp())
-                end_ts = int(datetime.datetime(d.year, d.month, d.day, 23, 59, 59, tzinfo=MANILA_TZ).timestamp())
-                p_res = deye_mcp_client.get_station_history_power(station_id, start_ts, end_ts)
+                start_ts = int(datetime.datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=tz).timestamp())
+                end_ts = int(datetime.datetime(d.year, d.month, d.day, 23, 59, 59, tzinfo=tz).timestamp())
+                p_res = mcp_client.get_station_history_power(station_id, start_ts, end_ts)
                 if p_res.get("success"):
                     evidence["history_power"] = p_res.get("readings", [])
             except Exception:

@@ -5,6 +5,18 @@ def build_evidence_response(
     snapshot: Dict[str, Any],
     weather_info: Dict[str, Any]
 ) -> Dict[str, Any]:
+    if not snapshot:
+        return {
+            "query_key": query_key,
+            "title": "Telemetry Unavailable",
+            "what_happened": "No historical telemetry records are loaded for this installation yet.",
+            "what_data_shows": "0 telemetry intervals available for calculation.",
+            "why_it_happened": "Upload CSV/Excel inverter exports or sync historical dates from Deye Cloud in Data Library & Cloud.",
+            "energy_or_money_impact": "Financial and energy calculations require recorded solar, load, battery, and grid telemetry.",
+            "what_to_do": "Open Data Library & Cloud to upload or synchronize at least one day of inverter data.",
+            "confidence_level": "Unavailable (no recorded telemetry)"
+        }
+
     solar = snapshot.get("solar", {})
     battery = snapshot.get("battery", {})
     grid = snapshot.get("grid", {})
@@ -31,20 +43,20 @@ def build_evidence_response(
         return {
             "query_key": query_key,
             "title": "Battery Depletion Diagnostic",
-            "what_happened": f"Your battery discharged {disch_kwh:.2f} kWh and reached its safety reserve level of {reserve_soc:.0f}%.",
-            "what_data_shows": f"Battery charge dropped to {min_soc:.1f}% and remained at the reserve limit for {hours_at_reserve:.1f} hours. Nighttime household usage consumed {night_kwh:.2f} kWh between 8:00 PM and 6:00 AM.",
+            "what_happened": f"Your battery discharged {disch_kwh:.2f} kWh and reached a minimum recorded SOC of {min_soc:.1f}% (reserve setting: {reserve_soc:.0f}%).",
+            "what_data_shows": f"Battery stayed at or below reserve threshold for {hours_at_reserve:.1f} hours. Nighttime household usage consumed {night_kwh:.2f} kWh between 8:00 PM and 6:00 AM.",
             "why_it_happened": "Sustained evening and nighttime household electricity usage exceeded the available stored energy above your battery's safety reserve limit.",
-            "energy_or_money_impact": f"{disch_kwh:.2f} kWh of clean battery power supplied to your home, saving approximately PHP {cost_impact:.2f} in utility grid purchases.",
+            "energy_or_money_impact": f"{disch_kwh:.2f} kWh of battery power supplied to your home (estimated offset ~PHP {cost_impact:.2f} at configured tariff)." if tariff > 0 else f"{disch_kwh:.2f} kWh of battery power supplied to your home.",
             "what_to_do": "To extend battery autonomy through morning sunrise, shift heavy appliance usage (such as washing machines or water pumps) to peak daylight solar hours between 10:00 AM and 2:00 PM.",
-            "confidence_level": "High (derived from direct battery telemetry and continuous power integration)"
+            "confidence_level": "Confirmed (derived from recorded battery power and SOC telemetry)"
         }
 
     elif query_key == "why_grid_purchased_with_battery":
         grid_import_kwh = grid.get("imported_energy_kwh", 0.0)
         classifications = grid.get("import_classification", [])
-        reserve_cat = next((c for c in classifications if c["category"] == "Battery Reserve"), None)
-        power_cat = next((c for c in classifications if c["category"] == "Power Limit"), None)
-        trickle_cat = next((c for c in classifications if c["category"] == "Grid Trickle"), None)
+        reserve_cat = next((c for c in classifications if "Reserve" in c["category"]), None)
+        power_cat = next((c for c in classifications if "Peak Load" in c["category"] or "Power Limit" in c["category"]), None)
+        trickle_cat = next((c for c in classifications if "Trickle" in c["category"]), None)
 
         primary_reason = "Reserve Limit"
         if power_cat and power_cat["energy_kwh"] > (reserve_cat["energy_kwh"] if reserve_cat else 0):
@@ -56,11 +68,11 @@ def build_evidence_response(
             "query_key": query_key,
             "title": "Grid Purchase Cause Analysis",
             "what_happened": f"Your home imported {grid_import_kwh:.2f} kWh of utility electricity during this observation period.",
-            "what_data_shows": f"Classification breakdown: {reserve_cat['energy_kwh'] if reserve_cat else 0:.2f} kWh occurred while battery was at reserve, {power_cat['energy_kwh'] if power_cat else 0:.2f} kWh occurred due to power limit surges, and {trickle_cat['energy_kwh'] if trickle_cat else 0:.2f} kWh was standard inverter grid trickle.",
-            "why_it_happened": f"The primary cause was {primary_reason}. When home electricity demand spikes above inverter discharge limits or when the battery reaches its reserve threshold, the inverter draws utility power to protect your battery.",
-            "energy_or_money_impact": f"Total utility grid import cost was approximately PHP {grid_import_kwh * tariff:.2f}.",
+            "what_data_shows": f"Classification breakdown: {reserve_cat['energy_kwh'] if reserve_cat else 0:.2f} kWh at reserve cutoff, {power_cat['energy_kwh'] if power_cat else 0:.2f} kWh during peak load/inverter assist, and {trickle_cat['energy_kwh'] if trickle_cat else 0:.2f} kWh in grid trickle/sync.",
+            "why_it_happened": f"The primary driver was {primary_reason}. When home electricity demand spikes above inverter discharge limits or when the battery reaches its reserve threshold, the inverter draws utility power.",
+            "energy_or_money_impact": f"Estimated utility grid import cost: PHP {grid_import_kwh * tariff:.2f}." if tariff > 0 else f"Total utility grid import measured: {grid_import_kwh:.2f} kWh (configure tariff rate for cost impact).",
             "what_to_do": "Review the Energy & Demand tab to check if heavy appliances operated concurrently, and stagger air conditioner or motor start times to stay within inverter output limits.",
-            "confidence_level": "High (calculated through 5-category state classification)"
+            "confidence_level": "Calculated (derived from 6-category interval classification)"
         }
 
     elif query_key == "will_battery_last_tonight":
@@ -72,9 +84,9 @@ def build_evidence_response(
                 "what_happened": "Local weather forecast is unavailable because site coordinates or forecast data have not been loaded.",
                 "what_data_shows": f"Observed nighttime household demand is {night_kwh:.2f} kWh between 8:00 PM and 6:00 AM.",
                 "why_it_happened": "Open-Meteo solar irradiance modeling requires configured latitude, longitude, PV capacity, and battery capacity in System Settings.",
-                "energy_or_money_impact": f"Each kWh stored offsets PHP {tariff:.2f} in utility imports.",
+                "energy_or_money_impact": f"Each kWh stored offsets PHP {tariff:.2f} in utility imports." if tariff > 0 else "Configure utility tariff in System Settings to estimate nighttime cost offset.",
                 "what_to_do": "Enter your site latitude, longitude, PV kWp, and battery kWh in System Settings to generate tomorrow's solar and battery autonomy forecast.",
-                "confidence_level": "Low (location coordinates not configured)"
+                "confidence_level": "Unavailable (location coordinates not configured)"
             }
         sunset_soc = tomorrow.get("projected_sunset_soc_percent", 0.0)
         autonomy_str = tomorrow.get("projected_night_autonomy_formatted", "--")
@@ -86,12 +98,12 @@ def build_evidence_response(
         return {
             "query_key": query_key,
             "title": "Nighttime Battery Autonomy Forecast",
-            "what_happened": f"Tomorrow's solar generation is forecast at {expected_pv:.1f} kWh, giving a {prob_full:.0f}% probability of reaching full battery charge before sunset.",
-            "what_data_shows": f"Projected battery state-of-charge at sunset is approximately {sunset_soc:.0f}%, providing an estimated {autonomy_str} of autonomous power.",
+            "what_happened": f"Weather-based solar harvest is estimated at {expected_pv:.1f} kWh tomorrow, giving an estimated {prob_full:.0f}% likelihood of reaching full battery charge before sunset.",
+            "what_data_shows": f"Estimated battery state-of-charge at sunset is {sunset_soc:.0f}%, providing roughly {autonomy_str} of autonomous power based on recent average nighttime load ({night_kwh:.1f} kWh).",
             "why_it_happened": f"Forecasted solar irradiance{loc_phrase}{array_phrase} determines expected daytime surplus available to replenish {batt_phrase}.",
-            "energy_or_money_impact": f"Reaching full charge before sunset will offset approximately {night_kwh:.1f} kWh of nighttime grid purchases, saving about PHP {night_kwh * tariff:.2f} per night.",
-            "what_to_do": "Monitor midday weather; if heavy cloud cover develops, reduce non-essential evening electricity loads to ensure the battery lasts until sunrise.",
-            "confidence_level": "Moderate (based on Open-Meteo atmospheric modeling and historical household consumption)"
+            "energy_or_money_impact": f"Reaching full charge before sunset would offset approximately {night_kwh:.1f} kWh of nighttime grid purchases (~PHP {night_kwh * tariff:.2f} per night)." if tariff > 0 else f"Reaching full charge before sunset would offset approximately {night_kwh:.1f} kWh of nighttime grid purchases.",
+            "what_to_do": "Monitor midday sky conditions; if heavy cloud cover develops, reduce non-essential evening electricity loads to preserve battery reserve.",
+            "confidence_level": "Estimated (weather forecast model combined with observed household consumption)"
         }
 
     elif query_key == "should_add_battery":
@@ -106,17 +118,17 @@ def build_evidence_response(
         return {
             "query_key": query_key,
             "title": "Battery Storage Upgrade Assessment",
-            "what_happened": f"{batt_phrase} still leaves an average import of {grid_import_kwh:.2f} kWh/day from the utility grid.",
-            "what_data_shows": f"Adding a 5.0 kWh storage expansion could capture surplus midday solar and reduce grid imports by up to {potential_reduction_kwh:.2f} kWh per day.",
+            "what_happened": f"{batt_phrase} still leaves an observed import of {grid_import_kwh:.2f} kWh over the selected window from the utility grid.",
+            "what_data_shows": f"A hypothetical 5.0 kWh storage expansion could capture surplus midday solar and reduce grid imports by up to ~{potential_reduction_kwh:.2f} kWh per day.",
             "why_it_happened": f"Household demand after sunset occasionally outlasts usable stored energy, triggering the {reserve_soc:.0f}% battery reserve cutoff.",
-            "energy_or_money_impact": f"Estimated hardware cost is PHP {est_cost:,.2f}. Projected monthly savings are PHP {monthly_savings:,.2f}, delivering an estimated payback period of {payback} years." if monthly_savings > 0 else f"Estimated hardware cost for 5.0 kWh is PHP {est_cost:,.2f}. Configure your electricity tariff rate to project payback.",
-            "what_to_do": "Open the What-If & Upgrades tab to test custom storage sizes and compare return on investment against solar array additions.",
-            "confidence_level": f"High ({cap_conf})"
+            "energy_or_money_impact": f"Hypothetical hardware budget: PHP {est_cost:,.2f} (assumed PHP 22,000/kWh). Projected monthly savings: PHP {monthly_savings:,.2f}, estimated payback: {payback} years." if monthly_savings > 0 else f"Hypothetical hardware budget for 5.0 kWh: PHP {est_cost:,.2f}. Configure your electricity tariff rate to project payback.",
+            "what_to_do": "Open the What-If & Upgrades tab to test custom storage sizes and compare modeled return on investment against solar array additions.",
+            "confidence_level": f"Simulated ({cap_conf})"
         }
 
     else:
         pv_kwh = solar.get("total_generation_kwh", 0.0)
-        load_kwh = consumption.get("total_consumption_kwh", 0.0)
+        load_kwh = consumption.get("total_demand_kwh", consumption.get("total_consumption_kwh", 0.0))
         grid_kwh = grid.get("imported_energy_kwh", 0.0)
         avoided_php = max(0.0, (load_kwh - grid_kwh) * tariff)
         reserve_soc = hardware.get("reserve_soc_percent", 20.0)
@@ -125,10 +137,10 @@ def build_evidence_response(
         return {
             "query_key": query_key,
             "title": "Energy Systems Performance Audit",
-            "what_happened": f"{array_desc} generated {pv_kwh:.2f} kWh of clean electricity while your home consumed {load_kwh:.2f} kWh.",
-            "what_data_shows": f"Solar production directly powered your appliances and charged your battery, requiring {grid_kwh:.2f} kWh of electricity from the utility grid.",
-            "why_it_happened": f"Your {equip_desc} operated within electrical specifications.",
-            "energy_or_money_impact": f"Your solar and battery system saved approximately PHP {avoided_php:.2f} compared to purchasing all electricity from the utility grid.",
-            "what_to_do": f"Maintain solar panel cleanliness and keep battery state-of-charge within the {reserve_soc:.0f}% to 100% operational window.",
-            "confidence_level": "High (derived from verified electrical telemetry)"
+            "what_happened": f"{array_desc} generated {pv_kwh:.2f} kWh of electricity while your home consumed {load_kwh:.2f} kWh.",
+            "what_data_shows": f"Measured grid imports totaled {grid_kwh:.2f} kWh across the selected telemetry window ({equip_desc}).",
+            "why_it_happened": "Totals are computed via timestamp-differenced trapezoidal quadrature over recorded telemetry intervals.",
+            "energy_or_money_impact": f"Estimated avoided utility charges: PHP {avoided_php:.2f} at your configured tariff." if tariff > 0 else "Configure your utility tariff or TEI rate schedule in Bill Intelligence to compute peso savings.",
+            "what_to_do": f"Inspect Diagnostics for residual energy balance details and keep battery SOC within the {reserve_soc:.0f}% to 100% operational window.",
+            "confidence_level": "Calculated (derived from recorded inverter telemetry)"
         }

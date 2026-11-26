@@ -1,20 +1,28 @@
 import hashlib
-import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from backend.app.ingestion.excel_reader import read_excel_sheet
 from backend.app.ingestion.csv_reader import read_csv_file
 from backend.app.ingestion.column_mapper import build_column_mapping_preview
+from backend.app.metrics.time_utils import parse_timestamp
 from backend.app.storage.db import get_connection
 
-def inspect_file_for_preview(filepath: Path, original_filename: str) -> Dict[str, Any]:
+def inspect_file_for_preview(
+    filepath: Path,
+    original_filename: str,
+    project_id: str = "default",
+    timezone: str = "Asia/Manila"
+) -> Dict[str, Any]:
     file_bytes = filepath.read_bytes()
     file_hash = hashlib.sha256(file_bytes).hexdigest()
     file_size = len(file_bytes)
     file_ext = filepath.suffix.lower()
 
     conn = get_connection()
-    existing_dup = conn.execute("SELECT id, filename FROM datasets WHERE file_hash = ?", (file_hash,)).fetchone()
+    existing_dup = conn.execute(
+        "SELECT id, filename FROM datasets WHERE file_hash = ? AND project_id = ?",
+        (file_hash, project_id)
+    ).fetchone()
     conn.close()
 
     is_duplicate = existing_dup is not None
@@ -26,18 +34,16 @@ def inspect_file_for_preview(filepath: Path, original_filename: str) -> Dict[str
 
     headers: List[str] = []
     sample_records: List[Dict[str, Any]] = []
+    all_rows: List[Dict[str, Any]] = []
     total_records = 0
-    sheet_name = None
 
     try:
         if file_ext in [".xlsx", ".xlsm"]:
-            headers, sample_records, sheet_name = read_excel_sheet(filepath, max_rows=10)
-            _, all_rows, _ = read_excel_sheet(filepath)
-            total_records = len(all_rows)
+            headers, sample_records, _ = read_excel_sheet(filepath, max_rows=10)
+            _, all_rows, total_records = read_excel_sheet(filepath)
         elif file_ext == ".csv":
-            headers, sample_records, sheet_name = read_csv_file(filepath, max_rows=10)
-            _, all_rows, _ = read_csv_file(filepath)
-            total_records = len(all_rows)
+            headers, sample_records, _ = read_csv_file(filepath, max_rows=10)
+            _, all_rows, total_records = read_csv_file(filepath)
         else:
             issues.append(f"Unsupported file format {file_ext}.")
             return {
@@ -91,15 +97,15 @@ def inspect_file_for_preview(filepath: Path, original_filename: str) -> Dict[str
                 break
 
         if time_key:
-            start_time = str(all_rows[0].get(time_key, ""))
-            end_time = str(all_rows[-1].get(time_key, ""))
+            t_start = parse_timestamp(all_rows[0].get(time_key), timezone)
+            t_end = parse_timestamp(all_rows[-1].get(time_key), timezone)
+            start_time = t_start.isoformat() if t_start else str(all_rows[0].get(time_key, ""))
+            end_time = t_end.isoformat() if t_end else str(all_rows[-1].get(time_key, ""))
             if len(all_rows) > 1:
-                try:
-                    t0 = datetime.datetime.strptime(str(all_rows[0][time_key]), "%Y-%m-%d %H:%M:%S")
-                    t1 = datetime.datetime.strptime(str(all_rows[1][time_key]), "%Y-%m-%d %H:%M:%S")
-                    sampling_interval_min = max(1.0, round((t1 - t0).total_seconds() / 60.0, 1))
-                except Exception:
-                    sampling_interval_min = 5.0
+                t0 = parse_timestamp(all_rows[0].get(time_key), timezone)
+                t1 = parse_timestamp(all_rows[1].get(time_key), timezone)
+                if t0 is not None and t1 is not None and t1 > t0:
+                    sampling_interval_min = max(0.5, round((t1 - t0).total_seconds() / 60.0, 1))
         else:
             issues.append("Timestamp column was not automatically identified.")
 

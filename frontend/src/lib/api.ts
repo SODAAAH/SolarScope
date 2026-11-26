@@ -1,4 +1,5 @@
 const API_BASE = "/api";
+const PROJECT_STORAGE_KEY = "solarscope_project_id";
 const BILLING_PROFILE_STORAGE_KEY = "solarscope_billing_profile_v2";
 const RATE_SCHEDULE_STORAGE_KEY = "solarscope_tei_rate_schedule_v1";
 const LEGACY_DEYE_KEYS = [
@@ -6,6 +7,87 @@ const LEGACY_DEYE_KEYS = [
   "solarscope_deye_station_id",
   "solarscope_deye_mode",
 ];
+let inMemoryCsrfToken = "";
+
+export function getActiveProjectId(): string {
+  try {
+    return localStorage.getItem(PROJECT_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function clearUserClientCaches(preserveProject = true): void {
+  clearApiCache();
+  try {
+    localStorage.removeItem("solarscope_dataset_id");
+    localStorage.removeItem("solarscope_cached_live_flow_v3");
+    localStorage.removeItem("solarscope_cached_live_flow_v2");
+    localStorage.removeItem(BILLING_PROFILE_STORAGE_KEY);
+    localStorage.removeItem(RATE_SCHEDULE_STORAGE_KEY);
+    if (!preserveProject) {
+      localStorage.removeItem(PROJECT_STORAGE_KEY);
+    }
+    sessionStorage.removeItem("solarscope_cached_live_flow");
+    sessionStorage.removeItem("solarscope_cached_daily");
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && k.startsWith("solarscope_cached_summary_")) {
+        keysToRemove.push(k);
+      }
+    }
+    for (const k of keysToRemove) {
+      sessionStorage.removeItem(k);
+    }
+  } catch {}
+}
+
+export function setActiveProjectId(projectId: string, emitEvent = true): void {
+  const prev = getActiveProjectId();
+  try {
+    if (projectId) {
+      localStorage.setItem(PROJECT_STORAGE_KEY, projectId);
+    } else {
+      localStorage.removeItem(PROJECT_STORAGE_KEY);
+    }
+  } catch {}
+  if (prev !== projectId) {
+    clearUserClientCaches(true);
+    if (emitEvent) {
+      dispatchAppEvent("solarscope:project-changed");
+    }
+  }
+}
+
+export function setCsrfToken(token?: string | null): void {
+  if (token) {
+    inMemoryCsrfToken = token;
+  }
+}
+
+export function getCsrfToken(): string {
+  try {
+    if (typeof document !== "undefined" && document.cookie) {
+      const parts = document.cookie.split(";");
+      for (const part of parts) {
+        const idx = part.indexOf("=");
+        if (idx === -1) continue;
+        const name = part.slice(0, idx).trim();
+        if (name === "solarscope_csrf") {
+          const val = decodeURIComponent(part.slice(idx + 1).trim());
+          if (val) return val;
+        }
+      }
+    }
+  } catch {}
+  return inMemoryCsrfToken;
+}
+
+function getScopedStorageKey(baseKey: string): string {
+  const pid = getActiveProjectId() || "default";
+  return `${baseKey}::${pid}`;
+}
 
 function clearLegacyDeyeStorage(): void {
   try {
@@ -20,7 +102,7 @@ function clearLegacyDeyeStorage(): void {
 
 export function getStoredBillingProfile(): TEIBillingProfile | null {
   try {
-    const raw = localStorage.getItem(BILLING_PROFILE_STORAGE_KEY);
+    const raw = localStorage.getItem(getScopedStorageKey(BILLING_PROFILE_STORAGE_KEY));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : null;
@@ -31,13 +113,13 @@ export function getStoredBillingProfile(): TEIBillingProfile | null {
 
 export function setStoredBillingProfile(profile: TEIBillingProfile): void {
   try {
-    localStorage.setItem(BILLING_PROFILE_STORAGE_KEY, JSON.stringify(profile));
+    localStorage.setItem(getScopedStorageKey(BILLING_PROFILE_STORAGE_KEY), JSON.stringify(profile));
   } catch {}
 }
 
 export function getStoredRateSchedule(): any | null {
   try {
-    const raw = localStorage.getItem(RATE_SCHEDULE_STORAGE_KEY);
+    const raw = localStorage.getItem(getScopedStorageKey(RATE_SCHEDULE_STORAGE_KEY));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : null;
@@ -49,20 +131,26 @@ export function getStoredRateSchedule(): any | null {
 export function setStoredRateSchedule(schedule: any): void {
   try {
     if (schedule && typeof schedule === "object") {
-      localStorage.setItem(RATE_SCHEDULE_STORAGE_KEY, JSON.stringify(schedule));
+      localStorage.setItem(getScopedStorageKey(RATE_SCHEDULE_STORAGE_KEY), JSON.stringify(schedule));
     }
   } catch {}
 }
 
 function buildBillingHeaders(extra?: Record<string, string>): Record<string, string> {
-  const headers: Record<string, string> = { ...(extra || {}) };
-  const storedProfile = getStoredBillingProfile();
-  if (storedProfile) {
-    headers["X-Billing-Profile"] = encodeURIComponent(JSON.stringify(storedProfile));
+  return { ...(extra || {}) };
+}
+
+function buildRequestHeaders(method: string, extra?: HeadersInit): Headers {
+  const headers = new Headers(extra || {});
+  const projectId = getActiveProjectId();
+  if (projectId && !headers.has("X-Project-Id")) {
+    headers.set("X-Project-Id", projectId);
   }
-  const storedRate = getStoredRateSchedule();
-  if (storedRate) {
-    headers["X-TEI-Rate-Schedule"] = encodeURIComponent(JSON.stringify(storedRate));
+  if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
+    const csrf = getCsrfToken();
+    if (csrf && !headers.has("X-CSRF-Token")) {
+      headers.set("X-CSRF-Token", csrf);
+    }
   }
   return headers;
 }
@@ -86,12 +174,13 @@ const inflightGetRequests = new Map<string, Promise<any>>();
 
 export function clearApiCache(): void {
   apiGetCache.clear();
+  inflightGetRequests.clear();
 }
 
 function isCacheableGet(endpoint: string, options?: RequestInit): boolean {
   const method = (options?.method || "GET").toUpperCase();
   if (method !== "GET") return false;
-  if (endpoint.includes("/deye/live_flow") || endpoint.includes("/health")) return false;
+  if (endpoint.includes("/deye/live_flow") || endpoint.includes("/health") || endpoint.includes("/auth/")) return false;
   if (endpoint.includes("fresh=true") || endpoint.includes("refresh=true")) return false;
   return true;
 }
@@ -102,14 +191,16 @@ export async function fetchJson<T>(endpoint: string, options?: RequestInit): Pro
     clearApiCache();
   }
 
+  const projectScope = getActiveProjectId() || "default";
+  const cacheKey = `${projectScope}::${endpoint}`;
   const cacheable = isCacheableGet(endpoint, options);
   const now = Date.now();
   if (cacheable) {
-    const cached = apiGetCache.get(endpoint);
+    const cached = apiGetCache.get(cacheKey);
     if (cached && cached.expiresAt > now) {
       return cached.data as T;
     }
-    const inflight = inflightGetRequests.get(endpoint);
+    const inflight = inflightGetRequests.get(cacheKey);
     if (inflight) {
       return inflight as Promise<T>;
     }
@@ -118,14 +209,23 @@ export async function fetchJson<T>(endpoint: string, options?: RequestInit): Pro
   const url = `${API_BASE}${endpoint}`;
   const reqPromise = (async () => {
     try {
-      const res = await fetch(url, { cache: "no-store", ...options });
+      const headers = buildRequestHeaders(method, options?.headers);
+      const res = await fetch(url, {
+        cache: "no-store",
+        credentials: "include",
+        ...options,
+        headers,
+      });
       if (!res.ok) {
         const errorText = await res.text();
+        if (res.status === 401 && !endpoint.startsWith("/auth/")) {
+          dispatchAppEvent("solarscope:auth-required");
+        }
         throw new Error(`API Error [${res.status}]: ${errorText}`);
       }
       const data = await res.json();
       if (cacheable) {
-        apiGetCache.set(endpoint, { expiresAt: Date.now() + GET_CACHE_TTL_MS, data });
+        apiGetCache.set(cacheKey, { expiresAt: Date.now() + GET_CACHE_TTL_MS, data });
       }
       return data as T;
     } catch (err: any) {
@@ -135,13 +235,13 @@ export async function fetchJson<T>(endpoint: string, options?: RequestInit): Pro
       throw err;
     } finally {
       if (cacheable) {
-        inflightGetRequests.delete(endpoint);
+        inflightGetRequests.delete(cacheKey);
       }
     }
   })();
 
   if (cacheable) {
-    inflightGetRequests.set(endpoint, reqPromise);
+    inflightGetRequests.set(cacheKey, reqPromise);
   }
   return reqPromise;
 }
@@ -676,7 +776,8 @@ export const api = {
   ) => {
     const res = await fetch(`${API_BASE}/datasets/${datasetId}/analyst/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      headers: buildRequestHeaders("POST", { "Content-Type": "application/json" }),
       body: JSON.stringify({ query_text: queryText }),
       signal
     });
@@ -709,8 +810,107 @@ export const api = {
   },
   getAnalystMcpStatus: () => {
     return fetchJson<AnalystDiagnosticEngineStats>("/analyst/mcp/status");
+  },
+  getAuthMe: async () => {
+    const res = await fetchJson<AuthMeResponse>("/auth/me");
+    if (res?.csrf_token) {
+      setCsrfToken(res.csrf_token);
+    }
+    if (res?.active_project_id && !getActiveProjectId()) {
+      setActiveProjectId(res.active_project_id, false);
+    }
+    return res;
+  },
+  login: async (payload: { email: string; password: string }) => {
+    const res = await fetchJson<AuthMeResponse>("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (res?.csrf_token) setCsrfToken(res.csrf_token);
+    if (res?.active_project_id) setActiveProjectId(res.active_project_id, false);
+    clearUserClientCaches(true);
+    dispatchAppEvent("solarscope:auth-changed");
+    return res;
+  },
+  register: async (payload: { email: string; password: string; display_name?: string; installation_name?: string }) => {
+    const res = await fetchJson<AuthMeResponse>("/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (res?.csrf_token) setCsrfToken(res.csrf_token);
+    if (res?.active_project_id) setActiveProjectId(res.active_project_id, false);
+    clearUserClientCaches(true);
+    dispatchAppEvent("solarscope:auth-changed");
+    return res;
+  },
+  logout: async () => {
+    const res = await fetchJson<{ status: string }>("/auth/logout", {
+      method: "POST"
+    });
+    inMemoryCsrfToken = "";
+    clearUserClientCaches(false);
+    dispatchAppEvent("solarscope:auth-changed");
+    return res;
+  },
+  listProjects: () => fetchJson<{ active_project_id: string; projects: ProjectSummary[] }>("/projects"),
+  createProject: async (payload: { name: string; description?: string; installation_type?: string }) => {
+    const res = await fetchJson<{ status: string; project: ProjectSummary }>("/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (res?.project?.id) {
+      setActiveProjectId(res.project.id, true);
+    }
+    return res;
+  },
+  updateProject: (projectId: string, payload: { name?: string; description?: string; installation_type?: string }) => {
+    return fetchJson<{ status: string; project: ProjectSummary }>(`/projects/${encodeURIComponent(projectId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  },
+  deleteProject: async (projectId: string) => {
+    const res = await fetchJson<{ status: string; deleted_project_id?: string }>(`/projects/${encodeURIComponent(projectId)}`, {
+      method: "DELETE"
+    });
+    clearUserClientCaches(false);
+    dispatchAppEvent("solarscope:project-changed");
+    return res;
   }
 };
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  display_name: string;
+  role: string;
+}
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  description?: string;
+  installation_type?: string;
+  is_default?: number;
+  owner_user_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AuthMeResponse {
+  authenticated: boolean;
+  auth_required?: boolean;
+  hosted_mode?: boolean;
+  is_local_mode?: boolean;
+  user: AuthUser | null;
+  projects: ProjectSummary[];
+  active_project_id: string | null;
+  csrf_token?: string;
+}
 
 export interface TEIBillingProfile {
   customer_class: string;
@@ -767,6 +967,7 @@ export interface StatementOfAccount {
   effective_average_rate_per_kwh: number;
   is_estimate: boolean;
   disclaimer: string;
+  calculation_basis?: string;
 }
 
 export interface BillForecastScenario {
@@ -794,6 +995,7 @@ export interface BillForecastResponse {
   active_generation_vat: number;
   last_rate_check_timestamp: string;
   rate_monitor_status: string;
+  calculation_basis?: string;
   rate_change_alert?: {
     has_changed: boolean;
     previous_rate: number;
@@ -913,6 +1115,7 @@ export interface DeyeConfigPayload {
   app_secret?: string;
   username?: string;
   password?: string;
+  data_center?: string;
   auto_sync?: boolean;
   sync_interval_min?: number;
   reconciliation_policy?: string;
@@ -926,6 +1129,7 @@ export interface DeyeStatusResponse {
   station_id: string;
   app_id: string;
   username?: string;
+  data_center?: string;
   auto_sync: boolean;
   sync_interval_min: number;
   last_sync_time: string | null;
@@ -968,6 +1172,9 @@ export interface WeatherIntelligenceResponse {
   configured?: boolean;
   status?: string;
   message?: string;
+  is_stale_fallback?: boolean;
+  freshness_minutes?: number | null;
+  forecast_basis?: string;
   location: string;
   latitude: number;
   longitude: number;
@@ -1106,6 +1313,9 @@ export interface LiveFlowResponse {
   data_source?: "live" | "demo" | "cached" | "offline";
   error?: string | null;
   token_expired?: boolean;
+  freshness_minutes?: number | null;
+  is_stale?: boolean;
+  missing_fields?: string[];
   station_name: string;
   station_id: string;
   inverter_model: string;

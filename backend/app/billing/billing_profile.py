@@ -3,6 +3,7 @@ import datetime
 import re
 from typing import Optional, Tuple
 from backend.app.billing.tariff_models import TEIBillingProfile
+from backend.app.metrics.time_utils import resolve_zoneinfo
 
 def normalize_billing_month(billing_month: Optional[str]) -> Optional[str]:
     if not billing_month:
@@ -20,7 +21,8 @@ def normalize_billing_month(billing_month: Optional[str]) -> Optional[str]:
 def compute_cycle_dates(
     cycle_day: int,
     ref_date: Optional[datetime.date] = None,
-    billing_month: Optional[str] = None
+    billing_month: Optional[str] = None,
+    timezone: str = "Asia/Manila"
 ) -> Tuple[datetime.date, datetime.date]:
     cycle_day = max(1, min(31, int(cycle_day or 25)))
 
@@ -38,8 +40,8 @@ def compute_cycle_dates(
         return start_dt, end_dt
 
     if ref_date is None:
-        tz_manila = datetime.timezone(datetime.timedelta(hours=8))
-        ref_date = datetime.datetime.now(tz_manila).date()
+        tz = resolve_zoneinfo(timezone)
+        ref_date = datetime.datetime.now(tz).date()
 
     y = ref_date.year
     m = ref_date.month
@@ -58,8 +60,8 @@ def compute_cycle_dates(
 
     return start_dt, end_dt
 
-def get_billing_profile(conn) -> TEIBillingProfile:
-    row = conn.execute("SELECT * FROM tei_billing_profiles WHERE project_id = 'default'").fetchone()
+def get_billing_profile(conn, project_id: str = "default") -> TEIBillingProfile:
+    row = conn.execute("SELECT * FROM tei_billing_profiles WHERE project_id = ?", (project_id,)).fetchone()
     if row:
         cycle_day = max(1, min(31, int(row["billing_cycle_day"] or 25)))
         raw_bm = row["billing_month"] if "billing_month" in row.keys() else None
@@ -70,8 +72,8 @@ def get_billing_profile(conn) -> TEIBillingProfile:
 
         if row["cycle_start_date"] != start_str or row["cycle_end_date"] != end_str:
             conn.execute(
-                "UPDATE tei_billing_profiles SET cycle_start_date = ?, cycle_end_date = ? WHERE project_id = 'default'",
-                (start_str, end_str)
+                "UPDATE tei_billing_profiles SET cycle_start_date = ?, cycle_end_date = ? WHERE project_id = ?",
+                (start_str, end_str, project_id)
             )
             conn.commit()
 
@@ -111,10 +113,10 @@ def get_billing_profile(conn) -> TEIBillingProfile:
         forecast_method="7day",
         updated_at=now_iso
     )
-    save_billing_profile(default_profile, conn)
+    save_billing_profile(default_profile, conn, project_id=project_id)
     return default_profile
 
-def save_billing_profile(profile: TEIBillingProfile, conn) -> None:
+def save_billing_profile(profile: TEIBillingProfile, conn, project_id: str = "default") -> None:
     cycle_day = max(1, min(31, int(profile.billing_cycle_day or 25)))
     norm_bm = normalize_billing_month(profile.billing_month)
     start_dt, end_dt = compute_cycle_dates(cycle_day, billing_month=norm_bm)
@@ -125,13 +127,32 @@ def save_billing_profile(profile: TEIBillingProfile, conn) -> None:
 
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     conn.execute(
-        """INSERT OR REPLACE INTO tei_billing_profiles
+        """INSERT INTO tei_billing_profiles
            (id, project_id, customer_class, billing_cycle_day, billing_month, cycle_start_date, cycle_end_date,
             prev_meter_reading, latest_meter_reading, meter_reading_date, connection_type,
             is_lifeline_eligible, is_senior_eligible, is_prompt_payment_eligible,
             previous_unpaid_balance, payments_received, forecast_method, updated_at)
-           VALUES ('profile-default', 'default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(project_id) DO UPDATE SET
+               customer_class = excluded.customer_class,
+               billing_cycle_day = excluded.billing_cycle_day,
+               billing_month = excluded.billing_month,
+               cycle_start_date = excluded.cycle_start_date,
+               cycle_end_date = excluded.cycle_end_date,
+               prev_meter_reading = excluded.prev_meter_reading,
+               latest_meter_reading = excluded.latest_meter_reading,
+               meter_reading_date = excluded.meter_reading_date,
+               connection_type = excluded.connection_type,
+               is_lifeline_eligible = excluded.is_lifeline_eligible,
+               is_senior_eligible = excluded.is_senior_eligible,
+               is_prompt_payment_eligible = excluded.is_prompt_payment_eligible,
+               previous_unpaid_balance = excluded.previous_unpaid_balance,
+               payments_received = excluded.payments_received,
+               forecast_method = excluded.forecast_method,
+               updated_at = excluded.updated_at""",
         (
+            f"profile-{project_id}",
+            project_id,
             profile.customer_class,
             profile.billing_cycle_day,
             profile.billing_month,

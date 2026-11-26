@@ -2,9 +2,10 @@ import uuid
 import datetime
 from typing import List, Dict, Any, Optional
 
-def get_historical_bills_summary(conn) -> List[Dict[str, Any]]:
+def get_historical_bills_summary(conn, project_id: str = "default") -> List[Dict[str, Any]]:
     rows = conn.execute(
-        "SELECT * FROM tei_historical_bills WHERE project_id = 'default' ORDER BY billing_period_start DESC"
+        "SELECT * FROM tei_historical_bills WHERE project_id = ? ORDER BY billing_period_start DESC",
+        (project_id,)
     ).fetchall()
 
     results = []
@@ -26,6 +27,7 @@ def get_historical_bills_summary(conn) -> List[Dict[str, Any]]:
             "variance_percent": var_pct,
             "accuracy_percent": acc_pct,
             "notes": r["notes"] or "",
+            "is_official_bill": True,
             "created_at": r["created_at"]
         })
     return results
@@ -37,16 +39,18 @@ def insert_historical_bill(
     actual_amount_due: float,
     predicted_amount_due: Optional[float],
     notes: str,
-    conn
+    conn,
+    project_id: str = "default"
 ) -> Dict[str, Any]:
     bill_id = str(uuid.uuid4())
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     conn.execute(
         """INSERT INTO tei_historical_bills
            (id, project_id, billing_period_start, billing_period_end, billed_kwh, actual_amount_due, predicted_amount_due, notes, created_at)
-           VALUES (?, 'default', ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             bill_id,
+            project_id,
             billing_period_start,
             billing_period_end,
             billed_kwh,
@@ -65,6 +69,9 @@ def insert_historical_bill(
         "predicted_amount_due": predicted_amount_due
     }
 
-def remove_historical_bill(bill_id: str, conn) -> bool:
-    res = conn.execute("DELETE FROM tei_historical_bills WHERE id = ?", (bill_id,))
+def remove_historical_bill(bill_id: str, conn, project_id: str = "default") -> bool:
+    res = conn.execute(
+        "DELETE FROM tei_historical_bills WHERE id = ? AND project_id = ?",
+        (bill_id, project_id)
+    )
     return res.rowcount > 0

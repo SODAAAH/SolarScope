@@ -81,6 +81,7 @@ export const HistoricalLibraryPage: React.FC = () => {
   const [configAppSecret, setConfigAppSecret] = useState("");
   const [configUsername, setConfigUsername] = useState("");
   const [configPassword, setConfigPassword] = useState("");
+  const [configDataCenter, setConfigDataCenter] = useState("eu");
   const [configAutoSync, setConfigAutoSync] = useState(false);
   const [configInterval, setConfigInterval] = useState(5);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -126,6 +127,7 @@ export const HistoricalLibraryPage: React.FC = () => {
         setConfigStationId(data.station_id || "");
         setConfigAppId(data.app_id || "");
         setConfigUsername(data.username || "");
+        setConfigDataCenter(data.data_center || "eu");
         setConfigAutoSync(data.auto_sync || false);
         setConfigInterval(data.sync_interval_min || 5);
         setCredentialsDirty(false);
@@ -143,6 +145,7 @@ export const HistoricalLibraryPage: React.FC = () => {
     app_secret: configAppSecret.trim(),
     username: configUsername.trim(),
     password: configPassword.trim(),
+    data_center: configDataCenter,
     auto_sync: configAutoSync,
     sync_interval_min: configInterval
   });
@@ -1250,7 +1253,7 @@ export const HistoricalLibraryPage: React.FC = () => {
               <div className="px-3 py-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span>
-                  Station credentials are securely stored on the server. All visitors share live Flow Graph telemetry automatically without needing to enter credentials.
+                  Station credentials are encrypted at rest on the server and isolated to this installation workspace.
                 </span>
               </div>
             )}
@@ -1336,11 +1339,29 @@ export const HistoricalLibraryPage: React.FC = () => {
                 />
               </div>
 
-              <div className="flex items-end">
+              <div>
+                <label className="block font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Deye Data Center Region
+                </label>
+                <select
+                  value={configDataCenter}
+                  onChange={(e) => {
+                    setConfigDataCenter(e.target.value);
+                    setCredentialsDirty(true);
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-200"
+                >
+                  <option value="eu">EMEA / Asia-Pacific (eu1-developer.deyecloud.com)</option>
+                  <option value="am">Americas (us1-developer.deyecloud.com)</option>
+                  <option value="india">India (in1-developer.deyecloud.com)</option>
+                </select>
+              </div>
+
+              <div className="md:col-span-3 flex items-end justify-end">
                 <button
                   type="submit"
                   disabled={savingConfig}
-                  className="w-full px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition-colors shadow-sm disabled:opacity-50"
+                  className="w-full md:w-auto px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition-colors shadow-sm disabled:opacity-50"
                 >
                   {savingConfig ? "Saving..." : "Save Credentials"}
                 </button>

@@ -1,11 +1,12 @@
 import datetime
 from collections import defaultdict
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import numpy as np
 
 from backend.app.ingestion.models import CanonicalRecord
-from backend.app.metrics.integrator import integrate_power_series
+from backend.app.metrics.integrator import integrate_power_series, parse_iso
 from backend.app.metrics.time_utils import format_time_12h
+from backend.app.energy_balance.reconciliation import reconcile_energy_balance
 
 def calculate_daily_summaries(
     records: List[CanonicalRecord],
@@ -18,6 +19,8 @@ def calculate_daily_summaries(
 
     day_buckets: Dict[str, List[CanonicalRecord]] = defaultdict(list)
     for r in records:
+        if not r.timestamp_valid or len(r.timestamp) < 10:
+            continue
         day_str = r.timestamp[:10]
         day_buckets[day_str].append(r)
 
@@ -42,7 +45,8 @@ def calculate_daily_summaries(
         batt_disch_kwh, _, _ = integrate_power_series(timestamps, batt_disch_series)
         batt_chg_kwh, _, _ = integrate_power_series(timestamps, batt_chg_series)
 
-        residual_kwh = round((pv_kwh + batt_disch_kwh + grid_import_kwh) - (load_kwh + batt_chg_kwh + grid_export_kwh), 4)
+        day_balance = reconcile_energy_balance(day_recs, nominal_battery_kwh=nominal_battery_kwh)
+        residual_kwh = day_balance.get("residual_kwh", round((pv_kwh + batt_disch_kwh + grid_import_kwh) - (load_kwh + batt_chg_kwh + grid_export_kwh), 4))
 
         peak_pv_val = max(pv_series) if pv_series else 0.0
         peak_pv_idx = pv_series.index(peak_pv_val) if pv_series else 0
@@ -56,18 +60,6 @@ def calculate_daily_summaries(
         peak_grid_idx = grid_import_series.index(peak_grid_val) if grid_import_series else 0
         peak_grid_time = timestamps[peak_grid_idx] if timestamps else ""
 
-        daytime_pv_kwh = 0.0
-        daytime_load_kwh = 0.0
-        nighttime_load_kwh = 0.0
-
-        for r in day_recs:
-            hour = int(r.timestamp[11:13]) if len(r.timestamp) >= 13 else 12
-            if 6 <= hour < 18:
-                daytime_pv_kwh += r.pv_power_kw
-                daytime_load_kwh += r.load_power_kw
-            else:
-                nighttime_load_kwh += r.load_power_kw
-
         coverage_pct = round(min(100.0, (dur_hours / 24.0) * 100.0), 1)
         if coverage_pct >= 90.0:
             status = "COMPLETE"
@@ -76,29 +68,21 @@ def calculate_daily_summaries(
         else:
             status = "INVALID"
 
+        parsed_dts = [parse_iso(ts) for ts in timestamps]
         max_gap_min = 0.0
-        for i in range(len(timestamps) - 1):
-            try:
-                t0 = datetime.datetime.fromisoformat(timestamps[i])
-                t1 = datetime.datetime.fromisoformat(timestamps[i + 1])
-                diff_m = (t1 - t0).total_seconds() / 60.0
-                if diff_m > max_gap_min:
-                    max_gap_min = diff_m
-            except ValueError:
-                continue
-
         grid_import_duration_hours = 0.0
-        for i in range(len(timestamps) - 1):
-            if grid_import_series[i] > 0.05:
-                try:
-                    t0 = datetime.datetime.fromisoformat(timestamps[i])
-                    t1 = datetime.datetime.fromisoformat(timestamps[i + 1])
-                    grid_import_duration_hours += (t1 - t0).total_seconds() / 3600.0
-                except ValueError:
-                    continue
+        for i in range(len(parsed_dts) - 1):
+            t0, t1 = parsed_dts[i], parsed_dts[i + 1]
+            if t0 is None or t1 is None:
+                continue
+            diff_m = (t1 - t0).total_seconds() / 60.0
+            if diff_m > max_gap_min:
+                max_gap_min = diff_m
+            if grid_import_series[i] > 0.05 and 0 < diff_m <= 120.0:
+                grid_import_duration_hours += diff_m / 60.0
 
-        self_consumption = round((pv_kwh - grid_export_kwh) / pv_kwh, 4) if pv_kwh > 0 else 0.0
-        self_sufficiency = round((load_kwh - grid_import_kwh) / load_kwh, 4) if load_kwh > 0 else 0.0
+        self_consumption = day_balance.get("solar_self_consumption_ratio", 0.0)
+        self_sufficiency = day_balance.get("solar_self_sufficiency_ratio", 0.0)
         grid_dependence = round(grid_import_kwh / load_kwh, 4) if load_kwh > 0 else 0.0
 
         summaries.append({
@@ -114,6 +98,10 @@ def calculate_daily_summaries(
             "grid_export_kwh": grid_export_kwh,
             "battery_discharge_kwh": batt_disch_kwh,
             "battery_charge_kwh": batt_chg_kwh,
+            "battery_solar_charged_kwh": day_balance.get("battery_solar_charged_kwh", 0.0),
+            "battery_grid_charged_kwh": day_balance.get("battery_grid_charged_kwh", 0.0),
+            "direct_solar_used_kwh": day_balance.get("direct_solar_used_kwh", 0.0),
+            "attribution_status": day_balance.get("attribution_status", "measured_solar_dominant"),
             "residual_kwh": residual_kwh,
             "self_consumption_ratio": min(1.0, max(0.0, self_consumption)),
             "self_sufficiency_ratio": min(1.0, max(0.0, self_sufficiency)),
@@ -256,4 +244,3 @@ def calculate_averages_comparison(
         "mean_daily_load_energy_kwh": round(float(np.mean(daily_load)), 2) if daily_load else 0.0,
         "median_daily_load_energy_kwh": round(float(np.median(daily_load)), 2) if daily_load else 0.0
     }
-

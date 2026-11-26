@@ -8,10 +8,7 @@ import urllib.parse
 import urllib.request
 from typing import Dict, Any, Optional, Tuple, List
 from backend.app.billing.tariff_models import TEIRateSchedule, TEIRateComponent
-from backend.app.billing.tariff_defaults import (
-    get_default_tei_schedule,
-    get_default_tei_components
-)
+from backend.app.billing.tariff_defaults import get_default_tei_schedule
 
 OFFICIAL_TEI_URL = "https://tarlacelectric.com/rate-schedule-customer-class"
 TEI_WP_POSTS_API = "https://tarlacelectric.com/wp-json/wp/v2/posts?search=Rate+Schedule&orderby=date&order=desc&per_page=10"
@@ -53,61 +50,102 @@ def _row_to_schedule(row) -> TEIRateSchedule:
         created_at=row["created_at"]
     )
 
-def get_active_rate_schedule(conn, customer_class: Optional[str] = None) -> TEIRateSchedule:
-    row = None
-    if customer_class:
-        row = conn.execute(
-            "SELECT * FROM tei_rate_schedules WHERE is_active = 1 AND lower(customer_class) = lower(?) ORDER BY effective_month DESC, created_at DESC LIMIT 1",
-            (customer_class.strip(),)
-        ).fetchone()
+def get_active_rate_schedule(
+    conn,
+    customer_class: Optional[str] = None,
+    project_id: str = "default"
+) -> TEIRateSchedule:
+    target_class = (customer_class or "").strip() or "Residential"
+    pref = conn.execute(
+        """SELECT s.* FROM project_rate_preferences p
+           JOIN tei_rate_schedules s ON s.id = p.active_schedule_id
+           WHERE p.project_id = ? AND lower(p.customer_class) = lower(?)
+             AND (s.project_id = 'global' OR s.project_id = ?)
+           LIMIT 1""",
+        (project_id, target_class, project_id)
+    ).fetchone()
+    if pref:
+        return _row_to_schedule(pref)
+
+    row = conn.execute(
+        """SELECT * FROM tei_rate_schedules
+           WHERE is_active = 1 AND lower(customer_class) = lower(?)
+             AND (project_id = 'global' OR project_id = ?)
+           ORDER BY CASE WHEN project_id = ? THEN 0 ELSE 1 END, effective_month DESC, created_at DESC LIMIT 1""",
+        (target_class, project_id, project_id)
+    ).fetchone()
     if not row:
         row = conn.execute(
-            "SELECT * FROM tei_rate_schedules WHERE is_active = 1 ORDER BY effective_month DESC, created_at DESC LIMIT 1"
+            """SELECT * FROM tei_rate_schedules
+               WHERE is_active = 1 AND (project_id = 'global' OR project_id = ?)
+               ORDER BY effective_month DESC, created_at DESC LIMIT 1""",
+            (project_id,)
         ).fetchone()
     if row:
         return _row_to_schedule(row)
+
     default_sched = get_default_tei_schedule()
-    if customer_class:
-        default_sched.customer_class = customer_class
-    save_rate_schedule(default_sched, conn)
+    default_sched.customer_class = target_class
+    save_rate_schedule(default_sched, conn, project_id="global")
     return default_sched
 
 def get_rate_schedule_for_month(
     conn,
     customer_class: Optional[str] = None,
-    billing_month: Optional[str] = None
+    billing_month: Optional[str] = None,
+    project_id: str = "default"
 ) -> TEIRateSchedule:
     if billing_month and re.match(r"^\d{4}-\d{2}$", billing_month.strip()):
         bm = billing_month.strip()
         if customer_class:
             row = conn.execute(
-                "SELECT * FROM tei_rate_schedules WHERE effective_month = ? AND lower(customer_class) = lower(?) ORDER BY is_active DESC, created_at DESC LIMIT 1",
-                (bm, customer_class.strip())
+                """SELECT * FROM tei_rate_schedules
+                   WHERE effective_month = ? AND lower(customer_class) = lower(?)
+                     AND (project_id = 'global' OR project_id = ?)
+                   ORDER BY CASE WHEN project_id = ? THEN 0 ELSE 1 END, is_active DESC, created_at DESC LIMIT 1""",
+                (bm, customer_class.strip(), project_id, project_id)
             ).fetchone()
             if row:
                 return _row_to_schedule(row)
         row = conn.execute(
-            "SELECT * FROM tei_rate_schedules WHERE effective_month = ? ORDER BY is_active DESC, created_at DESC LIMIT 1",
-            (bm,)
+            """SELECT * FROM tei_rate_schedules
+               WHERE effective_month = ? AND (project_id = 'global' OR project_id = ?)
+               ORDER BY is_active DESC, created_at DESC LIMIT 1""",
+            (bm, project_id)
         ).fetchone()
         if row:
             return _row_to_schedule(row)
-    return get_active_rate_schedule(conn, customer_class=customer_class)
+    return get_active_rate_schedule(conn, customer_class=customer_class, project_id=project_id)
 
-def activate_rate_schedule(schedule_id: str, conn) -> Optional[TEIRateSchedule]:
-    row = conn.execute("SELECT * FROM tei_rate_schedules WHERE id = ?", (schedule_id,)).fetchone()
+def set_project_active_schedule(conn, project_id: str, customer_class: str, schedule_id: str) -> None:
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    slug_class = (customer_class or "Residential").strip().lower().replace(" ", "_")
+    pref_id = f"pref-{project_id}-{slug_class}"
+    conn.execute(
+        """INSERT INTO project_rate_preferences (id, project_id, customer_class, active_schedule_id, updated_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(project_id, customer_class) DO UPDATE SET
+               active_schedule_id = excluded.active_schedule_id,
+               updated_at = excluded.updated_at""",
+        (pref_id, project_id, customer_class, schedule_id, now_iso)
+    )
+
+def activate_rate_schedule(schedule_id: str, conn, project_id: str = "default") -> Optional[TEIRateSchedule]:
+    row = conn.execute(
+        "SELECT * FROM tei_rate_schedules WHERE id = ? AND (project_id = 'global' OR project_id = ?)",
+        (schedule_id, project_id)
+    ).fetchone()
     if not row:
         return None
     sched = _row_to_schedule(row)
-    conn.execute(
-        "UPDATE tei_rate_schedules SET is_active = 0 WHERE lower(customer_class) = lower(?)",
-        (sched.customer_class,)
-    )
-    conn.execute("UPDATE tei_rate_schedules SET is_active = 1 WHERE id = ?", (schedule_id,))
+    set_project_active_schedule(conn, project_id, sched.customer_class, schedule_id)
     return sched
 
-def get_rate_check_state(conn) -> Dict[str, Any]:
-    row = conn.execute("SELECT * FROM tei_rate_check_state WHERE id = 'default'").fetchone()
+def get_rate_check_state(conn, project_id: str = "default") -> Dict[str, Any]:
+    state_id = f"rate-state-{project_id}"
+    row = conn.execute("SELECT * FROM tei_rate_check_state WHERE id = ?", (state_id,)).fetchone()
+    if not row:
+        row = conn.execute("SELECT * FROM tei_rate_check_state WHERE id = 'default'").fetchone()
     if not row:
         return {
             "status": "pending",
@@ -129,15 +167,24 @@ def get_rate_check_state(conn) -> Dict[str, Any]:
         "rate_change_alert": alert
     }
 
-def save_rate_check_state(state: Dict[str, Any], conn) -> None:
+def save_rate_check_state(state: Dict[str, Any], conn, project_id: str = "default") -> None:
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     alert = state.get("rate_change_alert")
     alert_json = json.dumps(alert) if alert is not None else None
+    state_id = f"rate-state-{project_id}"
     conn.execute(
-        """INSERT OR REPLACE INTO tei_rate_check_state
-           (id, status, message, checked_at, rate_change_alert_json, updated_at)
-           VALUES ('default', ?, ?, ?, ?, ?)""",
+        """INSERT INTO tei_rate_check_state
+           (id, project_id, status, message, checked_at, rate_change_alert_json, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+               status = excluded.status,
+               message = excluded.message,
+               checked_at = excluded.checked_at,
+               rate_change_alert_json = excluded.rate_change_alert_json,
+               updated_at = excluded.updated_at""",
         (
+            state_id,
+            project_id,
             str(state.get("status") or "pending"),
             str(state.get("message") or ""),
             state.get("checked_at"),
@@ -146,15 +193,30 @@ def save_rate_check_state(state: Dict[str, Any], conn) -> None:
         )
     )
 
-def save_rate_schedule(schedule: TEIRateSchedule, conn) -> None:
-    conn.execute("UPDATE tei_rate_schedules SET is_active = 0 WHERE lower(customer_class) = lower(?)", (schedule.customer_class,))
+def save_rate_schedule(schedule: TEIRateSchedule, conn, project_id: str = "global") -> None:
+    if project_id == "global":
+        conn.execute(
+            "UPDATE tei_rate_schedules SET is_active = 0 WHERE project_id = 'global' AND lower(customer_class) = lower(?)",
+            (schedule.customer_class,)
+        )
     comps_json = json.dumps([c.model_dump() for c in schedule.components])
     conn.execute(
-        """INSERT OR REPLACE INTO tei_rate_schedules
-           (id, effective_month, customer_class, publication_date, source_url, document_hash, verification_status, is_active, schedule_data_json, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+        """INSERT INTO tei_rate_schedules
+           (id, project_id, effective_month, customer_class, publication_date, source_url, document_hash, verification_status, is_active, schedule_data_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+               effective_month = excluded.effective_month,
+               customer_class = excluded.customer_class,
+               publication_date = excluded.publication_date,
+               source_url = excluded.source_url,
+               document_hash = excluded.document_hash,
+               verification_status = excluded.verification_status,
+               is_active = excluded.is_active,
+               schedule_data_json = excluded.schedule_data_json,
+               created_at = excluded.created_at""",
         (
             schedule.id,
+            project_id,
             schedule.effective_month,
             schedule.customer_class,
             schedule.publication_date,
@@ -166,14 +228,25 @@ def save_rate_schedule(schedule: TEIRateSchedule, conn) -> None:
         )
     )
 
-def get_rate_history(conn) -> List[Dict[str, Any]]:
+def get_rate_history(conn, project_id: str = "default") -> List[Dict[str, Any]]:
+    pref_rows = conn.execute(
+        "SELECT active_schedule_id FROM project_rate_preferences WHERE project_id = ?",
+        (project_id,)
+    ).fetchall()
+    preferred_ids = {r["active_schedule_id"] for r in pref_rows}
+
     rows = conn.execute(
-        "SELECT id, effective_month, customer_class, publication_date, source_url, document_hash, verification_status, is_active, created_at, schedule_data_json FROM tei_rate_schedules ORDER BY effective_month DESC, created_at DESC"
+        """SELECT id, project_id, effective_month, customer_class, publication_date, source_url, document_hash, verification_status, is_active, created_at, schedule_data_json
+           FROM tei_rate_schedules
+           WHERE project_id = 'global' OR project_id = ?
+           ORDER BY effective_month DESC, created_at DESC""",
+        (project_id,)
     ).fetchall()
     results = []
     for r in rows:
         comps = json.loads(r["schedule_data_json"])
         gen_rate = next((c["rate_per_kwh"] for c in comps if c["component_id"] == "gen_charge"), 0.0)
+        is_active_for_proj = (r["id"] in preferred_ids) if preferred_ids else bool(r["is_active"])
         results.append({
             "id": r["id"],
             "effective_month": r["effective_month"],
@@ -182,7 +255,8 @@ def get_rate_history(conn) -> List[Dict[str, Any]]:
             "source_url": r["source_url"],
             "document_hash": r["document_hash"],
             "verification_status": r["verification_status"],
-            "is_active": bool(r["is_active"]),
+            "is_active": is_active_for_proj,
+            "is_custom": r["project_id"] == project_id,
             "created_at": r["created_at"],
             "generation_charge": gen_rate,
             "components_count": len(comps)
@@ -443,10 +517,11 @@ def _discover_tei_rate_candidates() -> List[Dict[str, Optional[str]]]:
 def check_official_tei_rates(
     conn,
     force_fetch: bool = False,
-    customer_class: Optional[str] = None
+    customer_class: Optional[str] = None,
+    project_id: str = "default"
 ) -> Dict[str, Any]:
     target_class = (customer_class or "").strip() or "Residential"
-    active_sched = get_active_rate_schedule(conn, customer_class=target_class)
+    active_sched = get_active_rate_schedule(conn, customer_class=target_class, project_id=project_id)
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
     prev_gen_rate = 0.0
@@ -500,7 +575,8 @@ def check_official_tei_rates(
                     components=parsed_comps,
                     created_at=now_iso
                 )
-                save_rate_schedule(new_sched, conn)
+                save_rate_schedule(new_sched, conn, project_id="global")
+                set_project_active_schedule(conn, project_id, target_class, new_sched.id)
 
                 diff = round(extracted_gen - prev_gen_rate, 5)
                 direction = "increased" if diff > 0 else "decreased"
@@ -524,7 +600,7 @@ def check_official_tei_rates(
                     "rate_change_alert": alert,
                     "checked_at": now_iso
                 }
-                save_rate_check_state(res_payload, conn)
+                save_rate_check_state(res_payload, conn, project_id=project_id)
                 return res_payload
 
             res_payload = {
@@ -534,7 +610,7 @@ def check_official_tei_rates(
                 "rate_change_alert": None,
                 "checked_at": now_iso
             }
-            save_rate_check_state(res_payload, conn)
+            save_rate_check_state(res_payload, conn, project_id=project_id)
             return res_payload
 
         if prev_gen_rate <= 0.0 or active_sched.verification_status == "unconfigured":
@@ -545,7 +621,7 @@ def check_official_tei_rates(
                 "rate_change_alert": None,
                 "checked_at": now_iso
             }
-            save_rate_check_state(res_payload, conn)
+            save_rate_check_state(res_payload, conn, project_id=project_id)
             return res_payload
 
         res_payload = {
@@ -555,7 +631,7 @@ def check_official_tei_rates(
             "rate_change_alert": None,
             "checked_at": now_iso
         }
-        save_rate_check_state(res_payload, conn)
+        save_rate_check_state(res_payload, conn, project_id=project_id)
         return res_payload
 
     except Exception:
@@ -567,7 +643,7 @@ def check_official_tei_rates(
                 "rate_change_alert": None,
                 "checked_at": now_iso
             }
-            save_rate_check_state(res_payload, conn)
+            save_rate_check_state(res_payload, conn, project_id=project_id)
             return res_payload
         res_payload = {
             "status": "offline_retained_verified",
@@ -576,5 +652,5 @@ def check_official_tei_rates(
             "rate_change_alert": None,
             "checked_at": now_iso
         }
-        save_rate_check_state(res_payload, conn)
+        save_rate_check_state(res_payload, conn, project_id=project_id)
         return res_payload

@@ -418,10 +418,22 @@ export const SolarPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">
-                Hourly Solar Radiation & Expected PV Output Forecast (Tomorrow)
-              </h3>
+            <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  Hourly Solar Radiation &amp; Expected PV Output Forecast (Tomorrow)
+                </h3>
+                {weather.is_stale_fallback && (
+                  <span className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[11px] font-medium">
+                    Using cached forecast ({weather.freshness_minutes ?? "?"}m old)
+                  </span>
+                )}
+              </div>
+              {weather.forecast_basis && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {weather.forecast_basis}
+                </p>
+              )}
               <EChartComponent option={forecastHourlyOption} height="320px" />
             </div>
           </div>

@@ -9,9 +9,14 @@ node_modules
 dist
 build
 .env
+.env*
+!.env.example
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
+.solarscope.key
 storage/uploads/*
 !storage/uploads/.gitkeep
 storage/reports/*
@@ -26,6 +31,3 @@ backend/data/reports/*
 Thumbs.db
 horizon/
 .vercel
-.env*
-
-.env*

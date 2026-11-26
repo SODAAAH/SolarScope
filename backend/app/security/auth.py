@@ -1,0 +1,320 @@
+import datetime
+import re
+import uuid
+from dataclasses import dataclass
+from typing import Optional, List, Dict, Any
+from fastapi import Request, Response, HTTPException, Depends
+
+from backend.app.config import settings, is_hosted_mode
+from backend.app.storage.db import get_connection, create_project_for_user
+from backend.app.security.crypto import hash_password, verify_password, generate_token, hash_token
+
+SESSION_COOKIE_NAME = "solarscope_session"
+CSRF_COOKIE_NAME = "solarscope_csrf"
+
+@dataclass
+class AuthContext:
+    user_id: str
+    email: str
+    display_name: str
+    role: str
+    project_id: str
+    is_authenticated: bool
+    is_local_fallback: bool
+    hosted_mode: bool
+    csrf_token: str = ""
+
+def _cookie_secure_flag(request: Optional[Request] = None) -> bool:
+    cfg = (settings.cookie_secure or "auto").strip().lower()
+    if cfg in ("1", "true", "yes"):
+        return True
+    if cfg in ("0", "false", "no"):
+        return False
+    if request is not None:
+        proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "").lower()
+        if proto == "https":
+            return True
+    return is_hosted_mode()
+
+def set_session_cookies(response: Response, raw_token: str, csrf_token: str, request: Optional[Request] = None) -> None:
+    secure_flag = _cookie_secure_flag(request)
+    max_age = max(3600, int(settings.session_ttl_hours) * 3600)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=raw_token,
+        httponly=True,
+        secure=secure_flag,
+        samesite="lax",
+        path="/",
+        max_age=max_age,
+    )
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=csrf_token,
+        httponly=False,
+        secure=secure_flag,
+        samesite="lax",
+        path="/",
+        max_age=max_age,
+    )
+
+def clear_session_cookies(response: Response) -> None:
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(key=CSRF_COOKIE_NAME, path="/")
+
+def _validate_email(email: str) -> str:
+    cleaned = (email or "").strip().lower()
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", cleaned):
+        raise HTTPException(status_code=400, detail="Enter a valid email address.")
+    return cleaned
+
+def register_user_account(
+    email: str,
+    password: str,
+    display_name: str = "",
+    installation_name: str = "",
+) -> Dict[str, Any]:
+    clean_email = _validate_email(email)
+    if len(password or "") < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long.")
+    clean_name = (display_name or "").strip() or clean_email.split("@")[0]
+    proj_name = (installation_name or "").strip() or f"{clean_name}'s Solar System"
+
+    conn = get_connection()
+    try:
+        existing = conn.execute("SELECT id FROM users WHERE lower(email) = lower(?)", (clean_email,)).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail="An account with this email already exists.")
+
+        user_id = f"usr-{uuid.uuid4().hex[:12]}"
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        pw_hash = hash_password(password)
+        conn.execute(
+            """INSERT INTO users (id, email, display_name, password_hash, role, is_active, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'member', 1, ?, ?)""",
+            (user_id, clean_email, clean_name, pw_hash, now_iso, now_iso)
+        )
+        project = create_project_for_user(
+            user_id=user_id,
+            name=proj_name,
+            description="Household solar installation",
+            is_default=True,
+            conn=conn,
+        )
+        raw_token = generate_token(32)
+        csrf_token = generate_token(24)
+        expires_at = (
+            datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(settings.session_ttl_hours))
+        ).isoformat()
+        conn.execute(
+            """INSERT INTO user_sessions (id, user_id, token_hash, csrf_token, expires_at, created_at, last_seen_at, user_agent)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (f"sess-{uuid.uuid4().hex[:12]}", user_id, hash_token(raw_token), csrf_token, expires_at, now_iso, now_iso, "")
+        )
+        conn.commit()
+        return {
+            "user": {
+                "id": user_id,
+                "email": clean_email,
+                "display_name": clean_name,
+                "role": "member",
+            },
+            "projects": [project],
+            "active_project_id": project["id"],
+            "raw_token": raw_token,
+            "csrf_token": csrf_token,
+        }
+    finally:
+        conn.close()
+
+def authenticate_user_account(email: str, password: str, user_agent: str = "") -> Dict[str, Any]:
+    clean_email = _validate_email(email)
+    conn = get_connection()
+    try:
+        user = conn.execute(
+            "SELECT * FROM users WHERE lower(email) = lower(?) AND is_active = 1",
+            (clean_email,)
+        ).fetchone()
+        if not user or not verify_password(password or "", user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+        user_id = user["id"]
+        projects = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM projects WHERE owner_user_id = ? ORDER BY is_default DESC, created_at ASC",
+                (user_id,)
+            ).fetchall()
+        ]
+        if not projects:
+            proj = create_project_for_user(
+                user_id=user_id,
+                name=f"{user['display_name']}'s Solar System",
+                description="Household solar installation",
+                is_default=True,
+                conn=conn,
+            )
+            projects = [proj]
+
+        raw_token = generate_token(32)
+        csrf_token = generate_token(24)
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        expires_at = (
+            datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(settings.session_ttl_hours))
+        ).isoformat()
+        conn.execute(
+            """INSERT INTO user_sessions (id, user_id, token_hash, csrf_token, expires_at, created_at, last_seen_at, user_agent)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (f"sess-{uuid.uuid4().hex[:12]}", user_id, hash_token(raw_token), csrf_token, expires_at, now_iso, now_iso, user_agent[:200])
+        )
+        conn.commit()
+        return {
+            "user": {
+                "id": user_id,
+                "email": user["email"],
+                "display_name": user["display_name"],
+                "role": user["role"],
+            },
+            "projects": projects,
+            "active_project_id": projects[0]["id"],
+            "raw_token": raw_token,
+            "csrf_token": csrf_token,
+        }
+    finally:
+        conn.close()
+
+def revoke_session(raw_token: Optional[str]) -> None:
+    if not raw_token:
+        return
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM user_sessions WHERE token_hash = ?", (hash_token(raw_token),))
+        conn.commit()
+    finally:
+        conn.close()
+
+def _extract_raw_token(request: Request) -> Optional[str]:
+    cookie_tok = request.cookies.get(SESSION_COOKIE_NAME)
+    if cookie_tok:
+        return cookie_tok.strip()
+    auth_header = request.headers.get("Authorization") or ""
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:].strip()
+    return None
+
+def _resolve_user_project(conn, user_id: str, requested_project_id: Optional[str]) -> str:
+    if requested_project_id:
+        clean_pid = requested_project_id.strip()
+        row = conn.execute(
+            "SELECT id FROM projects WHERE id = ? AND owner_user_id = ?",
+            (clean_pid, user_id)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="You do not have access to the requested installation.")
+        return row["id"]
+
+    row = conn.execute(
+        "SELECT id FROM projects WHERE owner_user_id = ? ORDER BY is_default DESC, created_at ASC LIMIT 1",
+        (user_id,)
+    ).fetchone()
+    if row:
+        return row["id"]
+
+    proj = create_project_for_user(
+        user_id=user_id,
+        name="Primary Solar Installation",
+        description="Household solar installation",
+        is_default=True,
+        conn=conn,
+    )
+    conn.commit()
+    return proj["id"]
+
+def list_user_projects(user_id: str) -> List[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM projects WHERE owner_user_id = ? ORDER BY is_default DESC, created_at ASC",
+            (user_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+def _verify_csrf_if_cookie_session(request: Request, session_csrf: str) -> None:
+    if request.method.upper() in ("GET", "HEAD", "OPTIONS"):
+        return
+    if not request.cookies.get(SESSION_COOKIE_NAME):
+        return
+    header_csrf = (request.headers.get("X-CSRF-Token") or "").strip()
+    if not header_csrf or header_csrf != session_csrf:
+        raise HTTPException(status_code=403, detail="CSRF token validation failed.")
+
+def get_auth_context(request: Request) -> AuthContext:
+    hosted = is_hosted_mode()
+    raw_token = _extract_raw_token(request)
+    requested_project = request.headers.get("X-Project-Id") or request.query_params.get("project_id")
+
+    if raw_token:
+        conn = get_connection()
+        try:
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            sess = conn.execute(
+                """SELECT s.user_id, s.csrf_token, s.expires_at, u.email, u.display_name, u.role, u.is_active
+                   FROM user_sessions s
+                   JOIN users u ON u.id = s.user_id
+                   WHERE s.token_hash = ?""",
+                (hash_token(raw_token),)
+            ).fetchone()
+            if not sess or not sess["is_active"] or sess["expires_at"] <= now_iso:
+                if sess:
+                    conn.execute("DELETE FROM user_sessions WHERE token_hash = ?", (hash_token(raw_token),))
+                    conn.commit()
+                raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
+
+            _verify_csrf_if_cookie_session(request, sess["csrf_token"])
+            project_id = _resolve_user_project(conn, sess["user_id"], requested_project)
+            return AuthContext(
+                user_id=sess["user_id"],
+                email=sess["email"],
+                display_name=sess["display_name"],
+                role=sess["role"],
+                project_id=project_id,
+                is_authenticated=True,
+                is_local_fallback=False,
+                hosted_mode=hosted,
+                csrf_token=sess["csrf_token"],
+            )
+        finally:
+            conn.close()
+
+    if hosted:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
+    conn = get_connection()
+    try:
+        project_id = _resolve_user_project(conn, "user-local", requested_project)
+        return AuthContext(
+            user_id="user-local",
+            email="local@solarscope.device",
+            display_name="Local Household",
+            role="owner",
+            project_id=project_id,
+            is_authenticated=True,
+            is_local_fallback=True,
+            hosted_mode=False,
+            csrf_token="",
+        )
+    finally:
+        conn.close()
+
+def get_optional_auth_state(request: Request) -> Optional[AuthContext]:
+    try:
+        raw_token = _extract_raw_token(request)
+        if not raw_token:
+            if not is_hosted_mode():
+                return get_auth_context(request)
+            return None
+        return get_auth_context(request)
+    except HTTPException:
+        return None

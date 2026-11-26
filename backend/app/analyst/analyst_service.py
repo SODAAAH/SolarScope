@@ -8,10 +8,10 @@ from backend.app.analyst.data_retriever import extract_system_snapshot
 from backend.app.analyst.evidence_engine import build_evidence_response
 from backend.app.analyst.question_classifier import QuestionClassifier
 from backend.app.analyst.fast_path import execute_fast_path
-from backend.app.analyst.diagnostic_engine import diagnostic_engine_instance
+from backend.app.analyst.diagnostic_engine import DiagnosticEngine
 from backend.app.analyst.response_formatter import format_diagnostic_response
 from backend.app.integrations.weather import get_weather_intelligence
-from backend.app.integrations.deye_mcp import deye_mcp_client
+from backend.app.integrations.deye_mcp import get_deye_mcp_client
 from backend.app.storage.db import get_connection
 
 classifier = QuestionClassifier()
@@ -25,8 +25,11 @@ def analyze_energy_query(
     conn = get_connection()
     sys_row = conn.execute("SELECT * FROM system_settings WHERE project_id = ?", (project_id,)).fetchone()
     settings_stamp = (sys_row["updated_at"] or "") if sys_row else ""
-    query_hash = hashlib.sha256(f"{query_key}:{query_text}:{len(records)}:{settings_stamp}".encode("utf-8")).hexdigest()
-    cached = conn.execute("SELECT response_json FROM analyst_cache WHERE query_hash = ?", (query_hash,)).fetchone()
+    query_hash = hashlib.sha256(f"{project_id}:{query_key}:{query_text}:{len(records)}:{settings_stamp}".encode("utf-8")).hexdigest()
+    cached = conn.execute(
+        "SELECT response_json FROM analyst_cache WHERE query_hash = ? AND project_id = ?",
+        (query_hash, project_id)
+    ).fetchone()
     conn.close()
 
     if cached:
@@ -46,7 +49,7 @@ def analyze_energy_query(
     reserve_soc = float(sys_row["reserve_soc"] if sys_row["reserve_soc"] is not None else 20.0) if "reserve_soc" in keys else 20.0
 
     current_soc = records[-1].soc_percent if records else 0.0
-    daily_cons = snapshot.get("consumption", {}).get("consumed_energy_kwh", 0.0)
+    daily_cons = snapshot.get("consumption", {}).get("total_demand_kwh", 0.0)
 
     weather_info = get_weather_intelligence(
         lat=lat,
@@ -64,9 +67,12 @@ def analyze_energy_query(
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     c_conn = get_connection()
     c_conn.execute(
-        """INSERT OR REPLACE INTO analyst_cache (id, query_hash, query_text, response_json, created_at)
-           VALUES (?, ?, ?, ?, ?)""",
-        (f"cache-{query_hash[:16]}", query_hash, query_text or query_key, json.dumps(result), now_iso)
+        """INSERT INTO analyst_cache (id, project_id, query_hash, query_text, response_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(query_hash) DO UPDATE SET
+               response_json = excluded.response_json,
+               created_at = excluded.created_at""",
+        (f"cache-{query_hash[:16]}", project_id, query_hash, query_text or query_key, json.dumps(result), now_iso)
     )
     c_conn.commit()
     c_conn.close()
@@ -132,10 +138,11 @@ def stream_analyst_response(
     time.sleep(0.05)
 
     yield {"type": "status", "message": "Inspecting local telemetry database..."}
-    local_records_dicts = [r.dict() if hasattr(r, "dict") else dict(r) for r in records]
+    local_records_dicts = [r.model_dump() if hasattr(r, "model_dump") else dict(r) for r in records]
 
     yield {"type": "status", "message": "Querying Deye Cloud telemetry state..."}
-    diag = diagnostic_engine_instance.investigate(classification, local_records_dicts)
+    engine = DiagnosticEngine(project_id=project_id)
+    diag = engine.investigate(classification, local_records_dicts)
 
     yield {"type": "status", "message": "Evaluating energy-balance rules and alert registers..."}
     formatted_text = format_diagnostic_response(diag)
@@ -160,7 +167,8 @@ def stream_analyst_response(
     }
 
 def get_performance_overview(project_id: str = "default") -> Dict[str, Any]:
-    creds = deye_mcp_client._get_credentials()
+    mcp_client = get_deye_mcp_client(project_id)
+    creds = mcp_client._get_credentials()
     has_creds = bool(creds["app_id"] and creds["app_secret"])
     conn = get_connection()
     sys_row = conn.execute("SELECT * FROM system_settings WHERE project_id = ?", (project_id,)).fetchone()
@@ -186,7 +194,7 @@ def get_performance_overview(project_id: str = "default") -> Dict[str, Any]:
 
     return {
         "mcp_connected": has_creds,
-        "mcp_endpoint": deye_mcp_client.mcp_endpoint,
+        "mcp_endpoint": mcp_client.mcp_endpoint,
         "station_name": station_name or "Station Not Configured",
         "station_id": creds["station_id"],
         "inverter_sn": creds["inverter_sn"],
@@ -198,34 +206,9 @@ def get_performance_overview(project_id: str = "default") -> Dict[str, Any]:
 
 def get_preset_diagnostic_queries() -> List[Dict[str, str]]:
     return [
-        {
-            "id": "why_battery_drained",
-            "category": "Battery Diagnostics",
-            "question": "Why did my battery discharge unusually fast last night?"
-        },
-        {
-            "id": "why_grid_purchased_with_battery",
-            "category": "Grid Import Diagnostics",
-            "question": "Why did my system purchase electricity from the utility even though the battery had charge?"
-        },
-        {
-            "id": "check_station_health",
-            "category": "Station Diagnostics",
-            "question": "Check my station health"
-        },
-        {
-            "id": "avg_solar_generation",
-            "category": "Direct Calculations",
-            "question": "What is my average daily solar production?"
-        },
-        {
-            "id": "bill_forecast",
-            "category": "Utility Billing",
-            "question": "Calculate my estimated monthly electricity bill"
-        },
-        {
-            "id": "inverter_alerts",
-            "category": "Equipment Protection",
-            "question": "Are there any recurring inverter alerts or operating limit restrictions?"
-        }
+        {"id": "why_battery_drained", "category": "Battery", "question": "Why did my battery drain down to its reserve limit?"},
+        {"id": "why_grid_purchased_with_battery", "category": "Grid", "question": "Why did my home buy grid electricity while the battery had charge?"},
+        {"id": "will_battery_last_tonight", "category": "Forecast", "question": "Will my solar and battery cover tonight's household demand?"},
+        {"id": "should_add_battery", "category": "Upgrades", "question": "Would adding 5 kWh of battery storage pay off for my household?"},
+        {"id": "performance_audit", "category": "Overview", "question": "Summarize my overall solar generation, consumption, and grid reliance."}
     ]

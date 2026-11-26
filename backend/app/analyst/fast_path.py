@@ -31,7 +31,8 @@ def execute_fast_path(intent_info: Dict[str, Any], project_id: str = "default") 
     conn = get_connection()
     sys_row = conn.execute("SELECT * FROM system_settings WHERE project_id = ?", (project_id,)).fetchone()
     datasets = conn.execute(
-        "SELECT id, filename, start_time, end_time, total_rows FROM datasets WHERE is_included = 1 ORDER BY start_time ASC"
+        "SELECT id, filename, start_time, end_time, total_rows FROM datasets WHERE project_id = ? AND is_included = 1 ORDER BY start_time ASC",
+        (project_id,)
     ).fetchall()
     conn.close()
 
@@ -42,7 +43,7 @@ def execute_fast_path(intent_info: Dict[str, Any], project_id: str = "default") 
     from backend.app.api.endpoints import _get_historical_records
     from backend.app.aggregation.historical import calculate_daily_summaries
 
-    records = _get_historical_records()
+    records = _get_historical_records(project_id)
     keys = sys_row.keys() if sys_row else []
     pv_kwp = float(sys_row["pv_capacity_kwp"] or 0.0) if "pv_capacity_kwp" in keys else 0.0
     batt_kwh = float(sys_row["battery_capacity_kwh"] or 0.0) if "battery_capacity_kwh" in keys else 0.0
@@ -62,7 +63,7 @@ def execute_fast_path(intent_info: Dict[str, Any], project_id: str = "default") 
             "path": "FAST_PATH",
             "intent": "METRIC_LOOKUP",
             "title": "No Records Available",
-            "response_text": "No historical telemetry records were found in the database. Please upload an Excel or CSV file or sync with Deye Cloud.",
+            "response_text": "No historical telemetry records were found for this installation. Upload a CSV/Excel export or sync with Deye Cloud.",
             "duration_ms": 1.2
         }
 
@@ -193,6 +194,6 @@ def execute_fast_path(intent_info: Dict[str, Any], project_id: str = "default") 
         "path": "FAST_PATH",
         "intent": "METRIC_LOOKUP",
         "title": "System Summary",
-        "response_text": f"SolarScope has verified telemetry for {total_days} datasets ({start_str} to {end_str}). All systems operational.",
+        "response_text": f"SolarScope has telemetry for {total_days} dataset(s) ({start_str} to {end_str}). Open Overview or Diagnostics for detailed metrics.",
         "duration_ms": 2.0
     }

@@ -1,7 +1,6 @@
 import os
 import json
 import time
-import shutil
 import sqlite3
 import hashlib
 import datetime
@@ -11,7 +10,7 @@ import urllib.parse
 import urllib.error
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
-from backend.app.config import settings
+from backend.app.config import settings, resolve_database_url, is_postgres_url
 
 _lock = threading.RLock()
 _hydrated_version: Optional[int] = None
@@ -19,6 +18,7 @@ _last_check_monotonic: float = 0.0
 
 _MANIFEST_PATH = "solarscope/manifest.json"
 _DB_BLOB_PATH = "solarscope/solarscope.db"
+_DB_BACKUP_PREFIX = "solarscope/backups/"
 _UPLOAD_PREFIX = "solarscope/uploads/"
 _API_BASE = "https://vercel.com/api/blob"
 _API_VERSION = "12"
@@ -28,6 +28,9 @@ def is_blob_enabled() -> bool:
     if not token:
         return False
     return bool(os.environ.get("VERCEL") or os.environ.get("SOLARSCOPE_FORCE_BLOB_SYNC") == "1")
+
+def is_sqlite_blob_mode() -> bool:
+    return is_blob_enabled() and not is_postgres_url(resolve_database_url())
 
 def _get_auth() -> Optional[Tuple[str, str]]:
     if not is_blob_enabled():
@@ -149,9 +152,11 @@ def _make_sqlite_snapshot(db_path: Path) -> bytes:
     dst = None
     try:
         src = sqlite3.connect(str(db_path), timeout=15.0)
+        src.execute("BEGIN IMMEDIATE")
         dst = sqlite3.connect(str(snap_path), timeout=15.0)
         src.backup(dst)
         dst.commit()
+        src.rollback()
         dst.close()
         dst = None
         src.close()
@@ -197,15 +202,27 @@ def _download_manifest() -> Optional[Dict[str, Any]]:
     except Exception:
         return None
 
+def upload_file_blob(basename: str, data: bytes) -> bool:
+    if not basename or not _get_auth():
+        return False
+    ctype = "text/csv" if basename.lower().endswith(".csv") else "application/octet-stream"
+    _upload_bytes(f"{_UPLOAD_PREFIX}{basename}", data, content_type=ctype)
+    return True
+
+def delete_file_blob(basename: str) -> None:
+    if not basename or not _get_auth():
+        return
+    _delete_blobs([f"{_UPLOAD_PREFIX}{basename}"])
+
 def ensure_hydrated(force: bool = False) -> bool:
     global _hydrated_version, _last_check_monotonic
-    if not _get_auth():
+    if not is_sqlite_blob_mode() or not _get_auth():
         return False
 
     with _lock:
         now_mono = time.monotonic()
         db_path = _get_local_db_path()
-        if not force and _hydrated_version is not None and db_path.exists() and (now_mono - _last_check_monotonic) < 5.0:
+        if not force and _hydrated_version is not None and db_path.exists() and (now_mono - _last_check_monotonic) < 2.0:
             return False
 
         _last_check_monotonic = now_mono
@@ -253,13 +270,6 @@ def ensure_hydrated(force: bool = False) -> bool:
                     except Exception:
                         pass
 
-            for existing in settings.upload_dir.iterdir():
-                if existing.is_file() and not existing.name.startswith(".") and existing.name not in uploads_meta:
-                    try:
-                        existing.unlink()
-                    except Exception:
-                        pass
-
         _hydrated_version = remote_ver
         return True
 
@@ -287,6 +297,18 @@ def persist_state(
     global _hydrated_version, _last_check_monotonic
     if not _get_auth():
         return False
+
+    if is_postgres_url(resolve_database_url()):
+        with _lock:
+            if deleted_filenames:
+                clean_deleted = [name for name in deleted_filenames if name and not name.startswith(".")]
+                if clean_deleted:
+                    _delete_blobs([f"{_UPLOAD_PREFIX}{name}" for name in clean_deleted])
+            if upload_files:
+                for p in upload_files:
+                    if p and p.exists() and p.is_file():
+                        upload_file_blob(p.name, p.read_bytes())
+        return True
 
     with _lock:
         db_path = source_db_path or _get_local_db_path()
@@ -338,9 +360,18 @@ def persist_state(
         except Exception:
             prev_ver_int = 0
         new_ver = max(int(time.time() * 1000), prev_ver_int + 1)
+
+        day_stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+        if manifest.get("last_backup_date") != day_stamp:
+            try:
+                _upload_bytes(f"{_DB_BACKUP_PREFIX}solarscope-{day_stamp}.db", snap_bytes, content_type="application/x-sqlite3")
+            except Exception:
+                pass
+
         new_manifest = {
             "version": new_ver,
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "last_backup_date": day_stamp,
             "uploads": uploads_map,
         }
         _upload_bytes(_MANIFEST_PATH, json.dumps(new_manifest).encode("utf-8"), content_type="application/json")

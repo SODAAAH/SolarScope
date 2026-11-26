@@ -113,6 +113,11 @@ export const LiveWeatherForecastCard: React.FC<LiveWeatherForecastCardProps> = (
               {current.condition_label}
             </span>
           )}
+          {weather?.is_stale_fallback && (
+            <span className="px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[10px] font-medium">
+              Cached Forecast ({weather.freshness_minutes ?? '?'}m old)
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -207,9 +212,16 @@ export const LiveWeatherForecastCard: React.FC<LiveWeatherForecastCardProps> = (
 
           <div className="lg:col-span-8 flex flex-col justify-between gap-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="font-medium text-slate-700 dark:text-slate-300">
-                Hourly Cloud &amp; Sky Timeline (Next 12 Hours)
-              </span>
+              <div>
+                <span className="font-medium text-slate-700 dark:text-slate-300">
+                  Hourly Cloud &amp; Sky Timeline (Next 12 Hours)
+                </span>
+                {weather?.forecast_basis && (
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                    {weather.forecast_basis}
+                  </p>
+                )}
+              </div>
               {tomorrow && (
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
                   Tomorrow: <strong className="text-slate-700 dark:text-slate-200">{tomorrow.average_cloud_cover_percent.toFixed(0)}% avg clouds</strong>

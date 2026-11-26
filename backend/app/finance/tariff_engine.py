@@ -1,6 +1,6 @@
-import datetime
 from typing import List, Dict, Any
 from backend.app.ingestion.models import CanonicalRecord
+from backend.app.metrics.time_utils import parse_timestamp
 
 class TariffConfig:
     def __init__(
@@ -45,13 +45,14 @@ def calculate_grid_cost(
     total_imported_kwh = 0.0
     total_exported_kwh = 0.0
 
+    parsed_dts = [parse_timestamp(r.timestamp) for r in records]
     for i in range(len(records) - 1):
-        try:
-            t0 = datetime.datetime.strptime(records[i].timestamp, "%Y-%m-%d %H:%M:%S")
-            t1 = datetime.datetime.strptime(records[i + 1].timestamp, "%Y-%m-%d %H:%M:%S")
-            dt_h = (t1 - t0).total_seconds() / 3600.0
-        except Exception:
-            dt_h = 5.0 / 60.0
+        t0, t1 = parsed_dts[i], parsed_dts[i + 1]
+        if t0 is None or t1 is None:
+            continue
+        dt_h = (t1 - t0).total_seconds() / 3600.0
+        if dt_h <= 0.0 or dt_h > 2.0:
+            continue
 
         p_imp = 0.5 * (max(0.0, records[i].grid_power_kw) + max(0.0, records[i + 1].grid_power_kw))
         p_exp = 0.5 * (max(0.0, -records[i].grid_power_kw) + max(0.0, -records[i + 1].grid_power_kw))

@@ -5,15 +5,17 @@ from backend.app.billing.tariff_models import TEIRateSchedule, TEIBillingProfile
 from backend.app.billing.bill_calculator import calculate_statement_of_account
 from backend.app.billing.billing_profile import compute_cycle_dates
 from backend.app.metrics.integrator import integrate_power_series
+from backend.app.metrics.time_utils import parse_timestamp, resolve_zoneinfo
 
 def calculate_billing_progress_series(
     records: List[CanonicalRecord],
     schedule: TEIRateSchedule,
-    profile: TEIBillingProfile
+    profile: TEIBillingProfile,
+    timezone: str = "Asia/Manila"
 ) -> Dict[str, Any]:
     cycle_day = max(1, min(31, int(profile.billing_cycle_day or 25)))
-    tz_manila = datetime.timezone(datetime.timedelta(hours=8))
-    now = datetime.datetime.now(tz_manila)
+    tz_info = resolve_zoneinfo(timezone)
+    now = datetime.datetime.now(tz_info)
     start_date, end_date = compute_cycle_dates(cycle_day, now.date(), billing_month=profile.billing_month)
 
     today_date = now.date()
@@ -21,7 +23,8 @@ def calculate_billing_progress_series(
     daily_imports: Dict[str, float] = {}
     day_records_map: Dict[str, List[CanonicalRecord]] = {}
     for r in records:
-        day_str = r.timestamp[:10]
+        dt = parse_timestamp(r.timestamp, timezone)
+        day_str = dt.strftime("%Y-%m-%d") if dt is not None else r.timestamp[:10]
         if day_str not in day_records_map:
             day_records_map[day_str] = []
         day_records_map[day_str].append(r)
