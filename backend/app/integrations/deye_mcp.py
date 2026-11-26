@@ -7,7 +7,7 @@ import hashlib
 import time
 import datetime
 import threading
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from backend.app.config import is_hosted_mode
 from backend.app.storage.db import get_connection
 from backend.app.storage.blob_sync import ensure_hydrated
