@@ -152,11 +152,13 @@ def _make_sqlite_snapshot(db_path: Path) -> bytes:
     dst = None
     try:
         src = sqlite3.connect(str(db_path), timeout=15.0)
-        src.execute("BEGIN IMMEDIATE")
+        try:
+            src.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:
+            pass
         dst = sqlite3.connect(str(snap_path), timeout=15.0)
         src.backup(dst)
         dst.commit()
-        src.rollback()
         dst.close()
         dst = None
         src.close()
