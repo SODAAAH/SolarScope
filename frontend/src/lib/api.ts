@@ -830,7 +830,6 @@ export const api = {
     if (res?.csrf_token) setCsrfToken(res.csrf_token);
     if (res?.active_project_id) setActiveProjectId(res.active_project_id, false);
     clearUserClientCaches(true);
-    dispatchAppEvent("solarscope:auth-changed");
     return res;
   },
   register: async (payload: { email: string; password: string; display_name?: string; installation_name?: string }) => {
@@ -842,7 +841,6 @@ export const api = {
     if (res?.csrf_token) setCsrfToken(res.csrf_token);
     if (res?.active_project_id) setActiveProjectId(res.active_project_id, false);
     clearUserClientCaches(true);
-    dispatchAppEvent("solarscope:auth-changed");
     return res;
   },
   logout: async () => {

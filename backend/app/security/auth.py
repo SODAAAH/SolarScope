@@ -7,6 +7,7 @@ from fastapi import Request, Response, HTTPException, Depends
 
 from backend.app.config import settings, is_hosted_mode
 from backend.app.storage.db import get_connection, create_project_for_user
+from backend.app.storage.blob_sync import ensure_hydrated, is_sqlite_blob_mode
 from backend.app.security.crypto import hash_password, verify_password, generate_token, hash_token
 
 SESSION_COOKIE_NAME = "solarscope_session"
@@ -256,6 +257,9 @@ def get_auth_context(request: Request) -> AuthContext:
     requested_project = request.headers.get("X-Project-Id") or request.query_params.get("project_id")
 
     if raw_token:
+        if is_sqlite_blob_mode():
+            ensure_hydrated(force=False)
+        tok_hash = hash_token(raw_token)
         conn = get_connection()
         try:
             now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -264,11 +268,24 @@ def get_auth_context(request: Request) -> AuthContext:
                    FROM user_sessions s
                    JOIN users u ON u.id = s.user_id
                    WHERE s.token_hash = ?""",
-                (hash_token(raw_token),)
+                (tok_hash,)
             ).fetchone()
+            if not sess and is_sqlite_blob_mode():
+                conn.close()
+                if ensure_hydrated(force=True):
+                    conn = get_connection()
+                    sess = conn.execute(
+                        """SELECT s.user_id, s.csrf_token, s.expires_at, u.email, u.display_name, u.role, u.is_active
+                           FROM user_sessions s
+                           JOIN users u ON u.id = s.user_id
+                           WHERE s.token_hash = ?""",
+                        (tok_hash,)
+                    ).fetchone()
+                else:
+                    conn = get_connection()
             if not sess or not sess["is_active"] or sess["expires_at"] <= now_iso:
                 if sess:
-                    conn.execute("DELETE FROM user_sessions WHERE token_hash = ?", (hash_token(raw_token),))
+                    conn.execute("DELETE FROM user_sessions WHERE token_hash = ?", (tok_hash,))
                     conn.commit()
                 raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
 
