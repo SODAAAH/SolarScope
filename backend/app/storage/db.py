@@ -655,7 +655,7 @@ def init_db(hydrate: bool = True):
                     0.95, 0.0, 0.0, "PHP", "Asia/Manila", now_iso
                 )
             )
-        elif not default_proj.get("owner_user_id"):
+        elif not dict(default_proj).get("owner_user_id"):
             cursor.execute("UPDATE projects SET owner_user_id = 'user-local' WHERE id = 'default'")
 
         cursor.execute("SELECT id FROM deye_cloud_configs WHERE project_id = 'default'")
