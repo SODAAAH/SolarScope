@@ -1,10 +1,12 @@
 import base64
 import hashlib
 import hmac
+import json
 import os
 import secrets
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from backend.app.config import settings, is_hosted_mode
 
@@ -128,3 +130,38 @@ def generate_token(nbytes: int = 32) -> str:
 
 def hash_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+def sign_session_token(payload: Dict[str, Any]) -> Optional[str]:
+    try:
+        key = _resolve_master_key_bytes()
+    except Exception:
+        return None
+    raw_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    body = base64.urlsafe_b64encode(raw_json).decode("ascii").rstrip("=")
+    sig = hmac.new(key, body.encode("ascii"), hashlib.sha256).digest()
+    sig_b64 = base64.urlsafe_b64encode(sig).decode("ascii").rstrip("=")
+    return f"ss1.{body}.{sig_b64}"
+
+def verify_session_token(token: str) -> Optional[Dict[str, Any]]:
+    try:
+        if not token or not token.startswith("ss1."):
+            return None
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        _, body, sig_b64 = parts
+        key = _resolve_master_key_bytes()
+        expected_sig = hmac.new(key, body.encode("ascii"), hashlib.sha256).digest()
+        expected_b64 = base64.urlsafe_b64encode(expected_sig).decode("ascii").rstrip("=")
+        if not hmac.compare_digest(sig_b64, expected_b64):
+            return None
+        padded = body + "=" * (-len(body) % 4)
+        data = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        if not isinstance(data, dict):
+            return None
+        exp = float(data.get("exp") or 0)
+        if exp <= time.time():
+            return None
+        return data
+    except Exception:
+        return None

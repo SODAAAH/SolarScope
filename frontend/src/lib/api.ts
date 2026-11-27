@@ -1,5 +1,6 @@
 const API_BASE = "/api";
 const PROJECT_STORAGE_KEY = "solarscope_project_id";
+const SESSION_TOKEN_STORAGE_KEY = "solarscope_session_token";
 const BILLING_PROFILE_STORAGE_KEY = "solarscope_billing_profile_v2";
 const RATE_SCHEDULE_STORAGE_KEY = "solarscope_tei_rate_schedule_v1";
 const LEGACY_DEYE_KEYS = [
@@ -8,6 +9,7 @@ const LEGACY_DEYE_KEYS = [
   "solarscope_deye_mode",
 ];
 let inMemoryCsrfToken = "";
+let inMemorySessionToken = "";
 
 export function getActiveProjectId(): string {
   try {
@@ -27,6 +29,8 @@ export function clearUserClientCaches(preserveProject = true): void {
     localStorage.removeItem(RATE_SCHEDULE_STORAGE_KEY);
     if (!preserveProject) {
       localStorage.removeItem(PROJECT_STORAGE_KEY);
+      inMemorySessionToken = "";
+      sessionStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
     }
     sessionStorage.removeItem("solarscope_cached_live_flow");
     sessionStorage.removeItem("solarscope_cached_daily");
@@ -64,6 +68,32 @@ export function setCsrfToken(token?: string | null): void {
   if (token) {
     inMemoryCsrfToken = token;
   }
+}
+
+export function setSessionToken(token?: string | null): void {
+  const clean = (token || "").trim();
+  inMemorySessionToken = clean;
+  try {
+    if (clean) {
+      sessionStorage.setItem(SESSION_TOKEN_STORAGE_KEY, clean);
+    } else {
+      sessionStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
+    }
+  } catch {}
+}
+
+export function getSessionToken(): string {
+  if (inMemorySessionToken) {
+    return inMemorySessionToken;
+  }
+  try {
+    const stored = sessionStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || "";
+    if (stored) {
+      inMemorySessionToken = stored;
+      return stored;
+    }
+  } catch {}
+  return "";
 }
 
 export function getCsrfToken(): string {
@@ -146,6 +176,10 @@ function buildRequestHeaders(method: string, extra?: HeadersInit): Headers {
   if (projectId && !headers.has("X-Project-Id")) {
     headers.set("X-Project-Id", projectId);
   }
+  const sessionToken = getSessionToken();
+  if (sessionToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${sessionToken}`);
+  }
   if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
     const csrf = getCsrfToken();
     if (csrf && !headers.has("X-CSRF-Token")) {
@@ -219,6 +253,7 @@ export async function fetchJson<T>(endpoint: string, options?: RequestInit): Pro
       if (!res.ok) {
         const errorText = await res.text();
         if (res.status === 401 && !endpoint.startsWith("/auth/")) {
+          setSessionToken("");
           dispatchAppEvent("solarscope:auth-required");
         }
         throw new Error(`API Error [${res.status}]: ${errorText}`);
@@ -813,6 +848,9 @@ export const api = {
   },
   getAuthMe: async () => {
     const res = await fetchJson<AuthMeResponse>("/auth/me");
+    if (res?.authenticated === false) {
+      setSessionToken("");
+    }
     if (res?.csrf_token) {
       setCsrfToken(res.csrf_token);
     }
@@ -827,6 +865,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
+    if (res?.session_token) setSessionToken(res.session_token);
     if (res?.csrf_token) setCsrfToken(res.csrf_token);
     if (res?.active_project_id) setActiveProjectId(res.active_project_id, false);
     clearUserClientCaches(true);
@@ -836,6 +875,7 @@ export const api = {
     const res = await fetchJson<AuthMeResponse>("/auth/demo", {
       method: "POST"
     });
+    if (res?.session_token) setSessionToken(res.session_token);
     if (res?.csrf_token) setCsrfToken(res.csrf_token);
     if (res?.active_project_id) setActiveProjectId(res.active_project_id, false);
     clearUserClientCaches(true);
@@ -847,6 +887,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
+    if (res?.session_token) setSessionToken(res.session_token);
     if (res?.csrf_token) setCsrfToken(res.csrf_token);
     if (res?.active_project_id) setActiveProjectId(res.active_project_id, false);
     clearUserClientCaches(true);
@@ -857,6 +898,7 @@ export const api = {
       method: "POST"
     });
     inMemoryCsrfToken = "";
+    setSessionToken("");
     clearUserClientCaches(false);
     dispatchAppEvent("solarscope:auth-changed");
     return res;
@@ -917,6 +959,7 @@ export interface AuthMeResponse {
   projects: ProjectSummary[];
   active_project_id: string | null;
   csrf_token?: string;
+  session_token?: string;
 }
 
 export interface TEIBillingProfile {

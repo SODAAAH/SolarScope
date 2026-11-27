@@ -1,5 +1,6 @@
 import datetime
 import re
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
@@ -8,7 +9,14 @@ from fastapi import Request, Response, HTTPException, Depends
 from backend.app.config import settings, is_hosted_mode
 from backend.app.storage.db import get_connection, create_project_for_user
 from backend.app.storage.blob_sync import ensure_hydrated, is_sqlite_blob_mode
-from backend.app.security.crypto import hash_password, verify_password, generate_token, hash_token
+from backend.app.security.crypto import (
+    hash_password,
+    verify_password,
+    generate_token,
+    hash_token,
+    sign_session_token,
+    verify_session_token,
+)
 
 SESSION_COOKIE_NAME = "solarscope_session"
 CSRF_COOKIE_NAME = "solarscope_csrf"
@@ -32,10 +40,32 @@ def _cookie_secure_flag(request: Optional[Request] = None) -> bool:
     if cfg in ("0", "false", "no"):
         return False
     if request is not None:
-        proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "").lower()
+        proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "").split(",")[0].strip().lower()
         if proto == "https":
             return True
+        if proto == "http":
+            return False
     return is_hosted_mode()
+
+def _issue_session_token(
+    user_id: str,
+    email: str,
+    display_name: str,
+    role: str,
+    project_id: str,
+    csrf_token: str,
+    ttl_hours: int,
+) -> str:
+    signed = sign_session_token({
+        "uid": user_id,
+        "email": email,
+        "name": display_name,
+        "role": role,
+        "pid": project_id,
+        "csrf": csrf_token,
+        "exp": int(time.time()) + max(3600, int(ttl_hours) * 3600),
+    })
+    return signed or generate_token(32)
 
 def set_session_cookies(response: Response, raw_token: str, csrf_token: str, request: Optional[Request] = None) -> None:
     secure_flag = _cookie_secure_flag(request)
@@ -102,8 +132,16 @@ def register_user_account(
             is_default=True,
             conn=conn,
         )
-        raw_token = generate_token(32)
         csrf_token = generate_token(24)
+        raw_token = _issue_session_token(
+            user_id=user_id,
+            email=clean_email,
+            display_name=clean_name,
+            role="member",
+            project_id=project["id"],
+            csrf_token=csrf_token,
+            ttl_hours=int(settings.session_ttl_hours),
+        )
         expires_at = (
             datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(settings.session_ttl_hours))
         ).isoformat()
@@ -157,8 +195,16 @@ def authenticate_user_account(email: str, password: str, user_agent: str = "") -
             )
             projects = [proj]
 
-        raw_token = generate_token(32)
         csrf_token = generate_token(24)
+        raw_token = _issue_session_token(
+            user_id=user_id,
+            email=user["email"],
+            display_name=user["display_name"],
+            role=user["role"],
+            project_id=projects[0]["id"],
+            csrf_token=csrf_token,
+            ttl_hours=int(settings.session_ttl_hours),
+        )
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         expires_at = (
             datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(settings.session_ttl_hours))
@@ -283,10 +329,48 @@ def get_auth_context(request: Request) -> AuthContext:
                     ).fetchone()
                 else:
                     conn = get_connection()
-            if not sess or not sess["is_active"] or sess["expires_at"] <= now_iso:
-                if sess:
-                    conn.execute("DELETE FROM user_sessions WHERE token_hash = ?", (tok_hash,))
-                    conn.commit()
+            if not sess:
+                token_claims = verify_session_token(raw_token)
+                if token_claims:
+                    claim_uid = str(token_claims.get("uid") or "")
+                    claim_csrf = str(token_claims.get("csrf") or "")
+                    _verify_csrf_if_cookie_session(request, claim_csrf)
+                    user_row = conn.execute(
+                        "SELECT id, email, display_name, role, is_active FROM users WHERE id = ?",
+                        (claim_uid,)
+                    ).fetchone()
+                    if user_row and not user_row["is_active"]:
+                        raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
+                    if user_row:
+                        project_id = _resolve_user_project(conn, user_row["id"], requested_project)
+                        return AuthContext(
+                            user_id=user_row["id"],
+                            email=user_row["email"],
+                            display_name=user_row["display_name"],
+                            role=user_row["role"],
+                            project_id=project_id,
+                            is_authenticated=True,
+                            is_local_fallback=False,
+                            hosted_mode=hosted,
+                            csrf_token=claim_csrf,
+                        )
+                    fallback_pid = (requested_project or token_claims.get("pid") or "").strip()
+                    if claim_uid and fallback_pid:
+                        return AuthContext(
+                            user_id=claim_uid,
+                            email=str(token_claims.get("email") or ""),
+                            display_name=str(token_claims.get("name") or ""),
+                            role=str(token_claims.get("role") or "member"),
+                            project_id=fallback_pid,
+                            is_authenticated=True,
+                            is_local_fallback=False,
+                            hosted_mode=hosted,
+                            csrf_token=claim_csrf,
+                        )
+                raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
+            if not sess["is_active"] or sess["expires_at"] <= now_iso:
+                conn.execute("DELETE FROM user_sessions WHERE token_hash = ?", (tok_hash,))
+                conn.commit()
                 raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
 
             _verify_csrf_if_cookie_session(request, sess["csrf_token"])
@@ -427,8 +511,16 @@ def authenticate_demo_account(user_agent: str = "") -> Dict[str, Any]:
         ).fetchone()
         has_datasets = bool(dataset_count_row and int(dataset_count_row["cnt"] or 0) > 0)
 
-        raw_token = generate_token(32)
         csrf_token = generate_token(24)
+        raw_token = _issue_session_token(
+            user_id=user_id,
+            email=demo_email,
+            display_name=display_name,
+            role=role,
+            project_id=project_id,
+            csrf_token=csrf_token,
+            ttl_hours=int(settings.session_ttl_hours),
+        )
         expires_at = (
             datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(settings.session_ttl_hours))
         ).isoformat()

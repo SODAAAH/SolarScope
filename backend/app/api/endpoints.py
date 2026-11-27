@@ -339,6 +339,7 @@ def register_endpoint(payload: RegisterRequest, request: Request, response: Resp
         "projects": res["projects"],
         "active_project_id": res["active_project_id"],
         "csrf_token": res["csrf_token"],
+        "session_token": res["raw_token"],
     }
 
 @router.post("/auth/login")
@@ -355,6 +356,7 @@ def login_endpoint(payload: LoginRequest, request: Request, response: Response):
         "projects": res["projects"],
         "active_project_id": res["active_project_id"],
         "csrf_token": res["csrf_token"],
+        "session_token": res["raw_token"],
     }
 
 @router.post("/auth/demo")
@@ -371,6 +373,7 @@ def demo_login_endpoint(request: Request, response: Response):
         "projects": res["projects"],
         "active_project_id": res["active_project_id"],
         "csrf_token": res["csrf_token"],
+        "session_token": res["raw_token"],
     }
 
 @router.post("/auth/logout")
