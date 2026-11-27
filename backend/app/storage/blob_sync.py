@@ -43,11 +43,8 @@ def _get_auth() -> Optional[Tuple[str, str]]:
     return token, store_id
 
 def _get_local_db_path() -> Path:
-    if os.environ.get("VERCEL"):
-        db_dir = Path("/tmp") / "solarscope"
-        db_dir.mkdir(parents=True, exist_ok=True)
-        return db_dir / "solarscope.db"
-    return settings.base_dir / "solarscope.db"
+    from backend.app.storage.db import get_db_path
+    return get_db_path()
 
 def _private_blob_url(store_id: str, pathname: str, no_cache: bool = True) -> str:
     clean = pathname.lstrip("/")
@@ -227,11 +224,12 @@ def ensure_hydrated(force: bool = False) -> bool:
         if not force and _hydrated_version is not None and db_path.exists() and (now_mono - _last_check_monotonic) < 2.0:
             return False
 
-        _last_check_monotonic = now_mono
         try:
             manifest = _download_manifest()
         except Exception:
             return False
+
+        _last_check_monotonic = now_mono
 
         if not manifest:
             return False

@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import Request, Response, HTTPException, Depends
 
 from backend.app.config import settings, is_hosted_mode
-from backend.app.storage.db import get_connection, create_project_for_user
+from backend.app.storage.db import get_connection, create_project_for_user, init_db
 from backend.app.storage.blob_sync import ensure_hydrated, is_sqlite_blob_mode
 from backend.app.security.crypto import (
     hash_password,
@@ -304,7 +304,8 @@ def get_auth_context(request: Request) -> AuthContext:
 
     if raw_token:
         if is_sqlite_blob_mode():
-            ensure_hydrated(force=False)
+            if ensure_hydrated(force=False):
+                init_db(hydrate=False)
         tok_hash = hash_token(raw_token)
         conn = get_connection()
         try:
@@ -319,6 +320,7 @@ def get_auth_context(request: Request) -> AuthContext:
             if not sess and is_sqlite_blob_mode():
                 conn.close()
                 if ensure_hydrated(force=True):
+                    init_db(hydrate=False)
                     conn = get_connection()
                     sess = conn.execute(
                         """SELECT s.user_id, s.csrf_token, s.expires_at, u.email, u.display_name, u.role, u.is_active
@@ -339,6 +341,15 @@ def get_auth_context(request: Request) -> AuthContext:
                         "SELECT id, email, display_name, role, is_active FROM users WHERE id = ?",
                         (claim_uid,)
                     ).fetchone()
+                    if not user_row and is_sqlite_blob_mode():
+                        conn.close()
+                        if ensure_hydrated(force=True):
+                            init_db(hydrate=False)
+                        conn = get_connection()
+                        user_row = conn.execute(
+                            "SELECT id, email, display_name, role, is_active FROM users WHERE id = ?",
+                            (claim_uid,)
+                        ).fetchone()
                     if user_row and not user_row["is_active"]:
                         raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
                     if user_row:
@@ -349,19 +360,6 @@ def get_auth_context(request: Request) -> AuthContext:
                             display_name=user_row["display_name"],
                             role=user_row["role"],
                             project_id=project_id,
-                            is_authenticated=True,
-                            is_local_fallback=False,
-                            hosted_mode=hosted,
-                            csrf_token=claim_csrf,
-                        )
-                    fallback_pid = (requested_project or token_claims.get("pid") or "").strip()
-                    if claim_uid and fallback_pid:
-                        return AuthContext(
-                            user_id=claim_uid,
-                            email=str(token_claims.get("email") or ""),
-                            display_name=str(token_claims.get("name") or ""),
-                            role=str(token_claims.get("role") or "member"),
-                            project_id=fallback_pid,
                             is_authenticated=True,
                             is_local_fallback=False,
                             hosted_mode=hosted,
@@ -391,6 +389,10 @@ def get_auth_context(request: Request) -> AuthContext:
 
     if hosted:
         raise HTTPException(status_code=401, detail="Authentication required.")
+
+    if is_sqlite_blob_mode():
+        if ensure_hydrated(force=False):
+            init_db(hydrate=False)
 
     conn = get_connection()
     try:

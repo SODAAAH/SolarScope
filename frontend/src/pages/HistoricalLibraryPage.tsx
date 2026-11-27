@@ -238,9 +238,22 @@ export const HistoricalLibraryPage: React.FC = () => {
     const onSettingsUpdated = () => {
       fetchDeyeStatus();
     };
+    const onSourcesUpdated = () => {
+      fetchSources();
+      fetchMissingDates();
+    };
+    const onProjectChanged = () => {
+      fetchSources();
+      fetchDeyeStatus();
+      fetchMissingDates();
+    };
     window.addEventListener("solarscope:settings-updated", onSettingsUpdated);
+    window.addEventListener("solarscope:sources-updated", onSourcesUpdated);
+    window.addEventListener("solarscope:project-changed", onProjectChanged);
     return () => {
       window.removeEventListener("solarscope:settings-updated", onSettingsUpdated);
+      window.removeEventListener("solarscope:sources-updated", onSourcesUpdated);
+      window.removeEventListener("solarscope:project-changed", onProjectChanged);
     };
   }, []);
 

@@ -75,28 +75,39 @@ export const AppShell: React.FC = () => {
   const location = useLocation();
 
   const loadAuthState = useCallback(async () => {
-    try {
-      const me = await api.getAuthMe();
-      setAuthState(me);
-      setProjects(me.projects || []);
-      const storedPid = getActiveProjectId();
-      const validIds = new Set((me.projects || []).map((p) => p.id));
-      let resolvedPid = me.active_project_id || '';
-      if (storedPid && validIds.has(storedPid)) {
-        resolvedPid = storedPid;
-      } else if (me.projects && me.projects.length > 0 && (!resolvedPid || !validIds.has(resolvedPid))) {
-        resolvedPid = me.projects[0].id;
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const me = await api.getAuthMe();
+        setAuthState(me);
+        setProjects(me.projects || []);
+        const storedPid = getActiveProjectId();
+        const validIds = new Set((me.projects || []).map((p) => p.id));
+        let resolvedPid = me.active_project_id || '';
+        if (storedPid && validIds.has(storedPid)) {
+          resolvedPid = storedPid;
+        } else if (me.projects && me.projects.length > 0 && (!resolvedPid || !validIds.has(resolvedPid))) {
+          resolvedPid = me.projects[0].id;
+        }
+        if (resolvedPid && resolvedPid !== storedPid) {
+          setActiveProjectId(resolvedPid, false);
+        }
+        setCurrentProjectId(resolvedPid);
+        setAuthBanner(null);
+        setAuthLoading(false);
+        return;
+      } catch (err) {
+        lastError = err;
+        if (attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+        }
       }
-      if (resolvedPid && resolvedPid !== storedPid) {
-        setActiveProjectId(resolvedPid, false);
-      }
-      setCurrentProjectId(resolvedPid);
-      setAuthBanner(null);
-    } catch {
-      setAuthState({ authenticated: true, auth_required: false, user: null, projects: [], active_project_id: null });
-    } finally {
-      setAuthLoading(false);
     }
+    if (lastError) {
+      setAuthBanner('Unable to reach your workspace right now. Please sign in or retry.');
+      setAuthState({ authenticated: false, auth_required: true, user: null, projects: [], active_project_id: null });
+    }
+    setAuthLoading(false);
   }, []);
 
   useEffect(() => {

@@ -76,11 +76,22 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
+  const loadSettings = () => {
     api.getSettings()
-      .then((res) => setSettings((prev) => ({ ...prev, ...res })))
+      .then((res) => setSettings((prev) => ({ ...EMPTY_SETTINGS, ...prev, ...res })))
       .catch((err) => console.error(err));
     fetchMcpStats();
+  };
+
+  useEffect(() => {
+    loadSettings();
+    const onReload = () => loadSettings();
+    window.addEventListener("solarscope:project-changed", onReload);
+    window.addEventListener("solarscope:settings-updated", onReload);
+    return () => {
+      window.removeEventListener("solarscope:project-changed", onReload);
+      window.removeEventListener("solarscope:settings-updated", onReload);
+    };
   }, []);
 
   const handleChange = (key: keyof SystemSettings, value: string | number) => {
