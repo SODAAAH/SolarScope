@@ -335,3 +335,142 @@ def get_optional_auth_state(request: Request) -> Optional[AuthContext]:
         return get_auth_context(request)
     except HTTPException:
         return None
+
+
+def authenticate_demo_account(user_agent: str = "") -> Dict[str, Any]:
+    demo_email = "demo@solarscope.app"
+    demo_user_id = "usr-demo-solarscope"
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn = get_connection()
+    project_id = ""
+    try:
+        user = conn.execute(
+            "SELECT * FROM users WHERE lower(email) = lower(?) AND is_active = 1",
+            (demo_email,)
+        ).fetchone()
+        if not user:
+            pw_hash = hash_password(generate_token(24))
+            conn.execute(
+                """INSERT INTO users (id, email, display_name, password_hash, role, is_active, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 'member', 1, ?, ?)""",
+                (demo_user_id, demo_email, "Demo Visitor", pw_hash, now_iso, now_iso)
+            )
+            proj = create_project_for_user(
+                user_id=demo_user_id,
+                name="Demo Residence Solar (Tarlac)",
+                description="Pre-seeded 7-day sample solar and Tarlac Electric Inc. workspace",
+                is_default=True,
+                conn=conn,
+            )
+            project_id = proj["id"]
+            user_id = demo_user_id
+            display_name = "Demo Visitor"
+            role = "member"
+            projects = [proj]
+        else:
+            user_id = user["id"]
+            display_name = user["display_name"]
+            role = user["role"]
+            projects = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM projects WHERE owner_user_id = ? ORDER BY is_default DESC, created_at ASC",
+                    (user_id,)
+                ).fetchall()
+            ]
+            if not projects:
+                proj = create_project_for_user(
+                    user_id=user_id,
+                    name="Demo Residence Solar (Tarlac)",
+                    description="Pre-seeded 7-day sample solar and Tarlac Electric Inc. workspace",
+                    is_default=True,
+                    conn=conn,
+                )
+                projects = [proj]
+            project_id = projects[0]["id"]
+
+        settings_row = conn.execute(
+            "SELECT pv_capacity_kwp FROM system_settings WHERE project_id = ?",
+            (project_id,)
+        ).fetchone()
+        if not settings_row or float(settings_row["pv_capacity_kwp"] or 0.0) <= 0.0:
+            conn.execute(
+                """UPDATE system_settings
+                   SET station_name = ?, location_name = ?, latitude = ?, longitude = ?,
+                       pv_capacity_kwp = ?, num_modules = ?, module_wattage = ?,
+                       inverter_model = ?, inverter_power_kw = ?,
+                       battery_capacity_kwh = ?, usable_capacity_kwh = ?, reserve_soc = ?,
+                       import_tariff = ?, updated_at = ?
+                   WHERE project_id = ?""",
+                (
+                    "Demo Residence · Tarlac",
+                    "Tarlac City, Philippines",
+                    15.4755,
+                    120.5963,
+                    5.5,
+                    10,
+                    550.0,
+                    "Deye SUN-5K-SG03LP1-EU",
+                    5.0,
+                    10.24,
+                    8.19,
+                    20.0,
+                    11.45,
+                    now_iso,
+                    project_id,
+                )
+            )
+
+        dataset_count_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM datasets WHERE project_id = ?",
+            (project_id,)
+        ).fetchone()
+        has_datasets = bool(dataset_count_row and int(dataset_count_row["cnt"] or 0) > 0)
+
+        raw_token = generate_token(32)
+        csrf_token = generate_token(24)
+        expires_at = (
+            datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=int(settings.session_ttl_hours))
+        ).isoformat()
+        conn.execute(
+            """INSERT INTO user_sessions (id, user_id, token_hash, csrf_token, expires_at, created_at, last_seen_at, user_agent)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (f"sess-{uuid.uuid4().hex[:12]}", user_id, hash_token(raw_token), csrf_token, expires_at, now_iso, now_iso, user_agent[:200])
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    if not has_datasets:
+        try:
+            from backend.app.integrations.deye_cloud import DeyeCloudClient
+            client = DeyeCloudClient(project_id=project_id)
+            client.save_config({
+                "station_id": "DEMO_STATION",
+                "data_center": "eu",
+                "app_id": "demo",
+                "app_secret": "demo",
+                "username": "demo",
+                "password": "demo",
+                "auto_sync": False,
+                "sync_interval_min": 5,
+                "reconciliation_policy": "MERGE",
+            })
+            today = datetime.date.today()
+            start_day = today - datetime.timedelta(days=6)
+            client.sync_range(start_day.isoformat(), today.isoformat())
+        except Exception:
+            pass
+
+    return {
+        "user": {
+            "id": user_id,
+            "email": demo_email,
+            "display_name": display_name,
+            "role": role,
+        },
+        "projects": projects,
+        "active_project_id": project_id,
+        "raw_token": raw_token,
+        "csrf_token": csrf_token,
+    }

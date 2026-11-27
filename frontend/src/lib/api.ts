@@ -832,6 +832,15 @@ export const api = {
     clearUserClientCaches(true);
     return res;
   },
+  demoLogin: async () => {
+    const res = await fetchJson<AuthMeResponse>("/auth/demo", {
+      method: "POST"
+    });
+    if (res?.csrf_token) setCsrfToken(res.csrf_token);
+    if (res?.active_project_id) setActiveProjectId(res.active_project_id, false);
+    clearUserClientCaches(true);
+    return res;
+  },
   register: async (payload: { email: string; password: string; display_name?: string; installation_name?: string }) => {
     const res = await fetchJson<AuthMeResponse>("/auth/register", {
       method: "POST",

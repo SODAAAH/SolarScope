@@ -23,6 +23,7 @@ from backend.app.security.auth import (
     get_optional_auth_state,
     register_user_account,
     authenticate_user_account,
+    authenticate_demo_account,
     revoke_session,
     set_session_cookies,
     clear_session_cookies,
@@ -346,6 +347,22 @@ def login_endpoint(payload: LoginRequest, request: Request, response: Response):
     response.headers["Cache-Control"] = "no-store"
     ua = request.headers.get("User-Agent", "")
     res = authenticate_user_account(payload.email, payload.password, user_agent=ua)
+    set_session_cookies(response, res["raw_token"], res["csrf_token"], request=request)
+    _persist_state()
+    return {
+        "authenticated": True,
+        "user": res["user"],
+        "projects": res["projects"],
+        "active_project_id": res["active_project_id"],
+        "csrf_token": res["csrf_token"],
+    }
+
+@router.post("/auth/demo")
+def demo_login_endpoint(request: Request, response: Response):
+    _hydrate_state(force=True)
+    response.headers["Cache-Control"] = "no-store"
+    ua = request.headers.get("User-Agent", "")
+    res = authenticate_demo_account(user_agent=ua)
     set_session_cookies(response, res["raw_token"], res["csrf_token"], request=request)
     _persist_state()
     return {

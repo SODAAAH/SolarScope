@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sun, Lock, Mail, User, Home, ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
+import { Sun, Lock, Mail, User, Home, ArrowRight, Loader2, ShieldCheck, Play } from 'lucide-react';
 import { api, type AuthMeResponse } from '../../lib/api';
 
 interface AuthGateProps {
@@ -14,7 +14,21 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated, bannerMessa
   const [displayName, setDisplayName] = useState('');
   const [installationName, setInstallationName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleDemoLogin = async () => {
+    setError(null);
+    setDemoLoading(true);
+    try {
+      const res = await api.demoLogin();
+      onAuthenticated(res);
+    } catch (err: any) {
+      setError(String(err?.message || 'Unable to start demo workspace.'));
+    } finally {
+      setDemoLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -204,8 +218,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated, bannerMessa
 
           <button
             type="submit"
-            disabled={submitting}
-            className="w-full h-10 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+            disabled={submitting || demoLoading}
+            className="w-full h-10 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-50 cursor-pointer"
           >
             {submitting ? (
               <>
@@ -220,6 +234,34 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated, bannerMessa
             )}
           </button>
         </form>
+
+        <div className="pt-1 space-y-2">
+          <div className="relative flex items-center py-1">
+            <div className="grow border-t border-slate-200 dark:border-slate-800" />
+            <span className="shrink px-2 text-[11px] uppercase tracking-wider text-slate-400">
+              Recruiter / Preview
+            </span>
+            <div className="grow border-t border-slate-200 dark:border-slate-800" />
+          </div>
+          <button
+            type="button"
+            onClick={handleDemoLogin}
+            disabled={submitting || demoLoading}
+            className="w-full h-10 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-950/60 text-amber-900 dark:text-amber-200 text-xs font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            {demoLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                <span>Preparing Demo Workspace...</span>
+              </>
+            ) : (
+              <>
+                <Play className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Explore Demo Workspace (Sample Solar Data)</span>
+              </>
+            )}
+          </button>
+        </div>
 
         <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed border-t border-slate-100 dark:border-slate-800 pt-4">
           Each household workspace stores its solar datasets, electricity bills, and encrypted Deye Cloud credentials in strict project isolation.
